@@ -1,0 +1,33 @@
+# XcodeGen spec for the QuotaRing app. `make generate` turns it into QuotaRing.xcodeproj, which is git-ignored.
+# Build settings live in Configs/Base.xcconfig; personal signing settings go into the git-ignored
+# Configs/Local.xcconfig (see Configs/Local.xcconfig.example).
+name: QuotaRing
+
+options:
+  developmentLanguage: en
+  deploymentTarget:
+    macOS: "14.0"
+  # Only project-level defaults: target settings come from Base.xcconfig, so Local.xcconfig can override them.
+  settingPresets: project
+  createIntermediateGroups: true
+
+packages:
+  QuotaRingCore:
+    path: Core
+
+targets:
+  QuotaRing:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App
+    configFiles:
+      Debug: Configs/Base.xcconfig
+      Release: Configs/Base.xcconfig
+    dependencies:
+      - package: QuotaRingCore
+        product: QuotaRingCore
+    scheme:
+      commandLineArguments:
+        "--demo": false

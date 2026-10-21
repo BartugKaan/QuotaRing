@@ -1,0 +1,37 @@
+// Build settings of the QuotaRing app target, shared by Debug and Release.
+//
+// The defaults sign the app "to run locally" (ad hoc), so anyone can build it without an Apple developer account.
+// To sign with your own identity, copy Local.xcconfig.example to Local.xcconfig (git-ignored) and edit it. It is
+// included at the end of this file, so its values win.
+
+PRODUCT_NAME = QuotaRing
+PRODUCT_BUNDLE_IDENTIFIER = io.github.bartugkaan.QuotaRing
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+
+INFOPLIST_FILE = App/Resources/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+CODE_SIGN_ENTITLEMENTS = App/Resources/QuotaRing.entitlements
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+COMBINE_HIDPI_IMAGES = YES
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+// String Catalog: Xcode extracts user-facing strings into App/Resources/Localizable.xcstrings.
+SWIFT_EMIT_LOC_STRINGS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+// Signing: "Sign to Run Locally". Hardened Runtime is on; the app is not sandboxed (see SECURITY.md).
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM =
+ENABLE_HARDENED_RUNTIME = YES
+
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+
+#include? "Local.xcconfig"
