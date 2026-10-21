@@ -6,8 +6,7 @@ struct QuotaRingApp: App {
 
     var body: some Scene {
         Settings {
-            Text("Settings")
-                .frame(width: 320, height: 160)
+            SettingsView(model: appDelegate.model, notifications: appDelegate.notificationService)
         }
     }
 }

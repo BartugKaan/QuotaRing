@@ -9,12 +9,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created on first use, so SwiftUI scenes may reference them before the app has finished launching.
     lazy var settings = SettingsStore()
     lazy var model = AppModel(settings: settings, isDemo: isDemo)
+    /// Demo mode never shows the real notification permission prompt.
+    lazy var notificationService = NotificationService(allowsPermissionRequests: !isDemo)
 
     private var statusItemController: StatusItemController?
+    private var onboardingController: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before `model.start()`, so the first snapshot can already notify.
+        model.notifier = notificationService
         statusItemController = StatusItemController(model: model)
-        // Install `model.notifier` before this line so the first snapshot can already notify.
         model.start()
+        showOnboardingIfNeeded()
+    }
+
+    /// The first-run window explains what is read and where anything is sent before Live mode can be switched on.
+    /// Not shown in demo mode, which touches no real data.
+    private func showOnboardingIfNeeded() {
+        guard !isDemo, !settings.hasCompletedOnboarding else { return }
+        let notifications = notificationService
+        let controller = OnboardingWindowController(
+            settings: settings,
+            requestNotificationPermission: { await notifications.requestAuthorizationIfNeeded() },
+            onClose: { [weak self] in self?.onboardingController = nil }
+        )
+        onboardingController = controller
+        controller.show()
     }
 }
