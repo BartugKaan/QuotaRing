@@ -5,7 +5,8 @@ A tiny, auditable menu bar meter for your Claude subscription limits.
 QuotaRing puts a ring in your macOS menu bar that shows how much of your rolling 5-hour Claude limit is left. Click it
 for weekly limits, the reset time and a breakdown of where your tokens went.
 
-![QuotaRing popover showing the 5-hour session ring, weekly limits and local activity](docs/images/screenshot.png)
+<img src="docs/images/screenshot.png" width="382"
+     alt="QuotaRing popover showing the 5-hour session ring, weekly limits and local activity">
 
 It exists because menu bar usage meters are easy to build and hard to trust. The goal here is the opposite: a small,
 open-source app whose behavior you can read in an afternoon. Everything it reads, sends and stores is listed in
