@@ -5,10 +5,17 @@ import SwiftUI
 /// The popover that opens from the menu bar item: the 5-hour session, the weekly limits, local activity and a footer
 /// with the data source, refresh, Settings and Quit.
 ///
-/// The view only reads ``AppModel``; every setting that needs consent (Live mode) is changed in Settings, never here.
+/// The footer row is always on screen; everything else, including hints about Live mode and old data, scrolls when the
+/// screen is too small to show it. The view only reads ``AppModel``; every setting that needs consent (Live mode) is
+/// changed in Settings, never here.
 struct PopoverView: View {
     let model: AppModel
     @Environment(\.openSettings) private var openSettings
+
+    /// The height of the footer row as measured; the scrollable part gets what is left of the screen.
+    @State private var footerHeight = PopoverMetrics.footerHeightEstimate
+    /// The visible height of the screen the popover is on, once its window is known.
+    @State private var hostScreenHeight: CGFloat?
 
     var body: some View {
         // One timeline for the whole popover keeps every countdown, clock and age in step.
@@ -20,20 +27,38 @@ struct PopoverView: View {
                     }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: PopoverMetrics.maxScrollHeight)
+                .frame(
+                    maxHeight: PopoverMetrics.maxScrollHeight(
+                        screenHeight: hostScreenHeight ?? PopoverMetrics.pointerScreenHeight(),
+                        footerHeight: footerHeight)
+                )
 
                 Divider()
                 footer(now: context.date)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: {
+                        footerHeight = $0
+                    }
             }
         }
         .frame(width: PopoverMetrics.width)
+        .background(HostScreenReader { hostScreenHeight = $0 })
     }
 
     // MARK: - Sections
 
+    /// What Live mode's status means for the user; `.off` when Live mode is not in use (or in demo mode).
+    private var liveStatus: LiveStatus {
+        model.settings.isLiveModeActive && !model.isDemo ? model.liveStatus : .off
+    }
+
     @ViewBuilder
     private func sections(now: Date) -> some View {
         if let snapshot = model.snapshot {
+            NoticeStack(
+                notices: PopoverNotice.notices(
+                    liveStatus: liveStatus, isStale: model.isStale(at: now), now: now))
             SessionSection(
                 session: model.session(at: now),
                 showsRemaining: model.settings.ringShowsRemaining,
@@ -47,7 +72,13 @@ struct PopoverView: View {
             SectionDivider()
             ActivitySection(activity: model.activity, daily: model.daily, now: now)
         } else {
-            NoDataSection(isLiveModeActive: model.settings.isLiveModeActive, openSettings: showSettings)
+            // Without any snapshot the section itself explains what Live mode is waiting for or needs.
+            NoDataSection(
+                isLiveModeActive: model.settings.isLiveModeActive && !model.isDemo,
+                liveStatus: liveStatus,
+                now: now,
+                openSettings: showSettings
+            )
             // Local transcripts need no consent, so their activity can be shown even before any limit is known.
             if model.activity.values.contains(where: { $0.total.total > 0 }) {
                 SectionDivider()
@@ -59,11 +90,6 @@ struct PopoverView: View {
     private func footer(now: Date) -> some View {
         FooterView(
             source: sourceDescription(now: now),
-            notices: FooterNotice.notices(
-                liveStatus: model.settings.isLiveModeActive && !model.isDemo ? model.liveStatus : .off,
-                isStale: model.isStale(at: now),
-                now: now
-            ),
             isRefreshing: model.isRefreshing,
             canRefresh: model.canRefreshNow,
             isCoolingDown: model.isCoolingDown,
@@ -105,13 +131,65 @@ enum PopoverMetrics {
     static let width: CGFloat = 340
     /// Leading and trailing space of every section.
     static let inset: CGFloat = 16
+    /// A good guess for the footer row until it has been measured.
+    static let footerHeightEstimate: CGFloat = 47
+    /// What a popover needs on a screen besides its content: the arrow, the divider above the footer and some room
+    /// to the bottom of the screen.
+    static let screenChrome: CGFloat = 60
 
-    /// The most the scrollable part may grow: what the screen can show next to the footer, so a long Activity list on a
-    /// small display scrolls instead of running off the screen.
-    @MainActor static var maxScrollHeight: CGFloat {
-        let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-        // The footer, the popover arrow and some breathing room come on top of this.
-        return max(320, screenHeight - 130)
+    /// The most the scrollable part may grow so that it, the footer and the popover's arrow fit on a screen
+    /// `screenHeight` points high (its visible height, below the menu bar and above the Dock). A long Activity list on
+    /// a small display scrolls instead of pushing the footer off the screen.
+    static func maxScrollHeight(screenHeight: CGFloat, footerHeight: CGFloat) -> CGFloat {
+        max(240, screenHeight - footerHeight - screenChrome)
+    }
+
+    /// The visible height of the screen under the pointer, which is where the status item was just clicked; used until
+    /// the popover's own window tells which screen it is on.
+    @MainActor static func pointerScreenHeight() -> CGFloat {
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main
+        return screen?.visibleFrame.height ?? 800
+    }
+}
+
+/// Reports the visible height of the screen the hosting window is on, and again when the window moves to another
+/// screen. The popover's window is where the status item is, which is not necessarily `NSScreen.main`.
+private struct HostScreenReader: NSViewRepresentable {
+    let onChange: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ReportingView {
+        let view = ReportingView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: ReportingView, context: Context) {
+        view.onChange = onChange
+    }
+
+    final class ReportingView: NSView {
+        var onChange: ((CGFloat) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Observers registered with a selector are removed automatically when the view goes away.
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+            guard let window else { return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowDidChangeScreen(_:)), name: NSWindow.didChangeScreenNotification,
+                object: window)
+            report()
+        }
+
+        @objc private func windowDidChangeScreen(_ notification: Notification) {
+            report()
+        }
+
+        private func report() {
+            guard let height = window?.screen?.visibleFrame.height else { return }
+            onChange?(height)
+        }
     }
 }
 
@@ -137,19 +215,25 @@ struct SectionHeader: View {
     }
 }
 
-/// The color of a limit with a given share left: the accent color, orange at 20 % or less and red at 5 % or less
+/// The colors of the usage indicators: a fixed calm blue normally, orange at 20 % left or less and red at 5 % or less
 /// (the same thresholds as the menu bar ring).
+///
+/// The normal color is deliberately not the system accent color: with an orange or red accent, a healthy ring would
+/// look like a warning.
 enum UsageTint {
+    /// The blue of the app icon.
+    static let normal = Color(red: 0.24, green: 0.48, blue: 1.0)
+
     static func color(percentRemaining: Double) -> Color {
         switch RingStyle.tint(forRemaining: percentRemaining) {
-        case .standard: .accentColor
+        case .standard: normal
         case .warning: .orange
         case .critical: .red
         }
     }
 }
 
-/// Date and duration formatting shared by the sections.
+/// Date and number formatting shared by the sections.
 enum PopoverFormat {
     /// The local clock time, for example "03:00" or "3:00 AM".
     static func clockTime(_ date: Date) -> String {
@@ -166,19 +250,6 @@ enum PopoverFormat {
         date.formatted(.dateTime.weekday(.wide).hour().minute())
     }
 
-    /// A duration for speech, for example "2 hours, 14 minutes" (the compact "2h 14m" reads poorly aloud).
-    static func spokenCountdown(until date: Date, from now: Date) -> String {
-        let interval = date.timeIntervalSince(now)
-        guard interval >= 60 else {
-            return String(localized: "less than a minute", comment: "Spoken countdown shorter than one minute")
-        }
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .full
-        formatter.allowedUnits = [.day, .hour, .minute]
-        formatter.maximumUnitCount = 2
-        return formatter.string(from: interval) ?? QuotaFormat.countdown(to: date, from: now)
-    }
-
     /// A token count for speech, for example "4.2 million".
     static func spokenTokens(_ count: Int) -> String {
         count.formatted(.number.notation(.compactName))
@@ -187,49 +258,97 @@ enum PopoverFormat {
 
 // MARK: - No data
 
-/// Shown when no usage snapshot exists at all: where the numbers come from, and the way to Live mode.
+/// Shown when no usage snapshot exists at all: where the numbers come from and the way to Live mode, or, when Live mode
+/// is on, what it is waiting for or needs.
 struct NoDataSection: View {
     let isLiveModeActive: Bool
+    /// Live mode's status; `.off` when Live mode is not in use.
+    let liveStatus: LiveStatus
+    let now: Date
     let openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "circle.dashed")
+            Image(systemName: needsAttention ? "exclamationmark.triangle" : "circle.dashed")
                 .font(.system(size: 40, weight: .light))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(needsAttention ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
                 .accessibilityHidden(true)
 
             VStack(spacing: 6) {
-                Text("No usage data yet")
+                title
                     .font(.headline)
-                if isLiveModeActive {
-                    Text("Live mode is on. The first reading should arrive in a moment.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(
-                        "QuotaRing shows the numbers Claude Code keeps on this Mac. Use Claude Code, or run `/usage` there, and they appear here."
-                    )
+                messages
                     .foregroundStyle(.secondary)
-                    Text("For up-to-date limits without opening Claude Code, you can turn on Live mode in Settings.")
-                        .foregroundStyle(.secondary)
-                }
             }
             .font(.subheadline)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
 
-            if isLiveModeActive {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
+            if !isLiveModeActive {
                 Button("Enable Live mode…", action: openSettings)
                     .controlSize(.large)
                     .help("Open Settings, where Live mode is explained and can be turned on")
+            } else if !needsAttention {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, PopoverMetrics.inset + 6)
         .padding(.vertical, 24)
+    }
+
+    /// Whether Live mode is on but cannot deliver, so waiting is not the right message.
+    private var needsAttention: Bool {
+        guard isLiveModeActive else { return false }
+        switch liveStatus {
+        case .off, .ok: return false
+        case .expired, .noCredential, .rateLimited, .error: return true
+        }
+    }
+
+    @ViewBuilder
+    private var title: some View {
+        if isLiveModeActive {
+            switch liveStatus {
+            case .off, .ok:
+                Text("No usage data yet")
+            case .expired:
+                Text("Live mode is paused")
+            case .noCredential:
+                Text("No Claude Code login found")
+            case .rateLimited:
+                Text("Live mode is rate limited")
+            case .error:
+                Text("Live mode can't reach Anthropic")
+            }
+        } else {
+            Text("No usage data yet")
+        }
+    }
+
+    @ViewBuilder
+    private var messages: some View {
+        if isLiveModeActive {
+            switch liveStatus {
+            case .off, .ok:
+                Text("Live mode is on. The first reading should arrive in a moment.")
+            case .expired:
+                Text("Claude Code's login has expired. Run `claude` once to renew it, and usage will appear here.")
+            case .noCredential:
+                Text("Live mode needs a Claude Code login. Run `claude` once to sign in, and usage will appear here.")
+            case .rateLimited(let until):
+                let countdown = QuotaFormat.countdown(to: until, from: now, locale: .current)
+                Text("Anthropic asked QuotaRing to slow down. It tries again in \(countdown).")
+            case .error:
+                Text("QuotaRing keeps trying. Usage will appear here as soon as a request succeeds.")
+            }
+        } else {
+            Text(
+                "QuotaRing shows the numbers Claude Code keeps on this Mac. Use Claude Code, or run `/usage` there, and they appear here."
+            )
+            Text("For up-to-date limits without opening Claude Code, you can turn on Live mode in Settings.")
+        }
     }
 }
 
@@ -267,5 +386,19 @@ struct NoDataSection: View {
 
     #Preview("No data") {
         PopoverView(model: PopoverPreviewSupport.emptyModel())
+    }
+
+    #Preview("No data, Live mode states") {
+        let now = Date()
+        VStack(spacing: 0) {
+            NoDataSection(isLiveModeActive: true, liveStatus: .ok, now: now, openSettings: {})
+            Divider()
+            NoDataSection(isLiveModeActive: true, liveStatus: .expired, now: now, openSettings: {})
+            Divider()
+            NoDataSection(
+                isLiveModeActive: true, liveStatus: .rateLimited(until: now.addingTimeInterval(240)), now: now,
+                openSettings: {})
+        }
+        .frame(width: PopoverMetrics.width)
     }
 #endif

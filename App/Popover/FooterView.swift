@@ -1,8 +1,8 @@
 import QuotaRingCore
 import SwiftUI
 
-/// Something the footer tells the user about the data: Live mode needs attention, or the numbers are old.
-struct FooterNotice: Identifiable {
+/// Something to tell the user about the data: Live mode needs attention, or the numbers are old.
+struct PopoverNotice: Identifiable {
     enum Style {
         /// Something needs the user to act or wait (Live mode cannot fetch).
         case warning
@@ -17,36 +17,36 @@ struct FooterNotice: Identifiable {
     /// The notices for a Live mode status and the age of the data. Empty when everything is fine.
     ///
     /// - Parameter liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown.
-    static func notices(liveStatus: LiveStatus, isStale: Bool, now: Date) -> [FooterNotice] {
-        var notices: [FooterNotice] = []
+    static func notices(liveStatus: LiveStatus, isStale: Bool, now: Date) -> [PopoverNotice] {
+        var notices: [PopoverNotice] = []
         switch liveStatus {
         case .off, .ok:
             break
         case .expired:
             notices.append(
-                FooterNotice(
+                PopoverNotice(
                     id: "expired", style: .warning,
                     message: "Live mode paused: Claude Code login expired — run `claude` once to renew"))
         case .noCredential:
             notices.append(
-                FooterNotice(
+                PopoverNotice(
                     id: "noCredential", style: .warning,
                     message: "Live mode found no Claude Code login — run `claude` once to sign in"))
         case .rateLimited(let until):
             let countdown = QuotaFormat.countdown(to: until, from: now, locale: .current)
             notices.append(
-                FooterNotice(
+                PopoverNotice(
                     id: "rateLimited", style: .warning,
                     message: "Live mode is rate limited — trying again in \(countdown)"))
         case .error:
             notices.append(
-                FooterNotice(
+                PopoverNotice(
                     id: "error", style: .warning,
                     message: "Live mode could not reach Anthropic — showing the last known usage"))
         }
         if isStale {
             notices.append(
-                FooterNotice(
+                PopoverNotice(
                     id: "stale", style: .info,
                     message: "Data is out of date — run `/usage` in Claude Code, or open it, to refresh"))
         }
@@ -54,11 +54,28 @@ struct FooterNotice: Identifiable {
     }
 }
 
-/// The popover's bottom bar: where the numbers came from and how old they are, hints, and Refresh, Settings and Quit.
+/// The hints at the top of the scrollable content: one row per notice, nothing when there are none.
+struct NoticeStack: View {
+    let notices: [PopoverNotice]
+
+    var body: some View {
+        if !notices.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(notices) { notice in
+                    NoticeRow(notice: notice)
+                }
+            }
+            .padding(.horizontal, PopoverMetrics.inset)
+            .padding(.top, 12)
+        }
+    }
+}
+
+/// The popover's bottom bar, always on screen and always one row: where the numbers came from and how old they are,
+/// and Refresh, Settings and Quit.
 struct FooterView: View {
     /// "Claude Code · 3 min ago", "Live · 1 min ago" or "Demo data"; `nil` before any snapshot exists.
     let source: String?
-    let notices: [FooterNotice]
     let isRefreshing: Bool
     let canRefresh: Bool
     let isCoolingDown: Bool
@@ -67,23 +84,18 @@ struct FooterView: View {
     let onQuit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(notices) { notice in
-                NoticeRow(notice: notice)
+        HStack(spacing: 2) {
+            if let source {
+                Text(source)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            HStack(spacing: 2) {
-                if let source {
-                    Text(source)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: 8)
-                refreshButton
-                settingsButton
-                quitButton
-            }
+            Spacer(minLength: 8)
+            refreshButton
+            settingsButton
+            quitButton
         }
         .padding(.horizontal, PopoverMetrics.inset)
         .padding(.vertical, 10)
@@ -147,7 +159,7 @@ struct FooterView: View {
 
 /// One hint line with an icon, in a faint tinted box.
 private struct NoticeRow: View {
-    let notice: FooterNotice
+    let notice: PopoverNotice
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -216,27 +228,26 @@ private struct FooterIconButtonStyle: ButtonStyle {
 #if DEBUG
     #Preview("Footer") {
         FooterView(
-            source: "Claude Code · 3 min ago", notices: [], isRefreshing: false, canRefresh: true,
+            source: "Claude Code · 3 min ago", isRefreshing: false, canRefresh: true,
             isCoolingDown: false, onRefresh: {}, onSettings: {}, onQuit: {}
         )
         .frame(width: PopoverMetrics.width)
     }
 
-    #Preview("Footer, notices") {
+    #Preview("Footer, refreshing") {
         FooterView(
-            source: "Live · 12 min ago",
-            notices: FooterNotice.notices(liveStatus: .expired, isStale: true, now: .now),
-            isRefreshing: true, canRefresh: false, isCoolingDown: false, onRefresh: {}, onSettings: {}, onQuit: {}
+            source: "Live · 12 min ago", isRefreshing: true, canRefresh: false, isCoolingDown: false,
+            onRefresh: {}, onSettings: {}, onQuit: {}
         )
         .frame(width: PopoverMetrics.width)
     }
 
-    #Preview("Footer, rate limited") {
-        FooterView(
-            source: "Live · 1 min ago",
-            notices: FooterNotice.notices(
-                liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), isStale: false, now: .now),
-            isRefreshing: false, canRefresh: false, isCoolingDown: true, onRefresh: {}, onSettings: {}, onQuit: {}
+    #Preview("Notices") {
+        NoticeStack(
+            notices:
+                PopoverNotice.notices(liveStatus: .expired, isStale: true, now: .now)
+                + PopoverNotice.notices(
+                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), isStale: false, now: .now)
         )
         .frame(width: PopoverMetrics.width)
     }

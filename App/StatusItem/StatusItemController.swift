@@ -243,7 +243,7 @@ struct StatusPresentation {
         var label: String
         switch (settings.ringShowsRemaining, session.resetsAt) {
         case (true, let resetsAt?):
-            let countdown = Self.spokenCountdown(to: resetsAt, from: now)
+            let countdown = QuotaFormat.spokenCountdown(to: resetsAt, from: now)
             label = String(
                 localized: "QuotaRing: \(percent) of 5-hour limit remaining, resets in \(countdown)",
                 comment: "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
@@ -253,7 +253,7 @@ struct StatusPresentation {
                 localized: "QuotaRing: \(percent) of 5-hour limit remaining",
                 comment: "VoiceOver label of the menu bar item; the argument is a percentage")
         case (false, let resetsAt?):
-            let countdown = Self.spokenCountdown(to: resetsAt, from: now)
+            let countdown = QuotaFormat.spokenCountdown(to: resetsAt, from: now)
             label = String(
                 localized: "QuotaRing: \(percent) of 5-hour limit used, resets in \(countdown)",
                 comment: "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
@@ -280,19 +280,6 @@ struct StatusPresentation {
                     comment: "Appended to the menu bar VoiceOver label when Live mode cannot fetch")
         }
         accessibilityLabel = label
-    }
-
-    /// A duration for speech, for example "2 hours, 14 minutes" (the compact "2h 14m" reads poorly aloud).
-    private static func spokenCountdown(to date: Date, from now: Date) -> String {
-        let interval = date.timeIntervalSince(now)
-        guard interval >= 60 else {
-            return String(localized: "less than a minute", comment: "Spoken countdown shorter than one minute")
-        }
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .full
-        formatter.allowedUnits = [.day, .hour, .minute]
-        formatter.maximumUnitCount = 2
-        return formatter.string(from: interval) ?? QuotaFormat.countdown(to: date, from: now)
     }
 }
 

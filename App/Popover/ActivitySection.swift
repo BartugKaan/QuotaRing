@@ -21,19 +21,18 @@ struct ActivitySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                SectionHeader("Activity")
-                Spacer(minLength: 12)
-                Picker(selection: $range) {
-                    Text("Session", comment: "Activity range: the current 5-hour session").tag(ActivityRange.session)
-                    Text("Today", comment: "Activity range: since midnight").tag(ActivityRange.today)
-                    Text("7 days", comment: "Activity range: the last seven days").tag(ActivityRange.week)
-                } label: {
-                    Text("Time range", comment: "VoiceOver label of the Activity range control")
+            // The picker is as wide as its labels need; when the header and the picker do not fit side by side (a long
+            // translation), the picker moves under the title and takes the full width.
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    SectionHeader("Activity")
+                    Spacer(minLength: 12)
+                    rangePicker.fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 204)
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader("Activity")
+                    rangePicker
+                }
             }
 
             content
@@ -41,6 +40,18 @@ struct ActivitySection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, PopoverMetrics.inset)
         .padding(.vertical, 14)
+    }
+
+    private var rangePicker: some View {
+        Picker(selection: $range) {
+            Text("Session", comment: "Activity range: the current 5-hour session").tag(ActivityRange.session)
+            Text("Today", comment: "Activity range: since midnight").tag(ActivityRange.today)
+            Text("7 days", comment: "Activity range: the last seven days").tag(ActivityRange.week)
+        } label: {
+            Text("Time range", comment: "VoiceOver label of the Activity range control")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     // MARK: - Content
@@ -57,16 +68,35 @@ struct ActivitySection: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-        } else if let breakdown = activity[range], breakdown.total.total > 0 {
+        } else {
+            // All ranges are laid out on top of each other and only the chosen one is visible, so the block keeps the
+            // height of the tallest one (the 7-day chart) and the popover does not jump when the range changes.
+            ZStack(alignment: .top) {
+                ForEach(ActivityRange.allCases) { candidate in
+                    rangeContent(candidate)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .opacity(candidate == range ? 1 : 0)
+                        .allowsHitTesting(candidate == range)
+                        .accessibilityHidden(candidate != range)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rangeContent(_ candidate: ActivityRange) -> some View {
+        if let breakdown = activity[candidate], breakdown.total.total > 0 {
             VStack(alignment: .leading, spacing: 12) {
                 TotalView(tokens: breakdown.total.total)
-                if range == .week, daily.contains(where: { $0.tokens.total > 0 }) {
+                if candidate == .week, daily.contains(where: { $0.tokens.total > 0 }) {
                     DailyChart(daily: daily, now: now)
                 }
-                HStack(alignment: .top, spacing: 20) {
+                // Model names are short, so that column is capped and projects get the rest of the width; long names
+                // in either column are shortened in the middle.
+                HStack(alignment: .top, spacing: 16) {
                     if !breakdown.byModel.isEmpty {
                         RankedList(title: "Models", rows: Array(breakdown.byModel.prefix(Self.listLimit)))
-                            .frame(width: 128)
+                            .frame(maxWidth: 140, alignment: .leading)
                     }
                     if !breakdown.byProject.isEmpty {
                         RankedList(title: "Projects", rows: Array(breakdown.byProject.prefix(Self.listLimit)))
@@ -172,7 +202,7 @@ private struct DailyChart: View {
                 y: .value("Tokens", day.tokens.total),
                 width: .ratio(0.62)
             )
-            .foregroundStyle(isToday(day.day) ? Color.accentColor : Color.accentColor.opacity(0.4))
+            .foregroundStyle(isToday(day.day) ? UsageTint.normal : UsageTint.normal.opacity(0.4))
             .cornerRadius(3)
             .accessibilityLabel(day.day.formatted(.dateTime.weekday(.wide)))
             .accessibilityValue(Text("\(PopoverFormat.spokenTokens(day.tokens.total)) tokens"))

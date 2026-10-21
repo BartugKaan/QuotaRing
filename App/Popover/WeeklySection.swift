@@ -22,7 +22,7 @@ struct WeeklySection: View {
             SectionHeader("Weekly limits")
 
             if !report.weeklyLimits.isEmpty || showsExtraUsage {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(report.weeklyLimits) { limit in
                         WeeklyLimitRow(limit: limit, now: now)
                     }
@@ -48,38 +48,81 @@ struct WeeklySection: View {
 // MARK: - A bar row
 
 /// A title with a secondary detail and the value on the right, and under them a full-width progress bar.
+///
+/// The detail sits next to the title when everything fits on one line, and wraps under it otherwise, so a long
+/// translation is never cut off.
 private struct UsageBarRow: View {
     let title: Text
     let detail: Text
     /// The filled share of the bar, `0...1`.
     let fraction: Double
-    /// Decides the color: the accent color, orange at 20 % or less left, red at 5 % or less.
+    /// Decides the color: the normal blue, orange at 20 % or less left, red at 5 % or less.
     let percentRemaining: Double
     let valueText: Text
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                title
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                detail
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                valueText
-                    .font(.callout)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize()
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    titleLabel.fixedSize()
+                    detailLabel.fixedSize()
+                    Spacer(minLength: 8)
+                    valueLabel.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        titleLabel.fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        valueLabel.fixedSize()
+                    }
+                    detailLabel.fixedSize(horizontal: false, vertical: true)
+                }
             }
             ProgressView(value: fraction, total: 1)
-                .progressViewStyle(.linear)
-                .tint(UsageTint.color(percentRemaining: percentRemaining))
+                .progressViewStyle(UsageBarStyle(tint: UsageTint.color(percentRemaining: percentRemaining)))
         }
+    }
+
+    private var titleLabel: some View {
+        title.font(.callout.weight(.medium))
+    }
+
+    private var detailLabel: some View {
+        detail
+            .font(.subheadline)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+    }
+
+    private var valueLabel: some View {
+        valueText
+            .font(.callout)
+            .monospacedDigit()
+    }
+}
+
+/// A 6 pt capsule bar: a faint track under a colored fill.
+///
+/// The system's linear style cannot be relied on here: with an explicit tint other than the accent color (orange and
+/// red warnings) it can lose its track in light mode, and it turns gray whenever its window is not the key window.
+private struct UsageBarStyle: ProgressViewStyle {
+    let tint: Color
+    private let height: CGFloat = 6
+
+    func makeBody(configuration: Configuration) -> some View {
+        let fraction = min(1, max(0, configuration.fractionCompleted ?? 0))
+        return GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                if fraction > 0 {
+                    // Never narrower than the bar is high, so a small share still shows as a dot.
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: max(height, proxy.size.width * fraction))
+                }
+            }
+        }
+        .frame(height: height)
     }
 }
 
@@ -93,8 +136,8 @@ private struct WeeklyLimitRow: View {
         UsageBarRow(
             title: Text(title),
             detail: resetCaption,
-            fraction: min(1, max(0, limit.percentUsed / 100)),
-            percentRemaining: limit.percentRemaining,
+            fraction: min(1, max(0, current.percentUsed / 100)),
+            percentRemaining: current.percentRemaining,
             valueText: Text("\(percentText) used")
         )
         .accessibilityElement(children: .ignore)
@@ -115,8 +158,13 @@ private struct WeeklyLimitRow: View {
         }
     }
 
+    /// The limit as it applies now: a window whose reset time has passed counts as fresh (0 % used), like the session.
+    private var current: UsageLimit {
+        limit.effective(at: now)
+    }
+
     private var percentText: String {
-        QuotaFormat.percent(limit.percentUsed, locale: .current)
+        QuotaFormat.percent(current.percentUsed, locale: .current)
     }
 
     private var resetCaption: Text {
@@ -263,7 +311,8 @@ private struct BreakdownView: View {
 
     private var segments: [Segment] {
         var next = 0
-        return rows.map { row in
+        // The position is the identity: keys are not guaranteed to be unique in a response.
+        return rows.enumerated().map { index, row in
             let color: Color
             if row.key == "other" {
                 color = .gray
@@ -271,7 +320,7 @@ private struct BreakdownView: View {
                 color = Self.palette[next % Self.palette.count]
                 next += 1
             }
-            return Segment(id: row.key, name: row.displayName, percent: row.percent, color: color)
+            return Segment(id: index, name: row.displayName, percent: row.percent, color: color)
         }
     }
 
@@ -285,7 +334,7 @@ private struct BreakdownView: View {
     private static let palette: [Color] = [.blue, .purple, .teal, .pink, .indigo, .brown]
 
     struct Segment: Identifiable {
-        let id: String
+        let id: Int
         let name: String
         let percent: Double
         let color: Color

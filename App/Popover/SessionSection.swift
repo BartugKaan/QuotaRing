@@ -49,7 +49,7 @@ struct SessionSection: View {
     }
 
     private var tint: Color {
-        guard let session else { return .accentColor }
+        guard let session else { return UsageTint.normal }
         return UsageTint.color(percentRemaining: session.percentRemaining)
     }
 
@@ -89,6 +89,8 @@ struct SessionSection: View {
                     Text(PopoverFormat.clockTime(resetsAt))
                 }
                 .monospacedDigit()
+            } else if session.percentUsed > 0 {
+                Text("Reset time unknown")
             } else {
                 Text("Waiting for fresh data")
             }
@@ -112,12 +114,14 @@ struct SessionSection: View {
                 : String(localized: "\(percent) used", comment: "VoiceOver: share of the limit already used")
         ]
         if let resetsAt = session.resetsAt {
-            let countdown = PopoverFormat.spokenCountdown(until: resetsAt, from: now)
+            let countdown = QuotaFormat.spokenCountdown(to: resetsAt, from: now)
             let time = PopoverFormat.clockTime(resetsAt)
             parts.append(
                 String(
                     localized: "Resets in \(countdown), at \(time)",
                     comment: "VoiceOver: a duration such as 2 hours, 14 minutes, then a clock time"))
+        } else if session.percentUsed > 0 {
+            parts.append(String(localized: "Reset time unknown"))
         } else {
             parts.append(String(localized: "Waiting for fresh data"))
         }
