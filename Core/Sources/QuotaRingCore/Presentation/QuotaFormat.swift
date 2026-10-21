@@ -32,6 +32,23 @@ public enum QuotaFormat {
         return formatter.string(from: interval) ?? lessThanMinute
     }
 
+    /// The same duration as ``countdown(to:from:locale:)``, spelled out for speech, for example
+    /// `"2 hours, 14 minutes"` (the compact `"2h 14m"` reads poorly aloud). Under a minute, including a time already
+    /// past, it is `"less than a minute"`.
+    public static func spokenCountdown(to: Date, from: Date, locale: Locale = .current) -> String {
+        let interval = to.timeIntervalSince(from)
+        guard interval >= 60 else { return template("format.spokenLessThanMinute", locale: locale) }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        let formatter = DateComponentsFormatter()
+        formatter.calendar = calendar
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 2
+        return formatter.string(from: interval) ?? countdown(to: to, from: from, locale: locale)
+    }
+
     /// How long ago `date` was, as of `now`: `"just now"`, `"3 min ago"`, `"2 h ago"` or `"4 d ago"`.
     /// A date in the future counts as just now.
     public static func age(of date: Date, now: Date, locale: Locale = .current) -> String {

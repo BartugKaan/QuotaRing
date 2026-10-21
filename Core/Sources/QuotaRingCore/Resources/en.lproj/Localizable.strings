@@ -1,6 +1,9 @@
 /* Countdown shorter than one minute. */
 "format.lessThanMinute" = "<1m";
 
+/* Spoken countdown shorter than one minute (for VoiceOver). */
+"format.spokenLessThanMinute" = "less than a minute";
+
 /* Age of a snapshot under one minute. */
 "format.justNow" = "just now";
 

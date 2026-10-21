@@ -1,17 +1,24 @@
 import Foundation
 
-extension UsageSnapshot {
-    /// The session limit as it should be shown at `now`.
+extension UsageLimit {
+    /// The limit as it should be shown at `now`.
     ///
-    /// A snapshot only knows the session as of when it was fetched. Once the session's reset time has passed the old
-    /// percentage no longer applies, so the limit is returned as a fresh window: `percentUsed` 0 and no reset time.
+    /// A limit only knows its usage as of when it was fetched. Once its reset time has passed the old percentage no
+    /// longer applies, so a fresh window is returned: `percentUsed` 0 and no reset time, everything else unchanged. A
+    /// limit without a reset time, or one that resets later, is returned as it is.
+    public func effective(at now: Date) -> UsageLimit {
+        guard let resetsAt, resetsAt <= now else { return self }
+        var fresh = self
+        fresh.percentUsed = 0
+        fresh.resetsAt = nil
+        return fresh
+    }
+}
+
+extension UsageSnapshot {
+    /// The session limit as it should be shown at `now` (see ``UsageLimit/effective(at:)``).
     public func session(at now: Date) -> UsageLimit? {
-        guard var session = report.session else { return nil }
-        if let resetsAt = session.resetsAt, resetsAt <= now {
-            session.percentUsed = 0
-            session.resetsAt = nil
-        }
-        return session
+        report.session?.effective(at: now)
     }
 
     /// Whether the snapshot is older than `maxAge` seconds at `now`.

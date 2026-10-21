@@ -48,6 +48,35 @@ import Testing
         #expect(snapshot(session: nil).session(at: now) == nil)
     }
 
+    @Test func effectiveLimitIsFreshOnceResetTimePassed() {
+        let weekly = UsageLimit(
+            kind: .weeklyScoped, group: "weekly", percentUsed: 62, resetsAt: now.addingTimeInterval(-1),
+            scopeName: "Opus", severity: "high", isActive: true)
+        let effective = weekly.effective(at: now)
+        #expect(effective.percentUsed == 0)
+        #expect(effective.resetsAt == nil)
+        // Everything else is preserved.
+        #expect(effective.id == weekly.id)
+        #expect(effective.kind == .weeklyScoped)
+        #expect(effective.scopeName == "Opus")
+        #expect(effective.group == "weekly")
+        #expect(effective.severity == "high")
+        #expect(effective.isActive)
+
+        // Exactly at the reset instant counts as reset.
+        let atReset = UsageLimit(kind: .weeklyAll, percentUsed: 41, resetsAt: now)
+        #expect(atReset.effective(at: now).percentUsed == 0)
+        #expect(atReset.effective(at: now).resetsAt == nil)
+    }
+
+    @Test func effectiveLimitUnchangedBeforeResetOrWithoutResetTime() {
+        let pending = UsageLimit(kind: .weeklyAll, percentUsed: 41, resetsAt: now.addingTimeInterval(60))
+        #expect(pending.effective(at: now) == pending)
+
+        let open = UsageLimit(kind: .weeklyAll, percentUsed: 41)
+        #expect(open.effective(at: now) == open)
+    }
+
     @Test func staleness() {
         let fresh = snapshot(session: nil, fetchedAt: now.addingTimeInterval(-300))
         #expect(!fresh.isStale(at: now, maxAge: 300))
