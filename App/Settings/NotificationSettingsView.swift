@@ -7,16 +7,6 @@ struct NotificationSettingsView: View {
     @Bindable var settings: SettingsStore
     let notifications: NotificationService
     @State private var permission: NotificationPermission?
-    /// A fixed permission for previews and screenshots; `nil` reads the real one from macOS.
-    private let previewPermission: NotificationPermission?
-
-    init(settings: SettingsStore, notifications: NotificationService, previewPermission: NotificationPermission? = nil)
-    {
-        self.settings = settings
-        self.notifications = notifications
-        self.previewPermission = previewPermission
-        _permission = State(initialValue: previewPermission)
-    }
 
     var body: some View {
         Form {
@@ -40,9 +30,7 @@ struct NotificationSettingsView: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
-        .task {
-            if previewPermission == nil { await refreshPermission() }
-        }
+        .task { await refreshPermission() }
         // The user may change the permission in System Settings and come back.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await refreshPermission() }
@@ -86,7 +74,7 @@ struct NotificationSettingsView: View {
     private var needsPermissionNote: Bool {
         switch permission {
         case .denied: true
-        case .notDetermined: anyNotificationEnabled
+        case .notDetermined: anyNotificationEnabled && notifications.allowsPermissionRequests
         case .allowed, nil: false
         }
     }
@@ -102,7 +90,7 @@ struct NotificationSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Open Notification Settings…", action: notifications.openSystemSettings)
             }
-        case .notDetermined where anyNotificationEnabled:
+        case .notDetermined where anyNotificationEnabled && notifications.allowsPermissionRequests:
             VStack(alignment: .leading, spacing: 6) {
                 Label("macOS has not been asked to allow notifications from QuotaRing yet.", systemImage: "bell")
                     .font(.callout)

@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// What Live mode reads, where it sends it, and what to expect. The full version is shown in the consent sheet; the
-/// compact one in the Data settings. Keep the two saying the same thing.
+/// What Live mode reads, where it sends it, and what to expect. The single source of this wording: the full version is
+/// shown in the consent sheet, the compact one in onboarding and the Data settings. Both carry the same four facts
+/// (what is read, where it goes, the Keychain prompt, the undocumented endpoint and non-affiliation), so change them
+/// together.
 struct LiveModeDisclosure: View {
     var compact = false
 
@@ -37,7 +39,7 @@ struct LiveModeDisclosure: View {
             title: "Keychain prompt",
             text: """
                 macOS may ask whether QuotaRing can use Claude Code's Keychain item. Choose "Always Allow" \
-                so it does not ask again.
+                to avoid repeated prompts.
                 """)
         InfoRow(
             symbol: "exclamationmark.triangle",
@@ -53,8 +55,8 @@ struct LiveModeDisclosure: View {
         InfoRow(
             symbol: "key",
             text: """
-                Reads Claude Code's login from your Keychain (or Claude Code's credentials file): read-only, again \
-                on each refresh, never stored.
+                Reads Claude Code's login from your Keychain, or from Claude Code's credentials file if there is no \
+                Keychain item. Read-only, again on each refresh, never stored.
                 """)
         InfoRow(
             symbol: "network",
@@ -63,10 +65,15 @@ struct LiveModeDisclosure: View {
                 sent anywhere.
                 """)
         InfoRow(
+            symbol: "lock.shield",
+            text: """
+                macOS may ask to allow Keychain access: choose "Always Allow" to avoid repeated prompts.
+                """)
+        InfoRow(
             symbol: "exclamationmark.triangle",
             text: """
-                Uses an undocumented endpoint, so it may stop working. macOS may ask for Keychain access: choose \
-                "Always Allow".
+                Uses an undocumented endpoint that may stop working. QuotaRing is independent and not affiliated \
+                with Anthropic.
                 """)
     }
 }

@@ -14,7 +14,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     ///   - onClose: called once, after onboarding was completed and the window is gone.
     init(
         settings: SettingsStore,
-        requestNotificationPermission: @escaping @MainActor () -> Void,
+        requestNotificationPermission: @escaping @MainActor () async -> Void,
         onClose: @escaping () -> Void
     ) {
         model = OnboardingModel(settings: settings, requestNotificationPermission: requestNotificationPermission)
@@ -30,7 +30,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    func makeWindow() -> NSWindow {
+    private func makeWindow() -> NSWindow {
         let hosting = NSHostingController(
             rootView: OnboardingView(model: model) { [weak self] enableLiveMode in
                 self?.choose(enableLiveMode: enableLiveMode)

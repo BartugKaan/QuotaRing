@@ -7,13 +7,7 @@ struct DataSettingsView: View {
     @Bindable var settings: SettingsStore
     /// Demo mode runs on fixture data: the sources and Live mode cannot be changed.
     let isDemo: Bool
-    @State private var showsLiveModeConsent: Bool
-
-    init(settings: SettingsStore, isDemo: Bool, showsLiveModeConsent: Bool = false) {
-        self.settings = settings
-        self.isDemo = isDemo
-        _showsLiveModeConsent = State(initialValue: showsLiveModeConsent)
-    }
+    @State private var showsLiveModeConsent = false
 
     private var paths: ClaudePaths {
         ClaudePaths(customConfigDirectory: settings.customConfigDirectory)
@@ -27,6 +21,9 @@ struct DataSettingsView: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+        // The Settings window is as tall as this content, so on a short screen (or with longer translations) it
+        // scrolls instead of growing past the visible screen. Chrome: the window's title bar and toolbar.
+        .scrollsBeyond(VisibleScreen.contentHeight(reserving: 88))
         .sheet(isPresented: $showsLiveModeConsent) {
             LiveModeConsentSheet(
                 onEnable: {
@@ -54,7 +51,7 @@ struct DataSettingsView: View {
         } header: {
             Text("Where QuotaRing gets its numbers")
         } footer: {
-            Text("Both are read on this Mac only. Nothing is sent anywhere.")
+            Text("These two are read on this Mac only; they are never sent anywhere.")
         }
     }
 
@@ -63,12 +60,17 @@ struct DataSettingsView: View {
     private var directorySection: some View {
         Section {
             HStack {
-                Text(Self.displayPath(paths.configDirectory))
+                let directory = Self.displayPath(paths.configDirectory)
+                Text(directory)
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
                     .help(paths.configDirectory.path)
+                    .accessibilityLabel(
+                        String(
+                            localized: "Claude config directory: \(directory)",
+                            comment: "VoiceOver label of the folder path; the argument is a path such as ~/.claude"))
                 Spacer(minLength: 8)
                 Button("Choose…") { Task { await chooseDirectory() } }
                 Button("Reset to default") { settings.customConfigDirectory = nil }
@@ -139,6 +141,8 @@ struct DataSettingsView: View {
         Section {
             Toggle("Live mode", isOn: liveModeBinding)
                 .disabled(isDemo || !settings.hasCompletedOnboarding)
+                .accessibilityHint(
+                    Text("The text below explains what Live mode reads and where it sends it."))
             LiveModeDisclosure(compact: true)
         } footer: {
             Text(liveModeFooter)

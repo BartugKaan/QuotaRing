@@ -5,17 +5,8 @@ import SwiftUI
 /// Launch at login, refresh interval and what the menu bar item shows.
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
-    @State private var launchStatus: SMAppService.Status
+    @State private var launchStatus = LaunchAtLogin.status
     @State private var launchError: String?
-    /// A fixed login item state for previews and screenshots; `nil` reads the real one from macOS.
-    private let previewStatus: SMAppService.Status?
-
-    init(settings: SettingsStore, previewStatus: SMAppService.Status? = nil, previewError: String? = nil) {
-        self.settings = settings
-        self.previewStatus = previewStatus
-        _launchStatus = State(initialValue: previewStatus ?? LaunchAtLogin.status)
-        _launchError = State(initialValue: previewError)
-    }
 
     var body: some View {
         Form {
@@ -39,7 +30,11 @@ struct GeneralSettingsView: View {
                     }
                 }
             } footer: {
-                Text("Only affects Live mode; the Claude Code cache is checked every 30 s.")
+                Text(
+                    """
+                    Live mode asks Anthropic for new numbers at most this often. Numbers older than twice this are \
+                    shown as out of date. The Claude Code cache is checked every 30 s.
+                    """)
             }
 
             Section("Menu bar") {
@@ -52,9 +47,7 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear {
-            if previewStatus == nil { refreshLaunchStatus() }
-        }
+        .onAppear(perform: refreshLaunchStatus)
         // The user may approve or remove the login item in System Settings and come back.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshLaunchStatus()

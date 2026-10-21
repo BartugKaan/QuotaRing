@@ -10,11 +10,11 @@ final class OnboardingModel {
     private(set) var isFinished = false
 
     @ObservationIgnored private let settings: SettingsStore
-    @ObservationIgnored private let requestNotificationPermission: @MainActor () -> Void
+    @ObservationIgnored private let requestNotificationPermission: @MainActor () async -> Void
 
-    /// - Parameter requestNotificationPermission: shows the system notification prompt; called only when the user
-    ///   left the notification checkbox on.
-    init(settings: SettingsStore, requestNotificationPermission: @escaping @MainActor () -> Void) {
+    /// - Parameter requestNotificationPermission: shows the system notification prompt and returns when the user has
+    ///   answered it; called only when the user left the notification checkbox on.
+    init(settings: SettingsStore, requestNotificationPermission: @escaping @MainActor () async -> Void) {
         self.settings = settings
         self.requestNotificationPermission = requestNotificationPermission
     }
@@ -23,20 +23,38 @@ final class OnboardingModel {
     ///
     /// Live mode turns on only here, through the explicit "Enable Live mode" button; every other way of leaving the
     /// window (the default button, Return, closing the window) leaves it off.
+    ///
+    /// Two system prompts must not appear at once. Live mode's first Keychain read can raise macOS's Keychain prompt, so
+    /// when the user wants both, the notification prompt comes first and Live mode starts (consent recorded, onboarding
+    /// completed) only after it was answered. Quitting in between leaves onboarding incomplete, so it simply shows
+    /// again at the next launch.
     func finish(enableLiveMode: Bool) {
         guard !isFinished else { return }
         isFinished = true
 
-        settings.liveModeEnabled = enableLiveMode
-        if notifyNearLimit {
-            if settings.notificationThresholds.isEmpty {
-                settings.notificationThresholds = SettingsStore.defaultNotificationThresholds
-            }
-            // The only place besides Settings that may show the system permission prompt.
-            requestNotificationPermission()
-        } else {
+        guard notifyNearLimit else {
             settings.notificationThresholds = []
+            complete(enableLiveMode: enableLiveMode)
+            return
         }
+        if settings.notificationThresholds.isEmpty {
+            settings.notificationThresholds = SettingsStore.defaultNotificationThresholds
+        }
+        // The only place besides Settings that may show the system notification prompt.
+        let request = requestNotificationPermission
+        if enableLiveMode {
+            Task {
+                await request()
+                complete(enableLiveMode: true)
+            }
+        } else {
+            complete(enableLiveMode: false)
+            Task { await request() }
+        }
+    }
+
+    private func complete(enableLiveMode: Bool) {
+        settings.liveModeEnabled = enableLiveMode
         // Last, so Live mode (which needs both) never sees a half-finished state.
         settings.hasCompletedOnboarding = true
     }
@@ -52,49 +70,12 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             header
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("By default, QuotaRing works entirely on this Mac:")
-                    .font(.headline)
-                InfoRow(
-                    symbol: "doc.text",
-                    text: "It reads the usage numbers Claude Code already saves in its own cache file.")
-                InfoRow(
-                    symbol: "text.alignleft",
-                    text:
-                        "It counts tokens from Claude Code's local transcripts. The text of your conversations is not kept."
-                )
-                InfoRow(
-                    symbol: "lock.shield",
-                    text: "Nothing leaves your Mac: no account, no analytics, no network connections.")
+            // Scrolls on a short screen (or with longer translations), so the buttons below stay reachable.
+            VStack(alignment: .leading, spacing: 18) {
+                defaultModeCard
+                liveModeCard
             }
-            .card()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Optional — Live mode:")
-                    .font(.headline)
-                Text("Live mode asks Anthropic for fresh numbers, even when Claude Code has not run for a while.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                InfoRow(
-                    symbol: "key",
-                    text: """
-                        It reads Claude Code's login from your Keychain: read-only, again on every refresh, and \
-                        never stored by QuotaRing.
-                        """)
-                InfoRow(
-                    symbol: "network",
-                    text: "It sends that login only to **api.anthropic.com**, to ask for your usage. Nothing else.")
-                InfoRow(
-                    symbol: "exclamationmark.triangle",
-                    text: """
-                        macOS may ask to allow Keychain access; choose "Always Allow" to avoid repeated prompts. \
-                        It uses an undocumented endpoint that may stop working.
-                        """)
-                Text("You can turn Live mode on or off at any time in Settings → Data.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .card()
+            .scrollsBeyond(VisibleScreen.contentHeight(reserving: 260))
 
             Toggle("Notify me when I'm close to my limit", isOn: $model.notifyNearLimit)
 
@@ -108,6 +89,41 @@ struct OnboardingView: View {
         }
         .padding(24)
         .frame(width: 520)
+    }
+
+    private var defaultModeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("By default, QuotaRing works entirely on this Mac:")
+                .font(.headline)
+            InfoRow(
+                symbol: "doc.text",
+                text: "It reads the usage numbers Claude Code already saves in its own cache file.")
+            InfoRow(
+                symbol: "text.alignleft",
+                text:
+                    "It counts tokens from Claude Code's local transcripts. The text of your conversations is not kept."
+            )
+            InfoRow(
+                symbol: "lock.shield",
+                text: "Nothing leaves your Mac: no account, no analytics, no network connections.")
+        }
+        .card()
+    }
+
+    /// The same wording as the consent sheet in Settings (the shared ``LiveModeDisclosure``), so the two cannot drift.
+    private var liveModeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Optional — Live mode:")
+                .font(.headline)
+            Text("Live mode asks Anthropic for fresh numbers, even when Claude Code has not run for a while.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            LiveModeDisclosure(compact: true)
+            Text("You can turn Live mode on or off at any time in Settings → Data.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .card()
     }
 
     private var header: some View {

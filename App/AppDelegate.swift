@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created on first use, so SwiftUI scenes may reference them before the app has finished launching.
     lazy var settings = SettingsStore()
     lazy var model = AppModel(settings: settings, isDemo: isDemo)
-    lazy var notificationService = NotificationService()
+    /// Demo mode never shows the real notification permission prompt.
+    lazy var notificationService = NotificationService(allowsPermissionRequests: !isDemo)
 
     private var statusItemController: StatusItemController?
     private var onboardingController: OnboardingWindowController?
@@ -29,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notifications = notificationService
         let controller = OnboardingWindowController(
             settings: settings,
-            requestNotificationPermission: { Task { await notifications.requestAuthorizationIfNeeded() } },
+            requestNotificationPermission: { await notifications.requestAuthorizationIfNeeded() },
             onClose: { [weak self] in self?.onboardingController = nil }
         )
         onboardingController = controller

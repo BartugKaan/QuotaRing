@@ -18,13 +18,17 @@ enum NotificationPermission: Sendable, Equatable {
 ///
 /// Everything stays on this Mac: the notifications are built from the usage snapshot and posted to
 /// `UNUserNotificationCenter`; nothing is sent anywhere. The service never asks for permission by itself while posting.
-/// Only ``requestAuthorization()`` does, and it is called when the user agrees to notifications (onboarding, or turning
-/// a notification setting on).
+/// Only ``requestAuthorizationIfNeeded()`` does, and it is called when the user agrees to notifications (onboarding, or
+/// turning a notification setting on).
 @MainActor
 final class NotificationService: NSObject, UsageNotifier {
     private let center: UNUserNotificationCenter
+    /// Whether ``requestAuthorizationIfNeeded()`` may show the system permission prompt. `false` in demo mode, which
+    /// never touches real notification permission.
+    let allowsPermissionRequests: Bool
 
-    init(center: UNUserNotificationCenter = .current()) {
+    init(allowsPermissionRequests: Bool = true, center: UNUserNotificationCenter = .current()) {
+        self.allowsPermissionRequests = allowsPermissionRequests
         self.center = center
         super.init()
         // Without a delegate macOS would not show banners while QuotaRing is the active app (its Settings window is).
@@ -62,11 +66,12 @@ final class NotificationService: NSObject, UsageNotifier {
         Self.permission(of: await center.notificationSettings().authorizationStatus)
     }
 
-    /// Shows the system permission prompt, but only when macOS has not asked yet. Returns the resulting permission.
+    /// Shows the system permission prompt, but only when macOS has not asked yet (and never when
+    /// ``allowsPermissionRequests`` is `false`). Returns the permission afterwards.
     @discardableResult
     func requestAuthorizationIfNeeded() async -> NotificationPermission {
         let current = await permission()
-        guard current == .notDetermined else { return current }
+        guard current == .notDetermined, allowsPermissionRequests else { return current }
         do {
             _ = try await center.requestAuthorization(options: [.alert])
         } catch {
