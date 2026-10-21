@@ -53,22 +53,22 @@ public enum TranscriptLineParser {
     ///
     /// - `<repo>/.claude/worktrees/<name>[/...]`: Claude Code's subagent and worktree folders; the project is `<repo>`,
     ///   the folder that contains `.claude`.
-    /// - `<repo>/.worktrees/<name>[/...]` and `<repo>/worktrees/<name>[/...]`: the common git worktree layouts; the
-    ///   project is `<repo>`, the folder directly above the marker.
+    /// - `<repo>/.worktrees/<name>[/...]`: the common git worktree layout; the project is `<repo>`, the folder
+    ///   directly above the marker.
     ///
-    /// A marker only counts when a `<name>` folder follows it and a `<repo>` folder precedes it, so a working directory
-    /// that is itself `worktrees` (or `.claude/worktrees`) is not rewritten. Without a marker the project is the last
-    /// path component, and `"Unknown"` when there is none (empty string or `/`).
+    /// Only these distinctive names count. A plain `worktrees` folder is too common to mean anything (`~/worktrees/app`
+    /// and `~/dev/worktrees/app` are projects named `app`), so it is never a marker. A marker also needs a `<name>`
+    /// folder below it and a `<repo>` folder above it, so a working directory that is itself `.worktrees` or
+    /// `.claude/worktrees` is not rewritten. Without a marker the project is the last path component, and `"Unknown"`
+    /// when there is none (empty string or `/`).
     static func projectName(fromCWD cwd: String) -> String {
         let components = cwd.split(separator: "/", omittingEmptySubsequences: true)
         for index in components.indices.dropFirst() {
-            let name = components[index]
             let isClaudeWorktrees =
-                name == ".claude" && index + 2 < components.endIndex && components[index + 1] == "worktrees"
-            let isPlainWorktrees =
-                (name == ".worktrees" || name == "worktrees") && index + 1 < components.endIndex
-                && components[index - 1] != ".claude"
-            if isClaudeWorktrees || isPlainWorktrees {
+                components[index] == ".claude" && index + 2 < components.endIndex
+                && components[index + 1] == "worktrees"
+            let isDotWorktrees = components[index] == ".worktrees" && index + 1 < components.endIndex
+            if isClaudeWorktrees || isDotWorktrees {
                 return String(components[index - 1])
             }
         }

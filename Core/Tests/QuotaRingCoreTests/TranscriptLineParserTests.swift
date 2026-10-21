@@ -142,11 +142,14 @@ func assistantLine(
         ("/Users/test/dev/alpha/.claude/worktrees/agent-x/Core", "alpha"),
         ("/Users/test/dev/alpha/.claude/worktrees/agent-x/Core/Sources/", "alpha"),
         ("/Users/test/dev/alpha/.claude/worktrees/agent-x/.claude/worktrees/agent-y", "alpha"),
-        // `.worktrees/<name>` and `worktrees/<name>` directly inside a repository folder.
+        // `.worktrees/<name>` directly inside a repository folder.
         ("/Users/test/dev/alpha/.worktrees/feature-y", "alpha"),
         ("/Users/test/dev/alpha/.worktrees/feature-y/App/", "alpha"),
-        ("/Users/test/dev/alpha/worktrees/feature-y", "alpha"),
-        ("/Users/test/dev/alpha/worktrees/feature-y/Core", "alpha"),
+        // A plain `worktrees` folder is too common to be a marker.
+        ("/Users/test/worktrees/myrepo", "myrepo"),
+        ("/Users/test/dev/worktrees/foo", "foo"),
+        ("/Users/test/dev/alpha/worktrees/feature-y", "feature-y"),
+        ("/Users/test/dev/alpha/worktrees/feature-y/Core", "Core"),
         // A marker without a `<name>` below it, or without a repository above it, is just a folder.
         ("/Users/test/dev/alpha/worktrees", "worktrees"),
         ("/Users/test/dev/alpha/worktrees/", "worktrees"),
