@@ -654,6 +654,7 @@ extension CacheReadError {
         case .fileTooLarge: "fileTooLarge"
         case .unreadable: "unreadable"
         case .malformed: "malformed"
+        case .accountMismatch: "accountMismatch"
         }
     }
 }

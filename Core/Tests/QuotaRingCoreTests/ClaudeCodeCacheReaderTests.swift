@@ -79,14 +79,17 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         #expect(try ClaudeCodeCacheReader(fileURL: url).read() == nil)
     }
 
-    @Test func accountMismatchReturnsNil() throws {
+    @Test func accountMismatchThrows() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }
         let url = try sandbox.writeFixture { root in
             root["oauthAccount"] = ["accountUuid": "00000000-0000-4000-8000-0000000000ff"]
         }
 
-        #expect(try ClaudeCodeCacheReader(fileURL: url).read() == nil)
+        // The cache belongs to another account: the app must drop what it showed, not keep it.
+        #expect(throws: CacheReadError.accountMismatch) {
+            try ClaudeCodeCacheReader(fileURL: url).read()
+        }
     }
 
     @Test func accountComparisonIgnoresCase() throws {

@@ -11,6 +11,9 @@ public enum CacheReadError: Error, Equatable {
     case unreadable
     /// The file is not valid JSON, or the `cachedUsageUtilization` entry does not have the expected shape.
     case malformed
+    /// The cached entry and `oauthAccount` name different accounts: the cache belongs to an account that is no longer
+    /// signed in, so nothing read from it (or saved from it earlier) should be shown.
+    case accountMismatch
 }
 
 /// Cheap change detector for a file: two equal fingerprints mean the file very probably did not change.
@@ -51,12 +54,13 @@ public struct ClaudeCodeCacheReader: Sendable {
     /// Extracts the cached usage snapshot.
     ///
     /// - Returns: A snapshot with source ``SnapshotSource/claudeCodeCache``, or `nil` when there is nothing usable
-    ///   to show: the file does not exist, it has no `cachedUsageUtilization` entry (absent or `null`), or the entry
-    ///   and `oauthAccount` both name an account and the two differ (the cache belongs to someone else).
+    ///   to show: the file does not exist, or it has no `cachedUsageUtilization` entry (absent or `null`).
     /// - Throws: ``CacheReadError/fileTooLarge`` for an oversized file (checked before any bytes are read),
-    ///   ``CacheReadError/unreadable`` for any other I/O or permission failure, and ``CacheReadError/malformed``
+    ///   ``CacheReadError/unreadable`` for any other I/O or permission failure, ``CacheReadError/malformed``
     ///   when the JSON cannot be parsed or `cachedUsageUtilization` has the wrong shape (missing or invalid
-    ///   `fetchedAtMs`, or a `utilization` the usage decoder cannot use).
+    ///   `fetchedAtMs`, or a `utilization` the usage decoder cannot use), and ``CacheReadError/accountMismatch``
+    ///   when the entry and `oauthAccount` both name an account and the two differ (the cache belongs to someone
+    ///   else).
     public func read() throws -> UsageSnapshot? {
         let path = resolvedPath
         let attributes: [FileAttributeKey: Any]
@@ -145,7 +149,7 @@ public struct ClaudeCodeCacheReader: Sendable {
         if let cachedAccount, let currentAccount,
             cachedAccount.caseInsensitiveCompare(currentAccount) != .orderedSame
         {
-            return nil
+            throw CacheReadError.accountMismatch
         }
 
         guard let fetchedAtMs = JSONValue.double(entry["fetchedAtMs"]), fetchedAtMs >= 0,
