@@ -4,16 +4,20 @@ import Foundation
 ///
 /// - ISO 8601 strings with any number of fractional-second digits (the live API sends microseconds) and an offset
 ///   written as `Z`, `±HH:MM`, `±HHMM` or `±HH`. A string without an offset is read as UTC.
-/// - Numbers, read as seconds since the Unix epoch.
+/// - Numbers, read as seconds since the Unix epoch and accepted only from `0` (1970-01-01) through `4_102_444_800`
+///   (2100-01-01), inclusive. This rejects negative values and absurdly large ones, including epoch milliseconds
+///   mistaken for seconds.
 ///
-/// Everything else (`nil`, `NSNull`, booleans, malformed strings, other types) yields `nil`.
+/// Everything else (`nil`, `NSNull`, booleans, malformed strings, out-of-range numbers, other types) yields `nil`.
 public enum FlexibleDate {
+    private static let epochRange: ClosedRange<Double> = 0...4_102_444_800
+
     public static func parse(_ value: Any?) -> Date? {
         guard let value else { return nil }
         if let text = value as? String {
             return parseISO8601(text)
         }
-        if let seconds = JSONValue.double(value) {
+        if let seconds = JSONValue.double(value), epochRange.contains(seconds) {
             return Date(timeIntervalSince1970: seconds)
         }
         return nil

@@ -14,8 +14,12 @@ public struct ClaudePaths: Sendable, Equatable {
     public var projectsDirectory: URL
     /// `D/.credentials.json`.
     public var credentialsFile: URL
-    /// Candidate Keychain generic-password service names in lookup order: `Claude Code-credentials`, then
-    /// `Claude Code-credentials-<first 8 hex of sha256(D)>`.
+    /// Candidate Keychain generic-password service names in lookup order.
+    ///
+    /// With the default config directory: `Claude Code-credentials`, then
+    /// `Claude Code-credentials-<first 8 hex of sha256(D)>`. With a custom config directory only the hashed name is
+    /// listed, because the plain item belongs to the default account and reading it could show another account's
+    /// usage.
     ///
     /// For the hash `D` is an absolute path, standardized lexically (`.`/`..`, repeated and trailing slashes),
     /// with symlinks left unresolved, and NFC-normalized.
@@ -42,7 +46,12 @@ public struct ClaudePaths: Sendable, Equatable {
         credentialsFile = URL(fileURLWithPath: Self.join(directoryPath, ".credentials.json"), isDirectory: false)
 
         let baseServiceName = "Claude Code-credentials"
-        keychainServiceNames = [baseServiceName, baseServiceName + "-" + Self.hashSuffix(of: directoryPath)]
+        let hashedServiceName = baseServiceName + "-" + Self.hashSuffix(of: directoryPath)
+        if customConfigDirectory == nil {
+            keychainServiceNames = [baseServiceName, hashedServiceName]
+        } else {
+            keychainServiceNames = [hashedServiceName]
+        }
     }
 
     private static func hashSuffix(of path: String) -> String {

@@ -60,6 +60,25 @@ import Testing
         }
     }
 
+    @Test func numericEpochIsBoundedToZeroThroughYear2100() {
+        // Inclusive bounds: 0 ... 4_102_444_800 (2100-01-01T00:00:00Z).
+        #expect(FlexibleDate.parse(0) == Date(timeIntervalSince1970: 0))
+        #expect(FlexibleDate.parse(0.0) == Date(timeIntervalSince1970: 0))
+        #expect(FlexibleDate.parse(4_102_444_800) == Date(timeIntervalSince1970: 4_102_444_800))
+        #expect(FlexibleDate.parse(4_102_444_800.0) == Date(timeIntervalSince1970: 4_102_444_800))
+        #expect(FlexibleDate.parse(NSNumber(value: 4_102_444_800)) == Date(timeIntervalSince1970: 4_102_444_800))
+
+        // Out of range: negative, just past the upper bound, absurdly large, and epoch milliseconds.
+        #expect(FlexibleDate.parse(-1) == nil)
+        #expect(FlexibleDate.parse(-0.5) == nil)
+        #expect(FlexibleDate.parse(4_102_444_801) == nil)
+        #expect(FlexibleDate.parse(4_102_444_800.5) == nil)
+        #expect(FlexibleDate.parse(1e300) == nil)
+        #expect(FlexibleDate.parse(-1e300) == nil)
+        #expect(FlexibleDate.parse(1_792_623_000_123) == nil)
+        #expect(FlexibleDate.parse(Int64.max) == nil)
+    }
+
     @Test func garbageIsNil() {
         #expect(FlexibleDate.parse(nil) == nil)
         #expect(FlexibleDate.parse(NSNull()) == nil)

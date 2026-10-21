@@ -287,6 +287,68 @@ private func seconds(_ date: Date?) -> Double {
                 """
         )
         #expect(report.limits.count == 1)
+        #expect(report.limits[0].kind == .session)
+        #expect(report.limits[0].percentUsed == 9)
+    }
+
+    @Test func repeatedIDsGetNumericSuffixesInEncounterOrder() throws {
+        func scopedOpus(_ percent: Int) -> String {
+            """
+            {"kind": "weekly_scoped", "percent": \(percent), "scope": {"model": {"display_name": "Opus"}}}
+            """
+        }
+        let report = try decode(
+            json: """
+                {"limits": [
+                    \(scopedOpus(10)),
+                    {"kind": "session", "percent": 1},
+                    \(scopedOpus(20)),
+                    \(scopedOpus(30)),
+                    {"kind": "session", "percent": 2}
+                ]}
+                """
+        )
+        #expect(
+            report.limits.map(\.id) == [
+                "weekly_scoped:Opus", "session", "weekly_scoped:Opus#2", "weekly_scoped:Opus#3", "session#2",
+            ]
+        )
+        #expect(report.limits.map(\.percentUsed) == [10, 1, 20, 30, 2])
+    }
+
+    @Test func twoScopedEntriesWithTheSameNameGetDistinctIDs() throws {
+        let report = try decode(
+            json: """
+                {"limits": [
+                    {"kind": "weekly_scoped", "percent": 1, "scope": {"model": {"display_name": "Opus"}}},
+                    {"kind": "weekly_scoped", "percent": 2, "scope": {"model": {"display_name": "Opus"}}}
+                ]}
+                """
+        )
+        #expect(report.limits.map(\.id) == ["weekly_scoped:Opus", "weekly_scoped:Opus#2"])
+    }
+
+    @Test func suffixedIDsNeverCollideWithLaterEntries() throws {
+        let report = try decode(
+            json: """
+                {"limits": [
+                    {"kind": "x", "percent": 1},
+                    {"kind": "x", "percent": 2},
+                    {"kind": "x#2", "percent": 3}
+                ]}
+                """
+        )
+        let ids = report.limits.map(\.id)
+        #expect(ids.first == "x")
+        #expect(Set(ids).count == 3)
+    }
+
+    @Test func legacyIDsStayUnsuffixed() throws {
+        // Legacy keys are distinct by construction, so their ids are never suffixed.
+        let report = try decode(
+            json: #"{"seven_day_opus": {"utilization": 1}, "seven_day_sonnet": {"utilization": 2}}"#
+        )
+        #expect(report.limits.map(\.id) == ["weekly_scoped:Opus", "weekly_scoped:Sonnet"])
     }
 }
 
