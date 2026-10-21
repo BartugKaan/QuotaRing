@@ -211,16 +211,19 @@ private final class ReadCounter: @unchecked Sendable {
 private struct StubSource: CredentialSource {
     let label: String
     let result: Result<Data?, CredentialError>
+    let mayShowAccessPrompt: Bool
     let counter = ReadCounter()
 
-    init(_ label: String, json: String?) {
+    init(_ label: String, json: String?, prompts: Bool = false) {
         self.label = label
         result = .success(json.map { Data($0.utf8) })
+        mayShowAccessPrompt = prompts
     }
 
-    init(_ label: String, error: CredentialError) {
+    init(_ label: String, error: CredentialError, prompts: Bool = false) {
         self.label = label
         result = .failure(error)
+        mayShowAccessPrompt = prompts
     }
 
     func readCredentialData() throws(CredentialError) -> Data? {
@@ -285,6 +288,56 @@ private func token(_ value: String) -> String {
             StubSource("missing", json: nil),
         ])
         #expect(throws: CredentialError.keychain(errSecAuthFailed)) { try denied.resolve() }
+    }
+
+    @Test func keychainRefusalIsRecognized() {
+        #expect(CredentialError.keychain(errSecUserCanceled).isKeychainAccessDenied)
+        #expect(CredentialError.keychain(errSecAuthFailed).isKeychainAccessDenied)
+        #expect(CredentialError.keychain(errSecInteractionNotAllowed).isKeychainAccessDenied)
+
+        #expect(!CredentialError.keychain(errSecNoSuchKeychain).isKeychainAccessDenied)
+        #expect(!CredentialError.keychain(errSecParam).isKeychainAccessDenied)
+        for error: CredentialError in [.notFound, .malformed, .missingClaudeAiOauth, .emptyToken, .insecureFile] {
+            #expect(!error.isKeychainAccessDenied)
+        }
+    }
+
+    @Test func onlyKeychainSourcesMayPrompt() {
+        #expect(KeychainCredentialSource(service: "Claude Code-credentials").mayShowAccessPrompt)
+        #expect(
+            !FileCredentialSource(fileURL: URL(fileURLWithPath: "/nonexistent/.credentials.json")).mayShowAccessPrompt)
+    }
+
+    @Test func refusalSkipsLaterPromptingSourcesButNotTheFile() throws {
+        // "Deny" on the first Keychain item must not raise a second prompt for the next one.
+        let denied = StubSource("plain", error: .keychain(errSecUserCanceled), prompts: true)
+        let hashed = StubSource("hashed", json: token("sk-ant-oat01-TEST-hashed"), prompts: true)
+        let file = StubSource("file", json: token("sk-ant-oat01-TEST-file"))
+
+        let credential = try CredentialResolver(sources: [denied, hashed, file]).resolve()
+
+        #expect(credential.accessToken.withValue { $0 } == "sk-ant-oat01-TEST-file")
+        #expect(denied.counter.count == 1)
+        #expect(hashed.counter.count == 0)
+        #expect(file.counter.count == 1)
+    }
+
+    @Test func refusalWinsOverOtherErrors() {
+        // The refusal is what the user has to act on, even when an earlier source failed differently: reporting the
+        // other error would let the app keep asking (and keep prompting).
+        let resolver = CredentialResolver(sources: [
+            StubSource("mcp only", json: #"{"mcpOAuth": {}}"#, prompts: true),
+            StubSource("hashed", error: .keychain(errSecAuthFailed), prompts: true),
+            StubSource("file", error: .insecureFile),
+        ])
+        #expect(throws: CredentialError.keychain(errSecAuthFailed)) { try resolver.resolve() }
+
+        let locked = CredentialResolver(sources: [
+            StubSource("missing", json: nil, prompts: true),
+            StubSource("locked", error: .keychain(errSecInteractionNotAllowed), prompts: true),
+            StubSource("file", json: nil),
+        ])
+        #expect(throws: CredentialError.keychain(errSecInteractionNotAllowed)) { try locked.resolve() }
     }
 
     @Test func resolverReReadsOnEveryCall() throws {

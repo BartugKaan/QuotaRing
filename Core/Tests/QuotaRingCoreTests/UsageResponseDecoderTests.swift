@@ -387,6 +387,29 @@ private func seconds(_ date: Date?) -> Double {
         #expect(report.weeklyLimits == [all, scoped])
         #expect(UsageReport(limits: [other]).session == nil)
         #expect(UsageReport(limits: [other]).weeklyLimits.isEmpty)
+        // Unknown kinds are kept for generic display, in response order.
+        let second = UsageLimit(kind: .other("daily_api"), percentUsed: 5)
+        #expect(UsageReport(limits: [other, all, session, second]).otherLimits == [other, second])
+        #expect(report.otherLimits == [other])
+        #expect(UsageReport(limits: [all, session, scoped]).otherLimits.isEmpty)
+    }
+
+    @Test func extraUsageShareAndDisplayability() {
+        // The reported percentage wins and is clamped.
+        #expect(ExtraUsage(isEnabled: true, percentUsed: 25).fractionUsed == 0.25)
+        #expect(ExtraUsage(isEnabled: true, percentUsed: 140).fractionUsed == 1)
+        // Without it, the amount spent over the monthly limit.
+        #expect(ExtraUsage(isEnabled: true, monthlyLimitMinor: 5_000, usedCreditsMinor: 1_250).fractionUsed == 0.25)
+        #expect(ExtraUsage(isEnabled: true, monthlyLimitMinor: 0, usedCreditsMinor: 1_250).fractionUsed == nil)
+        #expect(ExtraUsage(isEnabled: true).fractionUsed == nil)
+
+        // A saved snapshot keeps the share but no amounts: still worth a row, with only the percentage.
+        let stripped = ExtraUsage(isEnabled: true, percentUsed: 24.8)
+        #expect(stripped.hasDisplayableUsage)
+        #expect(stripped.usedCreditsMinor == nil)
+        #expect(ExtraUsage(isEnabled: true, usedCreditsMinor: 1_250).hasDisplayableUsage)
+        #expect(!ExtraUsage(isEnabled: true).hasDisplayableUsage)
+        #expect(!ExtraUsage(isEnabled: false, usedCreditsMinor: 1_250, percentUsed: 3).hasDisplayableUsage)
     }
 
     @Test func snapshotRoundTripsThroughCodable() throws {

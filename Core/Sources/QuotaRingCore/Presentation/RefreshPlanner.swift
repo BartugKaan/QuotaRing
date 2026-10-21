@@ -10,6 +10,10 @@ public enum LiveStatus: Equatable, Sendable {
     case expired
     /// No usable Claude Code credential was found.
     case noCredential
+    /// The user refused QuotaRing access to Claude Code's Keychain item (or the keychain was locked). Automatic
+    /// requests stop until the user presses Refresh or turns Live mode off and on again (see
+    /// ``RefreshPlanner/suspendsAutomaticRequests(after:)``).
+    case keychainDenied
     /// The endpoint answered 429; the next request waits until `until`.
     case rateLimited(until: Date)
     /// The last request failed (network, server or decoding); the previous data stays on screen.
@@ -41,7 +45,8 @@ public enum RefreshPlanner {
 
     /// Whether an automatic Live request should go out now.
     ///
-    /// Only when Live mode is enabled, any back-off has elapsed (`now >= nextAllowedLiveAt`), and the freshest
+    /// Only when Live mode is enabled, automatic requests are not suspended (`isSuspended`, see
+    /// ``suspendsAutomaticRequests(after:)``), any back-off has elapsed (`now >= nextAllowedLiveAt`), and the freshest
     /// snapshot, from whichever source, is at least `refreshInterval` old. With no snapshot at all, the age check
     /// passes. A snapshot dated in the future counts as fresh.
     public static func shouldFetchLive(
@@ -49,9 +54,10 @@ public enum RefreshPlanner {
         freshest: UsageSnapshot?,
         now: Date,
         refreshInterval: TimeInterval,
-        nextAllowedLiveAt: Date?
+        nextAllowedLiveAt: Date?,
+        isSuspended: Bool = false
     ) -> Bool {
-        guard liveEnabled else { return false }
+        guard liveEnabled, !isSuspended else { return false }
         if let nextAllowedLiveAt, now < nextAllowedLiveAt { return false }
         guard let freshest else { return true }
         return now.timeIntervalSince(freshest.fetchedAt) >= refreshInterval
@@ -72,13 +78,25 @@ public enum RefreshPlanner {
             return .ok
         case .skippedExpired, .failed(.unauthorized):
             return .expired
-        case .skippedNoCredential:
-            return .noCredential
+        case .skippedNoCredential(let reason):
+            return reason.isKeychainAccessDenied ? .keychainDenied : .noCredential
         case .failed(.rateLimited(let retryAfter)):
             return .rateLimited(until: now.addingTimeInterval(clampDelay(retryAfter ?? retryAfterFallback)))
         case .failed(.server), .failed(.network), .failed(.decoding):
             return .error
         }
+    }
+
+    /// Whether `result` stops automatic Live requests: the user refused Keychain access (the "Deny" button of the
+    /// access prompt, a cancelled prompt, or a locked keychain). Reading again on a timer would only show the same prompt
+    /// again and again, so the next read waits for the user: pressing Refresh, or turning Live mode off and on.
+    ///
+    /// Every other result, including another failure, lifts a suspension: it came from a read the user asked for.
+    public static func suspendsAutomaticRequests(after result: LiveFetchResult) -> Bool {
+        if case .skippedNoCredential(let reason) = result {
+            return reason.isKeychainAccessDenied
+        }
+        return false
     }
 
     /// `delay` limited to ``delayRange``. A NaN becomes the upper bound: waiting long is the safe direction.
@@ -93,7 +111,8 @@ public enum RefreshPlanner {
     ///   the age check in ``shouldFetchLive(liveEnabled:freshest:now:refreshInterval:nextAllowedLiveAt:)`` defers it
     ///   to the next interval).
     /// - A skipped fetch (expired or missing credential) made no request, so the failure count stays and the next
-    ///   attempt is one jittered interval away.
+    ///   attempt is one jittered interval away. (After a Keychain refusal no automatic attempt is made at all; see
+    ///   ``suspendsAutomaticRequests(after:)``.)
     /// - Any failure, including 401/403, counts and backs off exponentially; a 429 also honors `Retry-After`.
     ///
     /// - Parameter random: A uniform sample in `0...1` for the jitter, as in ``PollingPolicy``.

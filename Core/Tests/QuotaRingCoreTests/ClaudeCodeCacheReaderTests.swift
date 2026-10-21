@@ -173,6 +173,21 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         }
     }
 
+    @Test func fetchTimeFarInTheFutureThrowsMalformed() throws {
+        // The fixture was fetched at 1_792_605_287.037 s. A clock read five minutes or less before that is normal skew.
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = try sandbox.write(fixtureData())
+        let reader = ClaudeCodeCacheReader(fileURL: url)
+        let fetchedAt = Date(timeIntervalSince1970: 1_792_605_287.037)
+
+        #expect(try reader.read(now: fetchedAt)?.fetchedAt == fetchedAt)
+        #expect(try reader.read(now: fetchedAt.addingTimeInterval(-300)) != nil)
+        // Further ahead it would look fresh for that long and block every real update: treated as broken.
+        #expect(throws: CacheReadError.malformed) { try reader.read(now: fetchedAt.addingTimeInterval(-301)) }
+        #expect(throws: CacheReadError.malformed) { try reader.read(now: fetchedAt.addingTimeInterval(-86_400)) }
+    }
+
     @Test func oversizedFileThrows() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }

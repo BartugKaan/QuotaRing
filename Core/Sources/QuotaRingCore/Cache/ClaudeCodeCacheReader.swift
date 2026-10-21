@@ -58,10 +58,10 @@ public struct ClaudeCodeCacheReader: Sendable {
     /// - Throws: ``CacheReadError/fileTooLarge`` for an oversized file (checked before any bytes are read),
     ///   ``CacheReadError/unreadable`` for any other I/O or permission failure, ``CacheReadError/malformed``
     ///   when the JSON cannot be parsed or `cachedUsageUtilization` has the wrong shape (missing or invalid
-    ///   `fetchedAtMs`, or a `utilization` the usage decoder cannot use), and ``CacheReadError/accountMismatch``
-    ///   when the entry and `oauthAccount` both name an account and the two differ (the cache belongs to someone
-    ///   else).
-    public func read() throws -> UsageSnapshot? {
+    ///   `fetchedAtMs`, a `fetchedAtMs` more than ``UsageSnapshot/maxFutureSkew`` after `now`, or a `utilization` the
+    ///   usage decoder cannot use), and ``CacheReadError/accountMismatch`` when the entry and `oauthAccount` both name
+    ///   an account and the two differ (the cache belongs to someone else).
+    public func read(now: Date = Date()) throws -> UsageSnapshot? {
         let path = resolvedPath
         let attributes: [FileAttributeKey: Any]
         do {
@@ -94,7 +94,7 @@ public struct ClaudeCodeCacheReader: Sendable {
             throw CacheReadError.fileTooLarge
         }
 
-        return try Self.extractSnapshot(from: data)
+        return try Self.extractSnapshot(from: data, now: now)
     }
 
     // MARK: - Private
@@ -126,7 +126,7 @@ public struct ClaudeCodeCacheReader: Sendable {
 
     /// Parses the document, keeps only the cache entry (and the account UUIDs needed to vet it) and lets the rest of
     /// the tree go out of scope. Parser errors are discarded because their descriptions can quote file contents.
-    private static func extractSnapshot(from data: Data) throws -> UsageSnapshot? {
+    private static func extractSnapshot(from data: Data, now: Date) throws -> UsageSnapshot? {
         let parsed: Any
         do {
             parsed = try JSONSerialization.jsonObject(with: data)
@@ -164,10 +164,15 @@ public struct ClaudeCodeCacheReader: Sendable {
             throw CacheReadError.malformed
         }
 
-        return UsageSnapshot(
+        let snapshot = UsageSnapshot(
             report: report,
             fetchedAt: Date(timeIntervalSince1970: fetchedAtMs / 1000),
             source: .claudeCodeCache
         )
+        // A fetch time far in the future would look fresh until then and hide every real update.
+        guard snapshot.hasPlausibleFetchDate(at: now) else {
+            throw CacheReadError.malformed
+        }
+        return snapshot
     }
 }

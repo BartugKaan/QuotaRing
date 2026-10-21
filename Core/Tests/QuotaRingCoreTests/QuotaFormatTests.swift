@@ -57,6 +57,41 @@ import Testing
     @Test func countdownSpansDays() {
         let interval: TimeInterval = 184_800  // 2 d 3 h 20 min
         #expect(QuotaFormat.countdown(to: now.addingTimeInterval(interval), from: now, locale: locale) == "2d 3h")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(97_200), from: now, locale: locale) == "1d 3h")
+        // From a day on, the hours are rounded to the nearest one.
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(97_140), from: now, locale: locale) == "1d 3h")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(95_340), from: now, locale: locale) == "1d 2h")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(172_740), from: now, locale: locale) == "2d")
+        // A zero second unit is left out.
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(86_400), from: now, locale: locale) == "1d")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(86_400 + 1_740), from: now, locale: locale) == "1d")
+    }
+
+    @Test func countdownRoundsDownToWholeMinutes() {
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(8_099), from: now, locale: locale) == "2h 14m")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(119), from: now, locale: locale) == "1m")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(86_399), from: now, locale: locale) == "23h 59m")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(5_400), from: now, locale: locale) == "1h 30m")
+    }
+
+    @Test func countdownSurvivesAbsurdIntervals() {
+        #expect(!QuotaFormat.countdown(to: .distantFuture, from: now, locale: locale).isEmpty)
+        #expect(QuotaFormat.countdown(to: .distantPast, from: now, locale: locale) == "<1m")
+    }
+
+    @Test func turkishCountdownUsesUnambiguousUnits() {
+        // DateComponentsFormatter wrote "2sa 14d" and "<1d" in Turkish, where "d" (dakika) reads like days.
+        let turkish = Locale(identifier: "tr_TR")
+        func countdown(_ seconds: TimeInterval) -> String {
+            QuotaFormat.countdown(to: now.addingTimeInterval(seconds), from: now, locale: turkish)
+        }
+        #expect(countdown(8_040) == "2 sa 14 dk")
+        #expect(countdown(2_700) == "45 dk")
+        #expect(countdown(20) == "<1 dk")
+        #expect(countdown(-500) == "<1 dk")
+        #expect(countdown(97_200) == "1 g 3 sa")
+        #expect(countdown(7_200) == "2 sa")
+        #expect(countdown(172_800) == "2 g")
     }
 
     @Test func age() {
@@ -74,6 +109,7 @@ import Testing
         // There is no fr.lproj, so French locales get the English templates (with French number formatting).
         let french = Locale(identifier: "fr_FR")
         #expect(QuotaFormat.countdown(to: now.addingTimeInterval(20), from: now, locale: french) == "<1m")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(8040), from: now, locale: french) == "2h 14m")
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-10), now: now, locale: french) == "just now")
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-180), now: now, locale: french) == "3 min ago")
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 3600), now: now, locale: french) == "2 h ago")
@@ -87,12 +123,11 @@ import Testing
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-180), now: now, locale: turkish) == "3 dk önce")
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 3600), now: now, locale: turkish) == "2 sa önce")
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-3 * 86_400), now: now, locale: turkish) == "3 gün önce")
-        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(20), from: now, locale: turkish) == "<1d")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(20), from: now, locale: turkish) == "<1 dk")
         #expect(
             QuotaFormat.spokenCountdown(to: now.addingTimeInterval(20), from: now, locale: turkish)
                 == "bir dakikadan az")
-        // The Turkish countdown itself comes from DateComponentsFormatter, which writes minutes as "d" ("45d").
-        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(2700), from: now, locale: turkish).hasPrefix("45"))
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(2700), from: now, locale: turkish) == "45 dk")
     }
 
     @Test func turkishTemplatesCoverEveryEnglishKeyWithTheSameFormatSpecifiers() throws {

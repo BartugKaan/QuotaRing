@@ -15,21 +15,41 @@ public enum QuotaFormat {
         return formatter.string(from: NSNumber(value: value / 100)) ?? "\(Int(value.rounded()))%"
     }
 
-    /// The time from `from` until `to` as days, hours and minutes (at most two units), for example `"2h 14m"`.
-    /// Anything under a minute, including a time already past, is `"<1m"`.
+    /// The time from `from` until `to` in its two largest units: `"1d 3h"`, `"2h 14m"`, `"45m"` (Turkish `"1 g 3 sa"`,
+    /// `"2 sa 14 dk"`, `"45 dk"`). A zero second unit is left out (`"2h"`, `"2d"`). Under a day the time is rounded
+    /// down to whole minutes; from a day on, to the nearest hour (as `DateComponentsFormatter` did before). Anything
+    /// under a minute, including a time already past, is `"<1m"` (`"<1 dk"`).
+    ///
+    /// The unit names come from QuotaRing's own templates rather than `DateComponentsFormatter`, whose abbreviated
+    /// Turkish style writes minutes as "d" ("2sa 14d"), which reads like days.
     public static func countdown(to: Date, from: Date, locale: Locale = .current) -> String {
         let interval = to.timeIntervalSince(from)
-        let lessThanMinute = template("format.lessThanMinute", locale: locale)
-        guard interval >= 60 else { return lessThanMinute }
+        guard interval >= 60, interval.isFinite else { return template("format.lessThanMinute", locale: locale) }
 
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = locale
-        let formatter = DateComponentsFormatter()
-        formatter.calendar = calendar
-        formatter.unitsStyle = .abbreviated
-        formatter.allowedUnits = [.day, .hour, .minute]
-        formatter.maximumUnitCount = 2
-        return formatter.string(from: interval) ?? lessThanMinute
+        let totalMinutes = Int(min(interval, 1e15) / 60)
+        let minutes = totalMinutes % 60
+        var hours = totalMinutes % 1440 / 60
+        var days = totalMinutes / 1440
+        if days > 0, minutes >= 30 {
+            hours += 1
+            if hours == 24 {
+                days += 1
+                hours = 0
+            }
+        }
+
+        func format(_ key: String, _ arguments: Int...) -> String {
+            String(
+                format: template(key, locale: locale), locale: locale, arguments: arguments.map { $0 as any CVarArg })
+        }
+        if days > 0 {
+            return hours > 0 ? format("format.countdown.dayHour", days, hours) : format("format.countdown.day", days)
+        }
+        if hours > 0 {
+            return minutes > 0
+                ? format("format.countdown.hourMinute", hours, minutes) : format("format.countdown.hour", hours)
+        }
+        return format("format.countdown.minute", minutes)
     }
 
     /// The same duration as ``countdown(to:from:locale:)``, spelled out for speech, for example

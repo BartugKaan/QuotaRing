@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import QuotaRingCore
@@ -8,7 +9,7 @@ private let minimalBody = Data(#"{"five_hour":{"utilization":4.0,"resets_at":"20
 
 private func makeFetcher(
     transport: RecordingTransport,
-    credentials: @escaping @Sendable () throws -> OAuthCredential
+    credentials: @escaping @Sendable () throws(CredentialError) -> OAuthCredential
 ) -> LiveUsageFetcher {
     LiveUsageFetcher(
         client: UsageAPIClient(transport: transport, userAgent: "QuotaRing/0.1.0 (test)", now: { now }),
@@ -16,8 +17,6 @@ private func makeFetcher(
         now: { now }
     )
 }
-
-private struct CredentialFailure: Error {}
 
 @Suite struct LiveUsageFetcherTests {
     @Test func expiredSkipsNetwork() async {
@@ -44,9 +43,20 @@ private struct CredentialFailure: Error {}
 
     @Test func credentialErrorSkips() async {
         let transport = RecordingTransport(status: 200, body: minimalBody)
-        let fetcher = makeFetcher(transport: transport) { throw CredentialFailure() }
+        let fetcher = makeFetcher(transport: transport) { () throws(CredentialError) in throw .notFound }
 
-        #expect(await fetcher.fetch() == .skippedNoCredential)
+        #expect(await fetcher.fetch() == .skippedNoCredential(.notFound))
+        #expect(transport.requests.isEmpty)
+    }
+
+    @Test func keychainRefusalIsReportedWithItsReason() async {
+        let transport = RecordingTransport(status: 200, body: minimalBody)
+        let fetcher = makeFetcher(transport: transport) { () throws(CredentialError) in
+            throw .keychain(errSecUserCanceled)
+        }
+
+        let result = await fetcher.fetch()
+        #expect(result == .skippedNoCredential(.keychain(errSecUserCanceled)))
         #expect(transport.requests.isEmpty)
     }
 

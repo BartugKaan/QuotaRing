@@ -64,6 +64,17 @@ private func permissions(of url: URL) throws -> Int {
         #expect(loaded.report.weeklyBreakdown == original.report.weeklyBreakdown)
     }
 
+    @Test func rejectsASnapshotDatedInTheFuture() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let original = snapshot()
+        try scratch.store.save(original, configDirectory: configA)
+
+        #expect(scratch.store.load(configDirectory: configA, now: original.fetchedAt) != nil)
+        #expect(scratch.store.load(configDirectory: configA, now: original.fetchedAt.addingTimeInterval(-300)) != nil)
+        #expect(scratch.store.load(configDirectory: configA, now: original.fetchedAt.addingTimeInterval(-301)) == nil)
+    }
+
     @Test func stripsMoneyAmounts() throws {
         let scratch = try Scratch()
         defer { scratch.remove() }

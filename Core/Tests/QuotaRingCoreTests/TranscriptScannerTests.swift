@@ -50,6 +50,10 @@ private func seconds(_ text: String) throws -> Date {
     try #require(FlexibleDate.parse(text))
 }
 
+/// 2026-10-21T12:00:00Z: the clock of every scan, so the 8-day retention keeps the fixture lines (dated 2026-10-20)
+/// whenever the tests run.
+private let scanNow = Date(timeIntervalSince1970: 1_792_584_000)
+
 // MARK: - Tests
 
 @Suite final class TranscriptScannerTests {
@@ -75,7 +79,7 @@ private func seconds(_ text: String) throws -> Date {
                 assistantLine(output: 302, timestamp: "2026-10-20T20:35:04.310Z"),
             ])
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         #expect(entries.count == 1)
         let entry = try #require(entries.first)
@@ -93,7 +97,7 @@ private func seconds(_ text: String) throws -> Date {
                 assistantLine(id: "msg_01TESTSUBONLY", requestId: "req_01TESTSUBONLY", input: 5, output: 6),
             ])
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         #expect(entries.count == 2)
         #expect(
@@ -111,7 +115,7 @@ private func seconds(_ text: String) throws -> Date {
         let projects = scratch.file("projects")
         try FileManager.default.copyItem(at: fixtures, to: projects)
 
-        let entries = await TranscriptScanner(projectsDirectory: projects).scan()
+        let entries = await TranscriptScanner(projectsDirectory: projects).scan(now: scanNow)
 
         // The opus message appears as three content blocks in the session file and once more in the subagent file;
         // user, tool_result, <synthetic> and truncated lines contribute nothing.
@@ -145,7 +149,7 @@ private func seconds(_ text: String) throws -> Date {
                     timestamp: "2026-10-20T10:00:01.000Z", cwd: "/Users/test/dev/beta")
             ])
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         let entry = try #require(entries.first)
         #expect(entries.count == 1)
@@ -158,13 +162,13 @@ private func seconds(_ text: String) throws -> Date {
     @Test func laterAppendsRaiseTheMaxAndNeverLowerIt() async throws {
         try scratch.write("-p/a.jsonl", lines: [assistantLine(output: 50)])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().first?.tokens.output == 50)
+        #expect(await scanner.scan(now: scanNow).first?.tokens.output == 50)
 
         try scratch.append(assistantLine(output: 400) + "\n", to: "-p/a.jsonl")
-        #expect(await scanner.scan().first?.tokens.output == 400)
+        #expect(await scanner.scan(now: scanNow).first?.tokens.output == 400)
 
         try scratch.append(assistantLine(output: 20) + "\n", to: "-p/a.jsonl")
-        let entries = await scanner.scan()
+        let entries = await scanner.scan(now: scanNow)
         #expect(entries.count == 1)
         #expect(entries.first?.tokens.output == 400)
     }
@@ -175,7 +179,7 @@ private func seconds(_ text: String) throws -> Date {
         let url = try scratch.write(
             "-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTONE", input: 1111)])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().first?.tokens.input == 1111)
+        #expect(await scanner.scan(now: scanNow).first?.tokens.input == 1111)
 
         // Rewrite already-scanned bytes in place (same length), then append a new record. An incremental scanner
         // has already consumed the old bytes, so it keeps what it saw and parses only the new line.
@@ -185,7 +189,7 @@ private func seconds(_ text: String) throws -> Date {
         try Data(tampered.utf8).write(to: url, options: [])
         try scratch.append(assistantLine(id: "msg_01TESTTWO", input: 3333) + "\n", to: "-p/a.jsonl")
 
-        let entries = await scanner.scan()
+        let entries = await scanner.scan(now: scanNow)
         #expect(entries.count == 2)
         #expect(entries.first { $0.dedupeKey.hasPrefix("msg_01TESTONE") }?.tokens.input == 1111)
         #expect(entries.first { $0.dedupeKey.hasPrefix("msg_01TESTTWO") }?.tokens.input == 3333)
@@ -199,28 +203,28 @@ private func seconds(_ text: String) throws -> Date {
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
 
         // Half a record is not counted (and not counted wrongly).
-        let partial = await scanner.scan()
+        let partial = await scanner.scan(now: scanNow)
         #expect(partial.map(\.dedupeKey) == ["msg_01TESTFIRST|req_01TESTAAAAAAAAAAAAAAAAA1"])
 
         // Nothing new yet: still deferred.
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         // The rest of the line arrives (with its newline) and the record is counted exactly once.
         try scratch.append(String(second[splitAt...]) + "\n", to: "-p/a.jsonl")
-        let complete = await scanner.scan()
+        let complete = await scanner.scan(now: scanNow)
         #expect(complete.count == 2)
         #expect(complete.map(\.dedupeKey).filter { $0.hasPrefix("msg_01TESTSECOND") }.count == 1)
-        #expect(await scanner.scan() == complete)
+        #expect(await scanner.scan(now: scanNow) == complete)
     }
 
     @Test func aFinalLineWithoutNewlineIsCountedOnceItsNewlineArrives() async throws {
         try scratch.write("-p/a.jsonl", text: assistantLine())
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
         // A complete JSON object is still an unfinished line until its newline is written.
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
 
         try scratch.append("\n", to: "-p/a.jsonl")
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
     }
 
     @Test func truncatedFileIsRescanned() async throws {
@@ -231,7 +235,7 @@ private func seconds(_ text: String) throws -> Date {
                 assistantLine(id: "msg_01TESTOLD3"),
             ])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 3)
+        #expect(await scanner.scan(now: scanNow).count == 3)
 
         // Same inode, cut down and rewritten with a different, shorter record.
         let handle = try FileHandle(forWritingTo: url)
@@ -239,7 +243,7 @@ private func seconds(_ text: String) throws -> Date {
         try handle.write(contentsOf: Data((assistantLine(id: "msg_01TESTNEW1", input: 1) + "\n").utf8))
         try handle.close()
 
-        let entries = await scanner.scan()
+        let entries = await scanner.scan(now: scanNow)
         #expect(entries.map(\.dedupeKey) == ["msg_01TESTNEW1|req_01TESTAAAAAAAAAAAAAAAAA1"])
         #expect(entries.first?.tokens.input == 1)
     }
@@ -247,7 +251,7 @@ private func seconds(_ text: String) throws -> Date {
     @Test func replacedFileIsRescannedEvenWhenLarger() async throws {
         let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTOLD1")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         // A new file (new inode) takes the old one's place and is larger than the recorded offset.
         let replacement = scratch.file("-p/replacement.tmp")
@@ -259,7 +263,7 @@ private func seconds(_ text: String) throws -> Date {
         ).write(to: replacement)
         _ = try FileManager.default.replaceItemAt(url, withItemAt: replacement)
 
-        let keys = await scanner.scan().map(\.dedupeKey)
+        let keys = await scanner.scan(now: scanNow).map(\.dedupeKey)
         #expect(keys.count == 3)
         #expect(keys.allSatisfy { $0.hasPrefix("msg_01TESTNEW") })
     }
@@ -267,7 +271,7 @@ private func seconds(_ text: String) throws -> Date {
     @Test func fileWithAnOlderModificationTimeIsRescanned() async throws {
         let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTOLD1")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().first?.dedupeKey.hasPrefix("msg_01TESTOLD1") == true)
+        #expect(await scanner.scan(now: scanNow).first?.dedupeKey.hasPrefix("msg_01TESTOLD1") == true)
 
         // Overwrite in place with longer content, then stamp it as older than what was recorded
         // (as an archive restore or `cp -p` would).
@@ -280,7 +284,7 @@ private func seconds(_ text: String) throws -> Date {
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSince1970: 1_000_000)], ofItemAtPath: url.path)
 
-        let keys = await scanner.scan().map(\.dedupeKey)
+        let keys = await scanner.scan(now: scanNow).map(\.dedupeKey)
         #expect(keys.count == 2)
         #expect(keys.allSatisfy { $0.hasPrefix("msg_01TESTNEW") })
     }
@@ -289,38 +293,38 @@ private func seconds(_ text: String) throws -> Date {
         try scratch.write("-p/keep.jsonl", lines: [assistantLine(id: "msg_01TESTKEEP")])
         let doomed = try scratch.write("-q/gone.jsonl", lines: [assistantLine(id: "msg_01TESTGONE")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 2)
+        #expect(await scanner.scan(now: scanNow).count == 2)
 
         try FileManager.default.removeItem(at: doomed)
-        let remaining = await scanner.scan()
+        let remaining = await scanner.scan(now: scanNow)
         #expect(remaining.count == 1)
         #expect(remaining.first?.dedupeKey.hasPrefix("msg_01TESTKEEP") == true)
 
         // Removing a whole directory works the same way.
         try FileManager.default.removeItem(at: scratch.file("-p"))
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
     }
 
     @Test func aFileThatReappearsIsReadFromTheStart() async throws {
         let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTONE")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         try FileManager.default.removeItem(at: url)
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
 
         try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTONE")])
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
     }
 
     @Test func aDeletedDuplicateKeepsTheSurvivorsEntry() async throws {
         try scratch.write("-p/a.jsonl", lines: [assistantLine(output: 10)])
         let copy = try scratch.write("-p/b.jsonl", lines: [assistantLine(output: 99)])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().first?.tokens.output == 99)
+        #expect(await scanner.scan(now: scanNow).first?.tokens.output == 99)
 
         try FileManager.default.removeItem(at: copy)
-        let entries = await scanner.scan()
+        let entries = await scanner.scan(now: scanNow)
         #expect(entries.count == 1)
         #expect(entries.first?.tokens.output == 10)
     }
@@ -335,7 +339,7 @@ private func seconds(_ text: String) throws -> Date {
 
         let scanner = TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: 64)
 
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
     }
 
     @Test func oversizedLineDoesNotHideItsNeighbours() async throws {
@@ -355,7 +359,7 @@ private func seconds(_ text: String) throws -> Date {
                 assistantLine(id: "msg_01TESTAFTER"),
             ])
 
-        let keys = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: limit).scan()
+        let keys = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: limit).scan(now: scanNow)
             .map { String($0.dedupeKey.split(separator: "|")[0]) }
 
         #expect(Set(keys) == ["msg_01TESTBEFORE", "msg_01TESTATLIMIT", "msg_01TESTAFTER"])
@@ -367,15 +371,15 @@ private func seconds(_ text: String) throws -> Date {
         try scratch.write(
             "-p/a.jsonl", text: assistantLine(id: "msg_01TESTBEFORE") + "\n" + String(huge.prefix(1_500)))
         let scanner = TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: limit)
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         // The line goes on with a stretch that is itself a well-formed record, then ends. That record is part of
         // the oversized line, so it must not be counted; the line after it is.
         try scratch.append(assistantLine(id: "msg_01TESTTAIL") + "\n", to: "-p/a.jsonl")
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
         try scratch.append(assistantLine(id: "msg_01TESTAFTER") + "\n", to: "-p/a.jsonl")
 
-        let keys = await scanner.scan().map { String($0.dedupeKey.split(separator: "|")[0]) }
+        let keys = await scanner.scan(now: scanNow).map { String($0.dedupeKey.split(separator: "|")[0]) }
         #expect(Set(keys) == ["msg_01TESTBEFORE", "msg_01TESTAFTER"])
     }
 
@@ -394,12 +398,12 @@ private func seconds(_ text: String) throws -> Date {
         try scratch.write("-p/a.jsonl", text: lines.joined(separator: "\n") + "\n" + String(lines[0].prefix(100)))
         try scratch.write("-p/s/subagents/b.jsonl", text: lines.reversed().joined(separator: "\r\n") + "\r\n")
 
-        let reference = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: limit).scan()
+        let reference = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: limit).scan(now: scanNow)
         #expect(reference.count == 25)
         for chunkSize in [1, 2, 3, 7, 64, 999, 1_000, 1_001, 4_096, 1 << 20] {
             let scanner = TranscriptScanner(
                 projectsDirectory: scratch.url, maxLineBytes: limit, readChunkSize: chunkSize)
-            #expect(await scanner.scan() == reference, "chunk size \(chunkSize)")
+            #expect(await scanner.scan(now: scanNow) == reference, "chunk size \(chunkSize)")
         }
     }
 
@@ -416,23 +420,23 @@ private func seconds(_ text: String) throws -> Date {
             let end = min(slice, bytes.count)
             try scratch.append(String(decoding: bytes[written..<end], as: UTF8.self), to: "-p/a.jsonl")
             written = end
-            _ = await scanner.scan()
+            _ = await scanner.scan(now: scanNow)
         }
 
-        let fresh = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: 1_000).scan()
+        let fresh = await TranscriptScanner(projectsDirectory: scratch.url, maxLineBytes: 1_000).scan(now: scanNow)
         #expect(fresh.count == 12)
-        #expect(await scanner.scan() == fresh)
+        #expect(await scanner.scan(now: scanNow) == fresh)
     }
 
     @Test func aFileThatComesBackWithTheSameInodeIsReadFromTheStart() async throws {
         let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTOLD1")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         // Move the file out of the tree, change it, and move it back: same inode, larger, newer, not truncated.
         let parked = scratch.file("parked.txt")
         try FileManager.default.moveItem(at: url, to: parked)
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
         let handle = try FileHandle(forWritingTo: parked)
         try handle.write(
             contentsOf: Data(
@@ -441,7 +445,7 @@ private func seconds(_ text: String) throws -> Date {
         try handle.close()
         try FileManager.default.moveItem(at: parked, to: url)
 
-        let keys = await scanner.scan().map(\.dedupeKey)
+        let keys = await scanner.scan(now: scanNow).map(\.dedupeKey)
         #expect(keys.count == 2)
         #expect(keys.allSatisfy { $0.hasPrefix("msg_01TESTNEW") })
     }
@@ -505,17 +509,17 @@ private func seconds(_ text: String) throws -> Date {
         try scratch.write("-p/a.jsonl.bak", lines: [assistantLine(id: "msg_01TESTNO2")])
         try scratch.write("-p/notes.txt", lines: [assistantLine(id: "msg_01TESTNO3")])
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         #expect(entries.count == 1)
         #expect(entries.first?.dedupeKey.hasPrefix("msg_01TESTYES") == true)
     }
 
     @Test func missingOrEmptyDirectoryYieldsNothing() async throws {
-        #expect(await TranscriptScanner(projectsDirectory: scratch.file("nope")).scan().isEmpty)
-        #expect(await TranscriptScanner(projectsDirectory: scratch.url).scan().isEmpty)
+        #expect(await TranscriptScanner(projectsDirectory: scratch.file("nope")).scan(now: scanNow).isEmpty)
+        #expect(await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow).isEmpty)
         let file = try scratch.write("plain.jsonl", lines: [assistantLine()])
-        #expect(await TranscriptScanner(projectsDirectory: file).scan().isEmpty)
+        #expect(await TranscriptScanner(projectsDirectory: file).scan(now: scanNow).isEmpty)
     }
 
     @Test func symlinksAreNeverFollowed() async throws {
@@ -530,7 +534,7 @@ private func seconds(_ text: String) throws -> Date {
         try FileManager.default.createSymbolicLink(
             at: scratch.file("-p/linked-dir"), withDestinationURL: outside.file("dir"))
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         #expect(entries.count == 1)
         #expect(entries.first?.dedupeKey.hasPrefix("msg_01TESTINSIDE") == true)
@@ -542,12 +546,12 @@ private func seconds(_ text: String) throws -> Date {
         let target = try outside.write("elsewhere.jsonl", lines: [assistantLine(id: "msg_01TESTOUTSIDE1")])
         let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTINSIDE")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
-        #expect(await scanner.scan().count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
 
         try FileManager.default.removeItem(at: url)
         try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
 
-        #expect(await scanner.scan().isEmpty)
+        #expect(await scanner.scan(now: scanNow).isEmpty)
     }
 
     @Test func theConfiguredDirectoryItselfMayBeASymlink() async throws {
@@ -557,7 +561,7 @@ private func seconds(_ text: String) throws -> Date {
         let link = scratch.file("projects")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real.url)
 
-        #expect(await TranscriptScanner(projectsDirectory: link).scan().count == 1)
+        #expect(await TranscriptScanner(projectsDirectory: link).scan(now: scanNow).count == 1)
     }
 
     @Test func resultsAreSortedByTimestamp() async throws {
@@ -570,7 +574,7 @@ private func seconds(_ text: String) throws -> Date {
                 assistantLine(id: "msg_01TESTEARLY", timestamp: "2026-10-20T10:00:00Z"),
             ])
 
-        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan()
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
 
         #expect(
             entries.map { String($0.dedupeKey.split(separator: "|")[0]) } == [
@@ -583,9 +587,47 @@ private func seconds(_ text: String) throws -> Date {
             "-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTONE"), assistantLine(id: "msg_01TESTTWO")])
         let scanner = TranscriptScanner(projectsDirectory: scratch.url)
 
-        let first = await scanner.scan()
-        #expect(await scanner.scan() == first)
-        #expect(await scanner.scan() == first)
+        let first = await scanner.scan(now: scanNow)
+        #expect(await scanner.scan(now: scanNow) == first)
+        #expect(await scanner.scan(now: scanNow) == first)
         #expect(first.count == 2)
+    }
+
+    // MARK: Retention
+
+    @Test func dropsEntriesOlderThanTheRetention() async throws {
+        try scratch.write(
+            "-p/a.jsonl",
+            lines: [
+                assistantLine(id: "msg_01TESTANCIENT", timestamp: "2026-09-01T10:00:00Z"),
+                assistantLine(id: "msg_01TESTEDGE", timestamp: "2026-10-13T12:00:00Z"),
+                assistantLine(id: "msg_01TESTRECENT", timestamp: "2026-10-20T10:00:00Z"),
+            ])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+        #expect(TranscriptScanner.defaultRetention == 8 * 86_400)
+
+        // Exactly 8 days before `scanNow` is still kept.
+        let ids = await scanner.scan(now: scanNow).map { String($0.dedupeKey.split(separator: "|")[0]) }
+        #expect(ids == ["msg_01TESTEDGE", "msg_01TESTRECENT"])
+
+        // As time passes, entries age out of memory, also without any file changing.
+        let dayLater = scanNow.addingTimeInterval(86_400)
+        let later = await scanner.scan(now: dayLater).map { String($0.dedupeKey.split(separator: "|")[0]) }
+        #expect(later == ["msg_01TESTRECENT"])
+
+        // Forgotten entries do not come back: the lines were already read.
+        #expect(await scanner.scan(now: scanNow).count == 1)
+    }
+
+    @Test func retentionIsConfigurable() async throws {
+        try scratch.write(
+            "-p/a.jsonl",
+            lines: [
+                assistantLine(id: "msg_01TESTOLDER", timestamp: "2026-10-21T09:00:00Z"),
+                assistantLine(id: "msg_01TESTNEWER", timestamp: "2026-10-21T11:30:00Z"),
+            ])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url, retention: 3600)
+        let entries = await scanner.scan(now: scanNow)
+        #expect(entries.map { String($0.dedupeKey.split(separator: "|")[0]) } == ["msg_01TESTNEWER"])
     }
 }

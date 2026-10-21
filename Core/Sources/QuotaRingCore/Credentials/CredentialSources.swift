@@ -8,8 +8,16 @@ public protocol CredentialSource: Sendable {
     /// A short, non-secret description such as `Keychain: Claude Code-credentials`.
     var label: String { get }
 
+    /// Whether reading this source can show a system prompt (a Keychain access prompt). After the user refused one,
+    /// ``CredentialResolver`` does not read further sources that can prompt. `false` unless a source says otherwise.
+    var mayShowAccessPrompt: Bool { get }
+
     /// The raw credential JSON, or `nil` when this source does not exist.
     func readCredentialData() throws(CredentialError) -> Data?
+}
+
+extension CredentialSource {
+    public var mayShowAccessPrompt: Bool { false }
 }
 
 /// One generic-password item in the user's Keychain, looked up by service name.
@@ -19,11 +27,14 @@ public protocol CredentialSource: Sendable {
 /// `kSecMatchLimitOne` returns one of them, and which one is unspecified.
 ///
 /// `SecItemCopyMatching` may show a modal access prompt and blocks the calling thread until it is answered, so callers
-/// must not call ``readCredentialData()`` on the main actor.
+/// must not call ``readCredentialData()`` on the main actor. A refused prompt (or a locked keychain) is reported as
+/// ``CredentialError/keychain(_:)`` with a status for which ``CredentialError/isKeychainAccessDenied`` is `true`.
 public struct KeychainCredentialSource: CredentialSource {
     public let service: String
 
     public var label: String { "Keychain: \(service)" }
+
+    public var mayShowAccessPrompt: Bool { true }
 
     public init(service: String) {
         self.service = service

@@ -28,7 +28,7 @@ public struct ThresholdTracker: Codable, Equatable, Sendable {
     /// ``ThresholdEvent/crossed(_:)`` for each newly exceeded threshold in ascending order.
     ///
     /// Readings without a reset time are ignored. On the first reading, every threshold that is already exceeded
-    /// fires once.
+    /// fires once. A reset already announced by ``observeWindowEnd(now:)`` is not announced again.
     public mutating func observe(
         percentUsed: Double,
         resetsAt: Date?,
@@ -52,6 +52,19 @@ public struct ThresholdTracker: Codable, Equatable, Sendable {
             events.append(.crossed(threshold))
         }
         return events
+    }
+
+    /// Notices that the current window's reset time has passed, without waiting for a new reading.
+    ///
+    /// Call it as time passes (the app does every 30 s): new readings may arrive much later, or, for someone who only
+    /// reads Claude Code's cache, not until the next time Claude Code runs. When the window's reset time has passed,
+    /// returns ``ThresholdEvent/reset`` once and closes the window, so the next reading starts a new one without
+    /// announcing the reset again and with every threshold armed. Returns nothing otherwise.
+    public mutating func observeWindowEnd(now: Date) -> [ThresholdEvent] {
+        guard let windowKey, Self.date(for: windowKey) <= now else { return [] }
+        self.windowKey = nil
+        fired = []
+        return [.reset]
     }
 
     private static func key(for date: Date) -> Int {

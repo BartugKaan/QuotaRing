@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Why no usable credential could be read.
 ///
@@ -18,8 +19,22 @@ public enum CredentialError: Error, Equatable {
     /// The credentials file was refused: it is a symlink (`ELOOP`), opening it was denied (`EACCES`, `EPERM`), or it is
     /// not a regular file owned by the current user with owner-only permissions and at most 1 MiB.
     case insecureFile
-    /// The Keychain lookup failed with this status (other than `errSecItemNotFound`).
+    /// The Keychain lookup failed with this status (other than `errSecItemNotFound`). See
+    /// ``isKeychainAccessDenied`` for the statuses that mean the user (or a locked keychain) refused access.
     case keychain(OSStatus)
+
+    /// Whether the Keychain refused access rather than failing: the user clicked "Deny" or cancelled the access prompt
+    /// (`errSecUserCanceled`), entered no valid password (`errSecAuthFailed`), or the keychain is locked and no prompt
+    /// could be shown (`errSecInteractionNotAllowed`). Asking again without the user's say-so would just show the same
+    /// prompt again.
+    public var isKeychainAccessDenied: Bool {
+        guard case .keychain(let status) = self else { return false }
+        return Self.accessDeniedStatuses.contains(status)
+    }
+
+    static let accessDeniedStatuses: Set<OSStatus> = [
+        errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed,
+    ]
 }
 
 extension OAuthCredential {

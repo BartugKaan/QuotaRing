@@ -104,4 +104,62 @@ import Testing
             restored.observe(percentUsed: 96, resetsAt: resetB, thresholds: [80, 95], now: before) == [.crossed(95)]
         )
     }
+
+    // MARK: - Time-driven reset
+
+    @Test func windowEndAnnouncesTheResetOnceWithoutNewData() {
+        var tracker = ThresholdTracker()
+        _ = tracker.observe(percentUsed: 90, resetsAt: resetA, thresholds: [80, 95], now: before)
+
+        // Before the reset time nothing happens.
+        #expect(tracker.observeWindowEnd(now: before) == [])
+        #expect(tracker.observeWindowEnd(now: resetA.addingTimeInterval(-60)) == [])
+
+        // After it, the 30 s tick announces the reset once.
+        let after = resetA.addingTimeInterval(30)
+        #expect(tracker.observeWindowEnd(now: after) == [.reset])
+        #expect(tracker.observeWindowEnd(now: after.addingTimeInterval(30)) == [])
+    }
+
+    @Test func dataAfterATimeDrivenResetDoesNotAnnounceItAgain() {
+        var tracker = ThresholdTracker()
+        _ = tracker.observe(percentUsed: 90, resetsAt: resetA, thresholds: [80, 95], now: before)
+        let after = resetA.addingTimeInterval(30)
+        #expect(tracker.observeWindowEnd(now: after) == [.reset])
+
+        // The next window's first reading: no second reset, and the thresholds are armed again.
+        let nextReset = resetA.addingTimeInterval(5 * 3600)
+        let later = resetA.addingTimeInterval(600)
+        #expect(
+            tracker.observe(percentUsed: 85, resetsAt: nextReset, thresholds: [80, 95], now: later) == [.crossed(80)])
+        #expect(tracker.observeWindowEnd(now: later) == [])
+    }
+
+    @Test func dataBeforeTheTickAnnouncesTheResetOnlyOnce() {
+        var tracker = ThresholdTracker()
+        _ = tracker.observe(percentUsed: 90, resetsAt: resetA, thresholds: [80], now: before)
+
+        // New data arrives first (the reading reports the reset); the tick then finds a window still open.
+        let nextReset = resetA.addingTimeInterval(5 * 3600)
+        let after = resetA.addingTimeInterval(30)
+        #expect(tracker.observe(percentUsed: 2, resetsAt: nextReset, thresholds: [80], now: after) == [.reset])
+        #expect(tracker.observeWindowEnd(now: after) == [])
+    }
+
+    @Test func windowEndWithoutAnyReadingDoesNothing() {
+        var tracker = ThresholdTracker()
+        #expect(tracker.observeWindowEnd(now: before) == [])
+    }
+
+    @Test func closedWindowSurvivesPersistence() throws {
+        var tracker = ThresholdTracker()
+        _ = tracker.observe(percentUsed: 90, resetsAt: resetA, thresholds: [80], now: before)
+        let after = resetA.addingTimeInterval(30)
+        #expect(tracker.observeWindowEnd(now: after) == [.reset])
+
+        var restored = try JSONDecoder().decode(ThresholdTracker.self, from: JSONEncoder().encode(tracker))
+        #expect(restored.observeWindowEnd(now: after) == [])
+        let nextReset = resetA.addingTimeInterval(5 * 3600)
+        #expect(restored.observe(percentUsed: 1, resetsAt: nextReset, thresholds: [80], now: after) == [])
+    }
 }

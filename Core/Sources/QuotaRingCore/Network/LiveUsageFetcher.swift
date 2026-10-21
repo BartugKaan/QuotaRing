@@ -5,8 +5,9 @@ public enum LiveFetchResult: Sendable, Equatable {
     case snapshot(UsageSnapshot)
     /// The stored token has expired (or is about to); no request was made.
     case skippedExpired
-    /// No usable credential could be obtained; no request was made.
-    case skippedNoCredential
+    /// No usable credential could be obtained, for the given reason; no request was made. A reason for which
+    /// ``CredentialError/isKeychainAccessDenied`` is `true` means the user refused Keychain access.
+    case skippedNoCredential(CredentialError)
     case failed(UsageAPIError)
 }
 
@@ -14,13 +15,14 @@ public enum LiveFetchResult: Sendable, Equatable {
 /// token, and it reports every outcome as a value.
 public struct LiveUsageFetcher: Sendable {
     private let client: UsageAPIClient
-    private let credentials: @Sendable () throws -> OAuthCredential
+    private let credentials: @Sendable () throws(CredentialError) -> OAuthCredential
     private let now: @Sendable () -> Date
 
-    /// - Parameter credentials: Supplies the current credential. Any error it throws means "no credential".
+    /// - Parameter credentials: Supplies the current credential. The error it throws is reported as
+    ///   ``LiveFetchResult/skippedNoCredential(_:)``.
     public init(
         client: UsageAPIClient,
-        credentials: @escaping @Sendable () throws -> OAuthCredential,
+        credentials: @escaping @Sendable () throws(CredentialError) -> OAuthCredential,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.client = client
@@ -30,10 +32,10 @@ public struct LiveUsageFetcher: Sendable {
 
     public func fetch() async -> LiveFetchResult {
         let credential: OAuthCredential
-        do {
+        do throws(CredentialError) {
             credential = try credentials()
         } catch {
-            return .skippedNoCredential
+            return .skippedNoCredential(error)
         }
 
         if credential.isExpired(now: now()) {

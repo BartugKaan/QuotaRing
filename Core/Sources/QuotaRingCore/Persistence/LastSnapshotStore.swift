@@ -39,9 +39,9 @@ public struct LastSnapshotStore: Sendable {
         var snapshot: UsageSnapshot
     }
 
-    /// The saved snapshot, or `nil` when there is none, it was saved for another config directory, or the file cannot
-    /// be used.
-    public func load(configDirectory: URL) -> UsageSnapshot? {
+    /// The saved snapshot, or `nil` when there is none, it was saved for another config directory, its fetch time lies
+    /// more than ``UsageSnapshot/maxFutureSkew`` after `now`, or the file cannot be used.
+    public func load(configDirectory: URL, now: Date = Date()) -> UsageSnapshot? {
         guard
             let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
             attributes[.type] as? FileAttributeType == .typeRegular,
@@ -53,7 +53,8 @@ public struct LastSnapshotStore: Sendable {
         guard
             let envelope = try? decoder.decode(Envelope.self, from: data),
             envelope.version == Self.formatVersion,
-            envelope.configDirectory == Self.key(for: configDirectory)
+            envelope.configDirectory == Self.key(for: configDirectory),
+            envelope.snapshot.hasPlausibleFetchDate(at: now)
         else { return nil }
         return envelope.snapshot
     }

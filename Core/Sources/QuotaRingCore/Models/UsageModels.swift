@@ -114,6 +114,22 @@ public struct ExtraUsage: Hashable, Sendable, Codable {
         self.currency = currency
         self.decimalPlaces = decimalPlaces
     }
+
+    /// The share of the monthly limit spent, `0...1`: the reported percentage, else the amount spent divided by the
+    /// limit; `nil` when neither is known.
+    public var fractionUsed: Double? {
+        if let percentUsed, !percentUsed.isNaN {
+            return min(1, max(0, percentUsed / 100))
+        }
+        guard let usedCreditsMinor, let monthlyLimitMinor, monthlyLimitMinor > 0 else { return nil }
+        return min(1, max(0, usedCreditsMinor / monthlyLimitMinor))
+    }
+
+    /// Whether there is anything to show: extra usage is on and either the share spent or the amount is known. (A saved
+    /// snapshot keeps no money amounts, so it may only have the share.)
+    public var hasDisplayableUsage: Bool {
+        isEnabled && (fractionUsed != nil || usedCreditsMinor != nil)
+    }
 }
 
 /// One row of the weekly breakdown: a share of the week's usage attributed to a surface such as Claude Code.
@@ -159,6 +175,15 @@ public struct UsageReport: Hashable, Sendable, Codable {
     /// Limits of kind ``LimitKind/weeklyAll`` and ``LimitKind/weeklyScoped``, in response order.
     public var weeklyLimits: [UsageLimit] {
         limits.filter { $0.kind == .weeklyAll || $0.kind == .weeklyScoped }
+    }
+
+    /// Limits of kinds QuotaRing has no dedicated place for (``LimitKind/other(_:)``), in response order. They are shown
+    /// generically, with ``UsageLimit/genericTitle``.
+    public var otherLimits: [UsageLimit] {
+        limits.filter {
+            if case .other = $0.kind { return true }
+            return false
+        }
     }
 
     public init(limits: [UsageLimit], extraUsage: ExtraUsage? = nil, weeklyBreakdown: WeeklyBreakdown? = nil) {

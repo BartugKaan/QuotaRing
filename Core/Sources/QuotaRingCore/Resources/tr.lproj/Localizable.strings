@@ -1,3 +1,18 @@
+/* Countdown in whole days, for example 2d; the argument is a whole number. */
+"format.countdown.day" = "%lld g";
+
+/* Countdown in days and hours, for example 1d 3h; the arguments are whole numbers. */
+"format.countdown.dayHour" = "%1$lld g %2$lld sa";
+
+/* Countdown in whole hours, for example 2h; the argument is a whole number. */
+"format.countdown.hour" = "%lld sa";
+
+/* Countdown in hours and minutes, for example 2h 14m; the arguments are whole numbers. */
+"format.countdown.hourMinute" = "%1$lld sa %2$lld dk";
+
+/* Countdown in minutes, for example 45m; the argument is a whole number. */
+"format.countdown.minute" = "%lld dk";
+
 /* Age of a snapshot in days; the argument is a whole number. */
 "format.daysAgo" = "%lld gün önce";
 
@@ -8,11 +23,10 @@
 "format.justNow" = "az önce";
 
 /* Countdown shorter than one minute. */
-"format.lessThanMinute" = "<1d";
+"format.lessThanMinute" = "<1 dk";
 
 /* Age of a snapshot in minutes; the argument is a whole number. */
 "format.minutesAgo" = "%lld dk önce";
 
 /* Spoken countdown shorter than one minute (for VoiceOver). */
 "format.spokenLessThanMinute" = "bir dakikadan az";
-

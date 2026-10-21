@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import QuotaRingCore
@@ -75,6 +76,59 @@ import Testing
                 nextAllowedLiveAt: now.addingTimeInterval(60)))
     }
 
+    @Test func suspensionStopsAutomaticRequests() {
+        // Even with an old snapshot and no back-off, a suspended Live mode asks nothing by itself.
+        #expect(
+            !RefreshPlanner.shouldFetchLive(
+                liveEnabled: true, freshest: snapshot(age: 10_000), now: now, refreshInterval: 300,
+                nextAllowedLiveAt: nil, isSuspended: true))
+        #expect(
+            !RefreshPlanner.shouldFetchLive(
+                liveEnabled: true, freshest: nil, now: now, refreshInterval: 300, nextAllowedLiveAt: nil,
+                isSuspended: true))
+        #expect(
+            RefreshPlanner.shouldFetchLive(
+                liveEnabled: true, freshest: nil, now: now, refreshInterval: 300, nextAllowedLiveAt: nil,
+                isSuspended: false))
+    }
+
+    // MARK: - Keychain refusal
+
+    @Test func keychainRefusalIsItsOwnStatus() {
+        for status in [errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed] {
+            #expect(
+                RefreshPlanner.liveStatus(
+                    for: .skippedNoCredential(.keychain(status)), now: now, retryAfterFallback: 600)
+                    == .keychainDenied)
+        }
+    }
+
+    @Test func onlyKeychainRefusalSuspendsAutomaticRequests() {
+        for status in [errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed] {
+            #expect(RefreshPlanner.suspendsAutomaticRequests(after: .skippedNoCredential(.keychain(status))))
+        }
+        let others: [LiveFetchResult] = [
+            .snapshot(snapshot(age: 0, source: .live)),
+            .skippedExpired,
+            .skippedNoCredential(.notFound),
+            .skippedNoCredential(.insecureFile),
+            .skippedNoCredential(.keychain(errSecNoSuchKeychain)),
+            .failed(.unauthorized),
+            .failed(.network),
+            .failed(.rateLimited(retryAfter: 60)),
+        ]
+        for result in others {
+            #expect(!RefreshPlanner.suspendsAutomaticRequests(after: result), "\(result)")
+        }
+    }
+
+    @Test func keychainRefusalCountsNoFailure() {
+        let retry = RefreshPlanner.retry(
+            after: .skippedNoCredential(.keychain(errSecUserCanceled)), consecutiveFailures: 2, policy: policy,
+            random: 0.5)
+        #expect(retry == LiveRetry(delay: 300, consecutiveFailures: 2))
+    }
+
     // MARK: - liveStatus
 
     @Test func mapsEveryFetchResult() {
@@ -83,7 +137,9 @@ import Testing
         }
         #expect(status(.snapshot(snapshot(age: 0, source: .live))) == .ok)
         #expect(status(.skippedExpired) == .expired)
-        #expect(status(.skippedNoCredential) == .noCredential)
+        #expect(status(.skippedNoCredential(.notFound)) == .noCredential)
+        #expect(status(.skippedNoCredential(.missingClaudeAiOauth)) == .noCredential)
+        #expect(status(.skippedNoCredential(.keychain(errSecNoSuchKeychain))) == .noCredential)
         #expect(status(.failed(.unauthorized)) == .expired)
         #expect(status(.failed(.server(status: 500))) == .error)
         #expect(status(.failed(.server(status: 302))) == .error)
@@ -148,7 +204,7 @@ import Testing
         #expect(expired == LiveRetry(delay: 300, consecutiveFailures: 0))
 
         let missing = RefreshPlanner.retry(
-            after: .skippedNoCredential, consecutiveFailures: 2, policy: policy, random: 0)
+            after: .skippedNoCredential(.notFound), consecutiveFailures: 2, policy: policy, random: 0)
         // No request was made, so the failure count is left alone.
         #expect(missing == LiveRetry(delay: 270, consecutiveFailures: 2))
     }

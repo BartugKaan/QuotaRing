@@ -11,13 +11,19 @@ import Foundation
 /// - detects truncation (size below the offset) and replacement (different inode, or a modification time older than
 ///   the recorded one) and then re-reads that file from the start, replacing its entries;
 /// - skips a line longer than `maxLineBytes` without buffering it, even while that line is still being written;
-/// - merges lines with the same `TranscriptEntry.dedupeKey`, within a file and across files.
+/// - merges lines with the same `TranscriptEntry.dedupeKey`, within a file and across files;
+/// - forgets entries older than `retention` (8 days by default: the 7-day chart plus a session window), so memory stays
+///   bounded however much history the transcripts hold.
 ///
 /// Symbolic links below the projects directory are never followed.
 public actor TranscriptScanner {
+    /// How long entries are kept by default: longer than the oldest range the app shows (7 local days).
+    public static let defaultRetention: TimeInterval = 8 * 86_400
+
     private let projectsDirectory: URL
     private let maxLineBytes: Int
     private let readChunkSize: Int
+    private let retention: TimeInterval
 
     private var files: [String: FileState] = [:]
     /// The merged result of the last scan; `nil` when a file changed since.
@@ -26,19 +32,33 @@ public actor TranscriptScanner {
     /// - Parameters:
     ///   - projectsDirectory: Claude Code's `projects` directory; it is searched recursively for `*.jsonl` files.
     ///   - maxLineBytes: Lines longer than this (without the newline) are ignored.
-    public init(projectsDirectory: URL, maxLineBytes: Int = 10_485_760) {
-        self.init(projectsDirectory: projectsDirectory, maxLineBytes: maxLineBytes, readChunkSize: 1 << 20)
+    ///   - retention: Entries more than this many seconds older than the scan's `now` are dropped.
+    public init(
+        projectsDirectory: URL,
+        maxLineBytes: Int = 10_485_760,
+        retention: TimeInterval = TranscriptScanner.defaultRetention
+    ) {
+        self.init(
+            projectsDirectory: projectsDirectory, maxLineBytes: maxLineBytes, readChunkSize: 1 << 20,
+            retention: retention)
     }
 
     /// `readChunkSize` is exposed to tests so that small chunks can exercise lines that straddle reads.
-    init(projectsDirectory: URL, maxLineBytes: Int, readChunkSize: Int) {
+    init(
+        projectsDirectory: URL,
+        maxLineBytes: Int,
+        readChunkSize: Int,
+        retention: TimeInterval = TranscriptScanner.defaultRetention
+    ) {
         self.projectsDirectory = projectsDirectory
         self.maxLineBytes = max(1, maxLineBytes)
         self.readChunkSize = max(1, readChunkSize)
+        self.retention = retention.isNaN ? Self.defaultRetention : max(0, retention)
     }
 
-    /// Brings every transcript up to date and returns each response once, oldest first.
-    public func scan() -> [TranscriptEntry] {
+    /// Brings every transcript up to date and returns each response of the last `retention` seconds before `now` once,
+    /// oldest first. Older entries are forgotten, also by later scans.
+    public func scan(now: Date = Date()) -> [TranscriptEntry] {
         let paths = Self.transcriptPaths(under: projectsDirectory)
 
         let present = Set(paths)
@@ -49,6 +69,7 @@ public actor TranscriptScanner {
         for path in paths {
             refresh(path)
         }
+        dropEntries(before: now.addingTimeInterval(-retention))
 
         if let mergedEntries { return mergedEntries }
         let merged = mergeFiles(inOrder: paths)
@@ -138,6 +159,17 @@ public actor TranscriptScanner {
         state.offset = assembler.committedOffset
         state.isSkippingLine = assembler.isSkippingLine
         if didChange { mergedEntries = nil }
+    }
+
+    // MARK: - Retention
+
+    /// Forgets every entry with a timestamp before `cutoff`. A file whose lines were already read is not read again, so
+    /// a dropped entry stays dropped (unless the file is replaced, and then the next pass drops it again).
+    private func dropEntries(before cutoff: Date) {
+        for (path, state) in files where state.entries.values.contains(where: { $0.timestamp < cutoff }) {
+            files[path]?.entries = state.entries.filter { $0.value.timestamp >= cutoff }
+            mergedEntries = nil
+        }
     }
 
     // MARK: - Merging
