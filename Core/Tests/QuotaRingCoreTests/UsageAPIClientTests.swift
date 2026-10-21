@@ -258,9 +258,10 @@ final class RedirectingURLProtocol: URLProtocol {
         #expect(configuration.urlCredentialStorage == nil)
         #expect(configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
         #expect(configuration.timeoutIntervalForRequest == 15)
+        #expect(configuration.timeoutIntervalForResource == 30)
     }
 
-    @Test func redirectDelegateDeclinesEveryRedirect() {
+    @Test func redirectDelegateDeclinesEveryRedirect() throws {
         let delegate = RedirectRefusingDelegate()
         let session = URLSession(configuration: .ephemeral)
         let task = session.dataTask(with: UsageAPI.endpoint)
@@ -282,7 +283,8 @@ final class RedirectingURLProtocol: URLProtocol {
 
         let results = outcome.withLock { $0 }
         #expect(results.count == 1)
-        #expect(results.first! == nil)
+        let followed = try #require(results.first)
+        #expect(followed == nil)
     }
 
     @Test func redirectIsReturnedNotFollowed() async throws {

@@ -35,6 +35,7 @@ public struct URLSessionTransport: HTTPTransport {
         configuration.urlCredentialStorage = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 30
         return configuration
     }
 }
