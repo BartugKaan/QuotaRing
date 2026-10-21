@@ -13,16 +13,29 @@ First public release, planned as 0.1.0.
 
 - Menu bar ring showing the remaining share of the 5-hour Claude session limit, with optional percentage text and an
   orange (20% remaining or less) and red (5% or less) warning tint.
+- Staleness display: when the numbers are older than two refresh intervals (10 minutes by default), the menu bar dims
+  the percentage and draws a hollow, dashed ring, shows "–" instead of a number when that session window has already
+  reset, and the popover adds a hint.
 - Popover with the session limit (remaining percentage, reset countdown and clock time), weekly limits for all models
   and for model-specific limits, extra usage when enabled, and Anthropic's own weekly "where it went" breakdown when
   available.
 - Local activity view built from Claude Code transcripts: tokens by model, top projects, and a 7-day chart, for the
-  current session, today or the last 7 days.
+  current session, today or the last 7 days. Transcript entries older than 8 days are dropped from memory.
 - Token-free default mode that reads only the `cachedUsageUtilization` key of Claude Code's cache in `~/.claude.json`
-  and the local transcripts in `~/.claude/projects`. No credentials and no network access.
+  (plus the account id, compared with the signed-in account and dropped) and the local transcripts in
+  `~/.claude/projects`. No credentials and no network access.
 - Opt-in Live mode that reads Claude Code's OAuth token read-only from the Keychain and requests
   `api.anthropic.com/api/oauth/usage`. The token is re-read on every poll, never stored, logged or refreshed, and
-  never sent when expired.
+  never sent when expired. With a custom config directory only that directory's own Keychain item is read.
+- Live-mode consent: it is recorded as soon as you click "Enable Live mode"; in the first-run window only the first
+  Keychain read waits for the notification prompt to settle (at most 15 seconds). The consent settings ignore
+  command-line launch arguments. If you deny the Keychain prompt, Live mode stops asking until you press Refresh or
+  switch Live mode off and on again, and says so.
+- Account safety: if the cache belongs to a different account than the one signed in to Claude Code, the cached, the
+  saved and the live numbers are all dropped, and the saved snapshot is deleted from disk.
+- The last good snapshot is saved to `~/Library/Application Support/QuotaRing/last-snapshot.json` (usage percentages and
+  reset times, weekly breakdown, extra-usage flag and percentage without money amounts, limit metadata and the config
+  directory it belongs to; never tokens; folder mode 700, file mode 600), so the ring is meaningful right after launch.
 - Source selection by freshness, with the source and age shown in the UI ("Claude Code · 3 min ago", "Live · 1 min
   ago").
 - Gentle polling: 5-minute default (3, 5, 10 or 15 minutes selectable) with jitter, exponential back-off that honors
@@ -34,13 +47,23 @@ First public release, planned as 0.1.0.
 - First-run onboarding that explains what is read and sent before any Keychain access.
 - Demo mode (`make demo` or the `--demo` launch argument) that uses fixture data and touches no Keychain, network or
   Claude files.
-- English and Turkish localization, light and dark mode, VoiceOver labels and Reduce Motion support.
+- English and Turkish localization (app, Info.plist and relative times), light and dark mode, VoiceOver labels and
+  Reduce Motion support.
 - Generated app icon with a ring motif.
 - Open-source project files: README, CONTRIBUTING, Code of Conduct, security policy, MIT license, issue forms, pull
   request template, architecture overview.
-- Continuous integration (tests, lint, unsigned build), CodeQL analysis, Dependabot for GitHub Actions, and a
-  release pipeline that produces a Developer ID signed and notarized DMG and zip with `SHA256SUMS` and a GitHub
-  build-provenance attestation.
+- Continuous integration (tests, lint, unsigned build on the newest Xcode, plus tests and an unsigned build on Xcode
+  16.4, the minimum supported version), CodeQL analysis, Dependabot for GitHub Actions, and a release pipeline that
+  produces a Developer ID signed and notarized DMG and zip with `SHA256SUMS` and a GitHub build-provenance attestation.
+  XcodeGen is installed from a pinned release with a verified SHA-256 checksum instead of Homebrew.
+
+### Known limitations
+
+- Only the `claude` command-line tool updates the usage cache that the default mode reads (a session or `/usage`). The
+  Claude desktop app does not (verified on 2026-10-21), so if you use only the desktop app the default mode goes stale.
+  Either run `claude` or `/usage` now and then, or turn on Live mode, which stays fresh for roughly as long as Claude
+  Code's login token is valid (about 8 hours after the CLI last ran). A better answer for desktop-app users is being
+  considered for v1.1.
 
 ### Security
 

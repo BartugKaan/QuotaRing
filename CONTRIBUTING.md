@@ -24,7 +24,7 @@ If you are unsure whether an idea fits, open a feature request first and describ
 ## Prerequisites
 
 - macOS 14 or later
-- Xcode 16.4 or later (Swift 6 language mode, strict concurrency)
+- Xcode 16.4 or later (Swift 6 language mode, strict concurrency). CI tests with Xcode 16.4 and with the newest Xcode.
 - [Homebrew](https://brew.sh)
 
 Then, from the repository root:
@@ -52,7 +52,9 @@ The Xcode project is generated from `project.yml` and is git-ignored. Never comm
 
 The [`Makefile`](Makefile) is the source of truth if this table ever drifts.
 
-CI builds with `make build XCODEBUILD_FLAGS="CODE_SIGNING_ALLOWED=NO"`. You can pass the same variable locally.
+CI builds with `make build XCODEBUILD_FLAGS="CODE_SIGNING_ALLOWED=NO"`. You can pass the same variable locally. CI
+installs a pinned XcodeGen release with a verified checksum (`scripts/ci/install-xcodegen.sh`); `make setup` installs
+whichever version Homebrew has.
 
 ### Signing for local builds
 
@@ -108,9 +110,40 @@ Tests are required for new behavior and for bug fixes.
   contents.
 - All user-facing strings go through `String(localized:)` or `LocalizedStringKey`, with English as the base language.
   Translations live in `App/Resources/Localizable.xcstrings`. Turkish is maintained; to propose another language, open
-  an issue first.
+  an issue first. See [Localization](#localization) for how to add the strings.
 - Respect accessibility: add VoiceOver labels to new controls and honor Reduce Motion.
 - Do not use Anthropic or Claude logos or marks.
+
+## Localization
+
+English is the base language and Turkish is maintained. **Every new user-facing string needs a Turkish translation in
+the same pull request.**
+
+The app's strings live in the String Catalogs `App/Resources/Localizable.xcstrings` and
+`App/Resources/InfoPlist.xcstrings`. Building in Xcode keeps the catalog up to date, but **command-line builds
+(`make build`, `xcodebuild build`) do not update it**, so a string you add in code is not in the catalog until you
+export the localizations. From the repository root:
+
+```sh
+make generate
+xcodebuild -exportLocalizations -project QuotaRing.xcodeproj -localizationPath build/l10n -exportLanguage tr
+```
+
+The export extracts the strings from the code into the catalog and writes `build/l10n/tr.xcloc`. Open
+`build/l10n/tr.xcloc/Localized Contents/tr.xliff`. A new string is a `<trans-unit>` with a `<source>` and no `<target>`
+yet: add `<target state="translated">your Turkish text</target>` after the `<source>`, then import the file:
+
+```sh
+xcodebuild -importLocalizations -project QuotaRing.xcodeproj -localizationPath build/l10n/tr.xcloc
+```
+
+Check that `git diff App/Resources` shows your keys with a `translated` Turkish value, and that running the export a
+second time changes nothing. Keep format specifiers and Markdown in the strings as they are (`%@`, `%lld`, `%1$@`,
+`**bold**`, backticks), and leave Claude, Claude Code, QuotaRing and Anthropic untranslated.
+
+The relative times and durations from Core ("3 min ago") are plain `.strings` files, which you edit by hand:
+`Core/Sources/QuotaRingCore/Resources/en.lproj/Localizable.strings` and `.../tr.lproj/Localizable.strings`. A test fails
+if the two have different keys or format specifiers.
 
 ## Pull request checklist
 
@@ -121,7 +154,7 @@ The [pull request template](.github/pull_request_template.md) includes this list
 - [ ] New logic has tests; fixtures contain no real data
 - [ ] No tokens, credentials or real usage data anywhere (code, fixtures, logs, screenshots)
 - [ ] No new network hosts, telemetry or third-party runtime dependencies
-- [ ] Strings localized; accessibility labels added
+- [ ] Strings localized (English and Turkish); accessibility labels added
 - [ ] Docs and `CHANGELOG.md` (`[Unreleased]`) updated if behavior changed
 - [ ] The privacy and security impact section is filled in
 
@@ -133,4 +166,5 @@ contain secrets.
 ## Releases
 
 Releases are cut by the maintainer from a version tag and built in CI: Developer ID signed, notarized, with a
-`SHA256SUMS` file and a GitHub build-provenance attestation. Contributors never need signing keys.
+`SHA256SUMS` file and a GitHub build-provenance attestation. Contributors never need signing keys. The maintainer's
+checklist is in [docs/RELEASING.md](docs/RELEASING.md).

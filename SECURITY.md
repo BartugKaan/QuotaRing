@@ -31,9 +31,10 @@ No personal email address is published for this project; GitHub private reportin
 
 ### What to expect
 
-This is a volunteer-run project, so these are targets, not guarantees:
+QuotaRing is maintained by one person in their spare time. These are best-effort targets for a solo maintainer, not
+guarantees:
 
-| Step | Target |
+| Step | Best-effort target |
 | --- | --- |
 | Acknowledge your report | within 7 days |
 | Initial assessment (accepted, needs info, or declined, with reasons) | within 14 days |
@@ -53,8 +54,8 @@ In scope:
 - Any write to Claude Code's files (`~/.claude.json`, `~/.claude/**`) or Keychain items.
 - Crashes, hangs or unbounded resource use triggered by malformed, hostile or huge `~/.claude.json`, transcript or API
   response data.
-- Weaknesses in the build, signing, notarization or release pipeline (for example unpinned actions, leaked secrets,
-  tampered artifacts).
+- Weaknesses in the build, signing, notarization or release pipeline (for example unpinned actions or tools, leaked
+  secrets, tampered artifacts).
 - Excessive entitlements or other hardening gaps in the shipped app.
 
 Out of scope:
@@ -82,11 +83,13 @@ Out of scope:
 | Token sent to the wrong place | The endpoint is a compile-time constant (`https://api.anthropic.com/api/oauth/usage`), not a setting, so configuration or a hostile file cannot redirect it. HTTPS only, with App Transport Security defaults. |
 | Cross-request leakage | Requests use an ephemeral `URLSession`: no cookies, no URL cache, no credential storage. |
 | Breaking the user's Claude Code login | QuotaRing never refreshes tokens (refresh tokens are single-use) and never launches the `claude` CLI. An expired token is not sent anywhere. |
-| Reading more than necessary | From `~/.claude.json` only the `cachedUsageUtilization` key is kept; the rest is dropped immediately. Transcripts are reduced to timestamp, model, token counts, project folder name and message id. A credentials file is accepted only if it is a regular file owned by you and not group or world readable. Nothing is read from the Keychain before you opt in. |
+| Reading more than necessary | From `~/.claude.json` only the `cachedUsageUtilization` key is kept; the rest is dropped immediately. The one other value looked at is the account id (`oauthAccount.accountUuid`), which is compared with the id in the cache entry and then dropped. Transcripts are reduced to timestamp, model, token counts, project folder name and message id, and entries older than 8 days are dropped from memory. A credentials file is accepted only if it is a regular file owned by you and not group or world readable. Nothing is read from the Keychain before you opt in. The consent settings are read from QuotaRing's saved preferences only, so command-line launch arguments cannot enable Live mode. |
+| Another account's numbers | If the cache entry and `oauthAccount` name different accounts, the cached, the saved and the live numbers are all dropped and the saved snapshot is deleted from disk. A custom config directory reads only its own Keychain item (the plain `Claude Code-credentials` item belongs to the default account). |
+| Repeated Keychain prompts | If you deny the Keychain prompt, Live mode stops asking until you press Refresh or switch Live mode off and on again. |
 | Damaging Claude's files | QuotaRing only reads them. It has no code path that writes `~/.claude.json`, `~/.claude/**` or Keychain items. |
 | Hostile or corrupted input | Defensive parsing that never trusts shape or size: files over 50 MB and transcript lines over 10 MB are skipped, truncated or malformed JSON keeps the previous snapshot, unknown keys are ignored. The decoder tolerates bad entries rather than crashing. |
 | Supply chain (runtime) | No third-party runtime dependencies. The attack surface is Apple's SDKs and this repository. |
-| Supply chain (build and release) | CI uses least-privilege `permissions` and pins every GitHub Action to a commit SHA, with Dependabot keeping them current. Releases are built in CI on a protected `release` environment, signed with a Developer ID certificate, notarized by Apple, published with `SHA256SUMS` and a GitHub build-provenance attestation. CodeQL scans the Swift code. |
+| Supply chain (build and release) | CI uses least-privilege `permissions` and pins every GitHub Action to a commit SHA, with Dependabot keeping them current. XcodeGen, the one build tool installed from the network, is pinned to an exact release and verified against a SHA-256 checksum before it is unpacked (`scripts/ci/install-xcodegen.sh`). Releases are built in CI on a protected `release` environment, signed with a Developer ID certificate, notarized by Apple, published with `SHA256SUMS` and a GitHub build-provenance attestation. CodeQL scans the Swift code. |
 | Telemetry | None: no analytics, crash reporting SDKs or update pings. |
 
 **Not defended against**
@@ -117,10 +120,11 @@ small and separate (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 | Data | Where it comes from | What QuotaRing does with it |
 | --- | --- | --- |
 | OAuth access token (Live mode only) | Keychain item `Claude Code-credentials` (or a per-config-directory variant), or an owner-only `.credentials.json` | Read-only, in memory, per poll. Sent only in the `Authorization` header to `api.anthropic.com`. Never stored, logged, refreshed or forwarded. |
-| Usage snapshot (percentages, reset times) | `cachedUsageUtilization` in `~/.claude.json`, or the Live endpoint | Shown in the UI. The last good snapshot is saved to `~/Library/Application Support/QuotaRing/last-snapshot.json` (no secrets). |
+| Usage snapshot (percentages, reset times, weekly breakdown, extra-usage flag and percentage, limit metadata) | `cachedUsageUtilization` in `~/.claude.json`, or the Live endpoint | Shown in the UI. The last good snapshot is saved to `~/Library/Application Support/QuotaRing/last-snapshot.json` (folder mode 700, file mode 600): the percentages and reset times, the weekly breakdown, the extra-usage flag and percentage (money amounts are stripped), limit metadata (kind, group, scope name, severity, active flag), when it was fetched and from which source, and the absolute path of the Claude config directory it belongs to. Never tokens. Deleted when the config directory changes or the cache belongs to another account. |
+| Account id | `oauthAccount.accountUuid` and the account id of the cache entry, both in `~/.claude.json` | Compared once per read to detect a cache from another account, then dropped. Never stored, logged or sent. |
 | Rest of `~/.claude.json` | Same file | Discarded immediately. Never logged, stored or sent. |
-| Transcript metadata | `~/.claude/projects/**/*.jsonl` | Timestamp, model, token counts, project folder name, message id, kept in memory only. Message text is not retained. |
-| Preferences | Settings window | UserDefaults, non-sensitive values only. |
+| Transcript metadata | `~/.claude/projects/**/*.jsonl` | Timestamp, model, token counts, project folder name, message id, kept in memory only and dropped after 8 days. Message text is not retained. |
+| Preferences | Settings window | UserDefaults, non-sensitive values only (including which notification thresholds were already announced for the current window). |
 
 ## Verifying a release
 

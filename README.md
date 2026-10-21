@@ -21,6 +21,10 @@ open-source app whose behavior you can read in an afternoon. Everything it reads
   - weekly limits (all models, plus any model-specific limits) and extra usage when it is enabled;
   - Anthropic's own "where it went" breakdown for the week, when available;
   - local activity: tokens by model, top projects and a 7-day chart, for the current session, today or the last 7 days.
+- **Honest about old data.** When the numbers are older than two refresh intervals, the menu bar dims the percentage and
+  draws a hollow, dashed ring instead of a solid one, and shows "–" instead of a number when that old session window
+  has already reset. The popover footer says where the numbers came from and how old they are. See
+  [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 - **Notifications.** Local notifications when session usage crosses a threshold (default 80% and 95% used), once per
   window. An optional notice when the session resets (off by default).
 - **Settings.** Launch at login, refresh interval (3, 5, 10 or 15 minutes), ring shows remaining or used, percentage
@@ -35,7 +39,10 @@ ring shows what remains (100 minus used) by default; you can switch it to show w
 ## Requirements
 
 - macOS 14 Sonoma or later (Apple silicon or Intel)
-- A Claude subscription, and Claude Code (the CLI, the desktop app or an IDE integration) so there is data to read
+- A Claude subscription and Claude Code's command-line tool (`claude`). In the default mode QuotaRing reads the usage
+  cache that **only the `claude` command-line tool updates** (a session or `/usage`); the Claude desktop app does not
+  (verified on 2026-10-21). If you mostly use the desktop app, read
+  [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
 ## Install
 
@@ -75,7 +82,8 @@ The attestation ties the file to the exact commit and workflow run in this repos
 
 ### Build from source
 
-You need macOS 14+, Xcode 16.4 or later (Swift 6) and [Homebrew](https://brew.sh).
+You need macOS 14+, Xcode 16.4 or later (Swift 6; CI builds with Xcode 16.4 and with the newest Xcode) and
+[Homebrew](https://brew.sh).
 
 ```sh
 git clone https://github.com/BartugKaan/QuotaRing.git
@@ -101,23 +109,48 @@ QuotaRing reads three things. Two of them are always on and are purely local. Th
 
 | Source | What is read | Needs a token | Leaves your Mac |
 | --- | --- | --- | --- |
-| **Claude Code's cached usage snapshot** | One key, `cachedUsageUtilization`, from `~/.claude.json` | No | No |
+| **Claude Code's cached usage snapshot** | One entry, `cachedUsageUtilization`, from `~/.claude.json` (plus an account id used only to check it, see below) | No | No |
 | **Local transcripts** | Token counts from `~/.claude/projects/**/*.jsonl` | No | No |
 | **Live endpoint** (opt-in "Live mode") | Claude Code's OAuth token from the Keychain, used for one request | Yes | The token goes to `api.anthropic.com` only |
 
 If you set a custom Claude config directory in Settings, the same files are read from there instead.
+
+### Keeping the numbers fresh
+
+The default mode shows what Claude Code last wrote to its cache, and **only the `claude` command-line tool writes it**:
+starting a session or running `/usage` updates it. The Claude desktop app does not update that cache (verified on
+2026-10-21). If the desktop app is how you use Claude, the default mode has nothing new to show.
+
+QuotaRing does not hide that. When the numbers are older than two refresh intervals (10 minutes with the default
+interval), it marks them as out of date: the menu bar dims the percentage and draws a hollow, dashed ring, and the
+popover says so. If that old session window has already reset, the menu bar shows "–" rather than a number, because
+the old percentage no longer applies.
+
+If you use the desktop app, you have two options:
+
+1. **Run `claude` or `/usage` now and then.** QuotaRing picks up the new snapshot within about 30 seconds.
+2. **Turn on Live mode.** QuotaRing then asks Anthropic for your usage itself. It stays fresh for roughly as long as
+   Claude Code's login token is valid, which is about 8 hours after the CLI last ran. After that Live mode pauses until
+   Claude Code renews the token, because QuotaRing never refreshes it (see [Live mode](#live-mode-opt-in-one-host)).
+
+An improvement for desktop-app users is being considered for v1.1; nothing is promised.
 
 ### Default mode: nothing leaves your Mac
 
 - **The cache.** Claude Code stores the last usage response it fetched in `~/.claude.json`. That file also holds
   unrelated and potentially sensitive configuration (MCP server definitions, account details). QuotaRing reads the file
   into memory only to find the `cachedUsageUtilization` key, keeps that one value, and drops the rest immediately. The
-  rest is never logged, stored or sent anywhere. It checks the file's size and modification time every 30 seconds and
-  parses it only when it changed. Files over 50 MB are skipped. QuotaRing **never writes** this file.
+  rest is never logged, stored or sent anywhere. The one exception is a comparison: the cache entry and the file's
+  `oauthAccount` each carry an account id, and QuotaRing checks that they match so that numbers from another account are
+  never shown. The ids are compared and dropped, never stored or logged. If they differ, QuotaRing discards everything
+  it holds for that account: the cached, the saved and the live numbers. It checks the file's size and modification time
+  every 30 seconds and parses it only when it changed. Files over 50 MB are skipped. QuotaRing **never writes** this
+  file.
 - **The transcripts.** Claude Code writes conversation logs to `~/.claude/projects`. QuotaRing parses them to count
   tokens, and keeps only the timestamp, model name, token counts, the project folder name and the message id used to
   avoid double counting. Prompt and response text is not retained. The result stays in memory and is never written to
-  disk. Lines over 10 MB are skipped. This works without any consent step because no secret is involved.
+  disk, and entries older than 8 days are dropped from memory. Lines over 10 MB are skipped. This works without any
+  consent step because no secret is involved.
 - **No network.** In this mode the app makes no network connections at all.
 
 The detail view always says where the numbers came from and how old they are, for example "Claude Code · 3 min ago".
@@ -128,12 +161,19 @@ Live mode asks Anthropic for fresh numbers instead of waiting for Claude Code to
 default**. The first-run screen explains exactly what happens before anything is read, and you can turn it off again in
 Settings at any time.
 
+Your consent is recorded the moment you click "Enable Live mode", in the first-run window or in Settings. In the
+first-run window, when you also left notifications on, only the first Keychain read is delayed, until the notification
+prompt has settled (at most 15 seconds), so macOS does not put two prompts on screen at once. The consent settings are
+read from QuotaRing's saved preferences only: command-line launch arguments cannot switch Live mode on.
+
 When enabled:
 
-- QuotaRing reads Claude Code's OAuth token **read-only** from the macOS Keychain (the `Claude Code-credentials` item,
-  or the variant Claude Code names after a custom config directory). If neither has a usable token, it also checks
-  `.credentials.json` in your Claude config directory, but only when that file is owned by you and not readable by
-  others. macOS may ask you to allow Keychain access; that prompt comes from the OS.
+- QuotaRing reads Claude Code's OAuth token **read-only** from the macOS Keychain. With the default config directory it
+  tries the `Claude Code-credentials` item and then the variant Claude Code names after the directory; with a custom
+  directory it tries only that variant, because the plain item belongs to the default account. If none has a usable
+  token, it also checks `.credentials.json` in your Claude config directory, but only when that file is owned by you and
+  not readable by others. macOS may ask you to allow Keychain access; that prompt comes from the OS. **If you deny it,
+  QuotaRing stops asking** and shows a message, until you press Refresh or switch Live mode off and on again.
 - The token is **re-read on every poll** and held in memory only for the length of one request. It is never cached
   between polls, written to disk, put in preferences, logged or copied to the pasteboard.
 - It makes a single HTTPS `GET` to `https://api.anthropic.com/api/oauth/usage`. The URL is a compile-time constant and
@@ -160,9 +200,16 @@ When enabled:
 
 ### What it stores
 
-- `~/Library/Application Support/QuotaRing/last-snapshot.json`: the last good usage snapshot (percentages and reset
-  times only), so the ring is meaningful right after launch. It contains no secrets.
-- Your preferences, in UserDefaults (non-sensitive values only).
+- `~/Library/Application Support/QuotaRing/last-snapshot.json`: the last good usage snapshot, so the ring is meaningful
+  right after launch (it is shown as out of date if it is old). It holds the usage percentages and reset times, the
+  weekly "where it went" breakdown, whether extra usage is on and its percentage (money amounts are stripped before
+  saving), limit metadata (kind, group, scope name such as a model name, severity, active flag), when it was fetched and
+  from which source, and the absolute path of the Claude config directory it belongs to, so it is never shown for a
+  different directory. It never contains tokens.
+  The folder is private to you (mode 700) and the file is 600. It is deleted when you change the config directory or
+  QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
+- Your preferences, in UserDefaults (non-sensitive values only), including which notification thresholds were already
+  announced for the current session window.
 
 To remove everything, quit the app, delete it, and delete `~/Library/Application Support/QuotaRing`. Preferences can be
 cleared with `defaults delete io.github.bartugkaan.QuotaRing`.
@@ -171,10 +218,11 @@ cleared with `defaults delete io.github.bartugkaan.QuotaRing`.
 
 The code is small on purpose. The parts that matter for trust live in `Core/Sources/QuotaRingCore`:
 
-- `Cache/` reads the one cache key.
+- `Cache/` reads the one cache key (and the account id used to vet it).
 - `Credentials/` is the only code that touches the Keychain or a credentials file.
 - `Network/` is the only code that performs requests; the endpoint is a constant there.
 - `Transcripts/` scans local logs.
+- `Persistence/` writes the one file QuotaRing saves, `last-snapshot.json`.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the rest. You can also watch the app with a network monitor such as
 LuLu or Little Snitch: in default mode you should see no connections, and in Live mode only `api.anthropic.com`.
@@ -200,15 +248,29 @@ whatever it can still read.
 ## FAQ
 
 **The numbers look stale. Why?**
-In default mode QuotaRing shows what Claude Code last wrote to its cache; it does not fetch anything itself. Open Claude
-Code or run `/usage` there, and QuotaRing picks up the new snapshot within about 30 seconds (the refresh button in the
-popover re-reads the cache immediately). The popover footer shows the source and age of what you are looking at. If you
-want QuotaRing to fetch on its own, enable Live mode in Settings.
+In default mode QuotaRing shows what Claude Code last wrote to its cache; it does not fetch anything itself. Only the
+`claude` command-line tool updates that cache, when a session runs or when you run `/usage`. The Claude desktop app does
+not (verified on 2026-10-21), so if you mostly use the desktop app the cache can be hours or days old. Old numbers are
+marked: the menu bar dims the percentage and draws a hollow, dashed ring (or shows "–" if that session window has
+already reset), and the popover footer shows the source and age. You have two options: run `claude` or `/usage`
+occasionally (QuotaRing picks up the new snapshot within about 30 seconds, and the refresh button re-reads the cache
+immediately), or enable Live mode in Settings, which stays fresh for roughly as long as Claude Code's login token is
+valid, about 8 hours after the CLI last ran. A better answer for desktop-app users is being considered for v1.1.
 
 **Live mode says my login expired, but Claude works fine.**
-If you mostly use the Claude desktop app, it manages its own sign-in, so the token Claude Code keeps in the Keychain can
-be weeks out of date. QuotaRing does not call the API with an expired token and does not refresh it (that could sign
-you out of Claude Code). It falls back to the cache and says so. Running `claude` once renews the Keychain token.
+Live mode uses the token that Claude Code keeps in the Keychain, and only the `claude` command-line tool renews it. The
+token is valid for roughly 8 hours, so if you mostly use the Claude desktop app, which manages its own sign-in, it runs
+out some hours after the CLI last ran even though Claude itself keeps working. QuotaRing does not call the API with an
+expired token and does not refresh it (that could sign you out of Claude Code). It falls back to the cache and says so.
+Running `claude` once renews the Keychain token, and Live mode picks up from there.
+
+**I clicked "Deny" on the Keychain prompt. How do I get it back?**
+QuotaRing does not ask again on its own; it shows a message instead. Press Refresh in the popover, or switch Live mode
+off and on again in Settings, and it asks once more. Choose "Always Allow" to avoid repeated prompts.
+
+**I run Claude Code with `CLAUDE_CONFIG_DIR`. Does QuotaRing follow it?**
+Set the same folder in Settings → Data. Apps started from Finder or at login do not see the environment variables of
+your shell, so QuotaRing cannot find the variable itself.
 
 **Why does the ring show remaining, but Claude shows "used"?**
 Anthropic reports percent used, and so does QuotaRing's data. The ring shows the remainder (100 minus used) so a full
