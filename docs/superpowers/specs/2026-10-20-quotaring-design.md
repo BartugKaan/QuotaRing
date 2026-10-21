@@ -43,9 +43,11 @@ Success looks like:
 - **G4 Settings.** Launch at login, refresh interval, ring shows remaining vs
   used, percentage text on/off, notification thresholds, Claude config
   directory, usage-API consent toggle.
-- **G5 Consent-first onboarding.** On first launch, before any Keychain read,
-  explain exactly what is read and where it is sent. The user chooses
-  "Enable live limits" or "Local stats only". Revocable in Settings.
+- **G5 Token-free by default, consent for live mode.** By default QuotaRing
+  reads only Claude Code's own cached usage snapshot and local transcripts —
+  no credentials, no network (§6.0). "Live mode" (Keychain read + Anthropic
+  request) is opt-in: onboarding explains exactly what is read and where it
+  is sent before any Keychain access. Revocable in Settings.
 - **G6 Open-source project quality.** README, CONTRIBUTING, Code of Conduct,
   SECURITY policy, LICENSE, CHANGELOG, issue/PR templates, CI, CodeQL,
   Dependabot (Actions), signed + notarized release pipeline.
@@ -57,6 +59,10 @@ Success looks like:
   token-priced). Candidate for later.
 - claude.ai web session cookies or any web scraping.
 - Refreshing OAuth tokens.
+- Launching the `claude` CLI to make it refresh its login. Verified that an
+  interactive start does refresh it, but each launch creates a new Claude Code
+  session entry, may self-update and starts the user's MCP servers — too many
+  side effects for a background helper.
 - Auto-update framework (Sparkle) — candidate for v1.1.
 - Token-free "statusLine bridge" live source — candidate for v1.1 (see §11).
 - Homebrew cask, widgets, Windows/Linux, Anthropic Console (API-key) usage.
@@ -106,6 +112,24 @@ Success looks like:
   "message":"OAuth access token has expired. ..."},"request_id":"req_..."}`
   with header `x-should-retry: false`. Handling this case well is a v1
   requirement, not an edge case (see §6.1 "Expired token").
+- **Claude Code caches the usage response** (verified 2026-10-21) in
+  `~/.claude.json` under `cachedUsageUtilization`:
+  `{fetchedAtMs, accountUuid, utilization: <full /api/oauth/usage body>}`.
+  The file is mode 0600 and is rewritten often by every Claude Code process.
+  It also holds unrelated, potentially sensitive config (MCP server
+  definitions, account info), so only that one key may be extracted.
+- **Verified live response** (2026-10-21, sanitized fixture captured):
+  `limits[].percent` is **percent used** — `weekly_all` 18 matched `/usage`
+  "18% used". `five_hour.utilization` is also percent used (0–100, int or
+  float). New fields seen: `five_hour.locked_reason`, `seven_day_cowork`,
+  `seven_day_breakdown {as_of, window_started_at, rows[{key, display_name,
+  percent}]}` (e.g. Claude Code 44 %, Chats 1 %, Cowork 54 %, Other 1 %),
+  `weekly_scoped_shares[{limit_index, used_percent_of_weekly,
+  allowance_percent_of_weekly}]`, `spend {used {amount_minor, currency,
+  exponent}, …}`, `member_dashboard_available`, plus ~20 obfuscated `null`
+  experiment keys. `resets_at` had microseconds and `+00:00`.
+- `claude auth status` reports `loggedIn: true` with an expired access token
+  and does **not** refresh it; starting `claude` interactively does.
 - **Local transcripts** `~/.claude/projects/**/*.jsonl` are an internal format
   that changes between versions; retention defaults to 30 days. Only Claude
   Code usage appears there (not claude.ai chat). Treat as best-effort detail,
@@ -118,7 +142,29 @@ Success looks like:
 
 ## 6. Data sources
 
-### 6.1 Credential resolution (read-only)
+### 6.0 Source strategy
+
+Three read-only sources; the limit percentage comes from the freshest of the
+first two (compared by fetch time), the detail from the third.
+
+1. **Claude Code cache (default, token-free).** `<home>/.claude.json`, or
+   `D/.claude.json` when a custom config directory `D` is set. Check `stat`
+   every 30 s; parse only when mtime/size changed; skip files > 50 MB.
+   Extract `cachedUsageUtilization` and discard the rest of the document
+   immediately (never log, store or keep it). Decode `utilization` with the
+   same decoder as the live endpoint; age = now − `fetchedAtMs`. If several
+   accounts are possible, prefer the entry whose `accountUuid` matches
+   `oauthAccount.accountUuid` in the same file when present. **Never write
+   this file.**
+2. **Live endpoint (opt-in "Live mode").** Only after consent, only when the
+   cached snapshot is older than the refresh interval, and only with a
+   non-expired token (§6.1–6.3).
+3. **Local transcripts** for tokens by model/project/day (§6.4).
+
+The UI always shows where the numbers came from and how old they are
+("Claude Code · 3 min ago" / "Live · 1 min ago").
+
+### 6.1 Credential resolution (read-only, Live mode only)
 
 Given the configured Claude config directory `D` (default `~/.claude`), try in
 order and use the first candidate that contains a non-empty
@@ -135,10 +181,9 @@ Rules:
 - Read via the Security framework (`SecItemCopyMatching`). Re-read on **every**
   poll; never cache the token across polls; drop it right after the request.
 - **Expired token:** if `expiresAt` is in the past (with 60 s skew), do not
-  call the API; show "Claude Code login expired" with a one-line fix
-  ("run `claude` in Terminal once") and retry on the next poll. Whether
-  QuotaRing may additionally delegate the refresh to the user's own Claude
-  Code CLI is **pending the owner's answer** (open question Q1 below).
+  call the API; fall back to the cache source and show a quiet hint
+  ("Live mode paused: Claude Code login expired — open `claude` once to
+  renew"). Retry on the next poll. Never refresh, never launch the CLI.
 - `D` for the hashed service name is the tilde-expanded, standardized absolute
   path without a trailing slash, symlinks not resolved, NFC-normalized. This
   naming is a community report and best effort. `D` can only be changed via the
@@ -229,11 +274,15 @@ Rules:
 
 1. **Session:** large ring, "72 % left", "Resets in 2 h 14 m · 03:00".
 2. **Weekly:** one row per weekly limit (All models; scoped e.g. Opus/Fable)
-   with a progress bar and reset day/time. Extra usage row if enabled.
+   with a progress bar and reset day/time. Extra usage row if enabled. When
+   `seven_day_breakdown` is present, a compact "Where it went" bar (Claude
+   Code / Chats / Cowork / Other) — Anthropic's own breakdown, covering all
+   devices and claude.ai.
 3. **Activity (local):** segmented control Session / Today / 7 days → total
    tokens, by model, top 5 projects; 7-day bar chart (Swift Charts).
-4. **Footer:** "Updated 2 min ago" (+ stale/error hint), refresh button
-   (cooldown-aware), settings, quit.
+4. **Footer:** source + age ("Claude Code · 3 min ago" / "Live · 1 min
+   ago", stale/error hint), refresh button (re-reads the cache; also calls
+   the endpoint in Live mode, cooldown-aware), settings, quit.
 
 States without consent or data show a short explanation and a button to
 enable live limits.
@@ -291,7 +340,10 @@ enable live limits.
 
 ## 9. Quality and security
 
-- **Tests (Swift Testing):** decoder fixtures (current `limits[]`, legacy-only,
+- **Tests (Swift Testing):** the captured live fixture; Claude Code cache
+  extraction (key present/missing, malformed, huge file, account match, other
+  keys never surfaced); source selection by freshness; decoder fixtures
+  (current `limits[]`, legacy-only,
   all-null, epoch and ISO `resets_at`, malformed entry, unknown kind,
   extra usage), credential parsing (missing `claudeAiOauth`, `mcpOAuth`-only,
   empty/expired token, insecure file permissions), resolver order, polling
@@ -341,9 +393,10 @@ enable live limits.
   Token-free statusLine bridge stays a v1.1 candidate.
 - Live endpoint calls with the owner's credentials during development:
   allowed (a few requests; sanitized fixtures; token never printed).
-- **Open — Q1:** may QuotaRing (opt-in) run the user's own `claude` CLI to let
-  Claude Code refresh its own expired login? Needs an experiment the owner
-  runs (see conversation) before it can be decided.
+- Q1 resolved (2026-10-21): no CLI launching (side effects, §3). Instead the
+  default source became Claude Code's own cached snapshot, so QuotaRing needs
+  no credentials at all unless Live mode is turned on. *(Lead developer's
+  call after the owner's experiment.)*
 
 ## 12. Left to the builder
 
