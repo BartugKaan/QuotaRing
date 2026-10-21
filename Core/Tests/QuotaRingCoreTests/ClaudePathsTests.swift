@@ -34,7 +34,8 @@ import Testing
         #expect(paths.globalConfigFile.path == "/tmp/x/.claude.json")
         #expect(paths.projectsDirectory.path == "/tmp/x/projects")
         #expect(paths.credentialsFile.path == "/tmp/x/.credentials.json")
-        #expect(paths.keychainServiceNames.first == "Claude Code-credentials")
+        // A custom directory must not fall back to the plain item: that belongs to the default account.
+        #expect(paths.keychainServiceNames == ["Claude Code-credentials-" + hashSuffix(of: "/tmp/x")])
         #expect(paths != ClaudePaths(homeDirectory: home))
     }
 
@@ -51,8 +52,8 @@ import Testing
         let without = ClaudePaths(customConfigDirectory: URL(fileURLWithPath: "/tmp/x", isDirectory: true))
         let expected = "Claude Code-credentials-" + hashSuffix(of: "/tmp/x")
 
-        #expect(withSlash.keychainServiceNames == ["Claude Code-credentials", expected])
-        #expect(without.keychainServiceNames == ["Claude Code-credentials", expected])
+        #expect(withSlash.keychainServiceNames == [expected])
+        #expect(without.keychainServiceNames == [expected])
 
         let suffix = String(expected.dropFirst("Claude Code-credentials-".count))
         #expect(suffix.count == 8)
@@ -62,11 +63,11 @@ import Testing
     @Test func hashedServiceNameStandardizesLexicallyAndNormalizesToNFC() {
         let expected = "Claude Code-credentials-" + hashSuffix(of: "/tmp/x")
         let dotted = ClaudePaths(customConfigDirectory: URL(fileURLWithPath: "/tmp/a/../x/./", isDirectory: true))
-        #expect(dotted.keychainServiceNames.last == expected)
+        #expect(dotted.keychainServiceNames == [expected])
 
         // Symlinks are not resolved: /tmp is a symlink to /private/tmp on macOS, and must hash as written.
         let viaSymlink = ClaudePaths(customConfigDirectory: URL(fileURLWithPath: "/private/tmp/x", isDirectory: true))
-        #expect(viaSymlink.keychainServiceNames.last != expected)
+        #expect(viaSymlink.keychainServiceNames != [expected])
 
         let composed = "/tmp/caf\u{00E9}"
         let decomposed = "/tmp/cafe\u{0301}"
@@ -76,11 +77,11 @@ import Testing
         #expect(hashSuffix(of: composed) != hashSuffix(of: decomposed))
         #expect(
             ClaudePaths(customConfigDirectory: URL(fileURLWithPath: decomposed, isDirectory: true))
-                .keychainServiceNames.last == expectedNFC
+                .keychainServiceNames == [expectedNFC]
         )
         #expect(
             ClaudePaths(customConfigDirectory: URL(fileURLWithPath: composed, isDirectory: true))
-                .keychainServiceNames.last == expectedNFC
+                .keychainServiceNames == [expectedNFC]
         )
     }
 }

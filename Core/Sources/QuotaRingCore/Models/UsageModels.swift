@@ -44,7 +44,8 @@ public enum LimitKind: Hashable, Sendable, Codable {
 
 /// One usage limit (a rolling window with a percentage used and a reset time).
 public struct UsageLimit: Hashable, Sendable, Codable, Identifiable {
-    /// `"<kind>"` or `"<kind>:<scopeName>"`, for example `session` or `weekly_scoped:Opus`.
+    /// `"<kind>"` or `"<kind>:<scopeName>"`, for example `session` or `weekly_scoped:Opus`. The decoder appends
+    /// `#2`, `#3`, … when a report would otherwise repeat an id.
     public var id: String
     public var kind: LimitKind
     public var group: String?

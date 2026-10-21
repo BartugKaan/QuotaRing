@@ -41,10 +41,29 @@ public enum UsageResponseDecoder {
         }
 
         return UsageReport(
-            limits: limits,
+            limits: makeIDsUnique(limits),
             extraUsage: decodeExtraUsage(root["extra_usage"]),
             weeklyBreakdown: decodeWeeklyBreakdown(root["seven_day_breakdown"])
         )
+    }
+
+    /// Ids must be unique within a report. When a computed id repeats, later occurrences get `#2`, `#3`, … in
+    /// encounter order (skipping any suffixed id that is already taken).
+    private static func makeIDsUnique(_ limits: [UsageLimit]) -> [UsageLimit] {
+        var usedIDs = Set<String>()
+        var nextSuffix: [String: Int] = [:]
+        return limits.map { limit in
+            var limit = limit
+            let baseID = limit.id
+            if usedIDs.contains(baseID) {
+                var suffix = nextSuffix[baseID, default: 2]
+                while usedIDs.contains("\(baseID)#\(suffix)") { suffix += 1 }
+                nextSuffix[baseID] = suffix + 1
+                limit.id = "\(baseID)#\(suffix)"
+            }
+            usedIDs.insert(limit.id)
+            return limit
+        }
     }
 
     // MARK: limits[]
