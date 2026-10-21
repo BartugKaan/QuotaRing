@@ -1,0 +1,14 @@
+/* Countdown shorter than one minute. */
+"format.lessThanMinute" = "<1m";
+
+/* Age of a snapshot under one minute. */
+"format.justNow" = "just now";
+
+/* Age of a snapshot in minutes; the argument is a whole number. */
+"format.minutesAgo" = "%lld min ago";
+
+/* Age of a snapshot in hours; the argument is a whole number. */
+"format.hoursAgo" = "%lld h ago";
+
+/* Age of a snapshot in days; the argument is a whole number. */
+"format.daysAgo" = "%lld d ago";
