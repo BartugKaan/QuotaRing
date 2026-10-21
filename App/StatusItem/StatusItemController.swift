@@ -7,6 +7,8 @@ import SwiftUI
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private static let tickInterval: Duration = .seconds(30)
+    /// A click on the item within this many seconds after the popover started closing is the click that closed it.
+    private static let reopenGuard: TimeInterval = 0.5
 
     private let model: AppModel
     private let statusItem: NSStatusItem
@@ -15,6 +17,8 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private let refreshItem = NSMenuItem()
     private var tickTask: Task<Void, Never>?
     private var openSettingsAction: OpenSettingsAction?
+    /// `systemUptime` when the popover last started closing.
+    private var popoverCloseStartedAt: TimeInterval?
 
     init(model: AppModel) {
         self.model = model
@@ -144,6 +148,14 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
             popover.performClose(nil)
             return
         }
+        // A transient popover closes on the mouse-down of any click outside it, including a click on this item. The
+        // action fires on mouse-up; if the close has already finished by then (Reduce Motion, or a long press), the
+        // popover would immediately reopen. A click that just closed it must not open it again.
+        if let closedAt = popoverCloseStartedAt,
+            ProcessInfo.processInfo.systemUptime - closedAt < Self.reopenGuard
+        {
+            return
+        }
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
@@ -168,6 +180,10 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
 
     func popoverDidShow(_ notification: Notification) {
         model.popoverDidOpen()
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        popoverCloseStartedAt = ProcessInfo.processInfo.systemUptime
     }
 
     func popoverDidClose(_ notification: Notification) {

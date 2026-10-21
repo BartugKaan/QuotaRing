@@ -27,11 +27,15 @@ lint:
 format:
 	swift format format -r -i Core App
 
+# A running copy is quit first: `open` would otherwise just activate it and silently drop `--demo`. `-n` starts a new
+# instance even if the old one has not finished quitting.
 run: build
-	open "$(APP)"
+	pkill -x QuotaRing || true
+	open -n "$(APP)"
 
 demo: build
-	open "$(APP)" --args --demo
+	pkill -x QuotaRing || true
+	open -n "$(APP)" --args --demo
 
 clean:
 	rm -rf build $(PROJECT) Core/.build

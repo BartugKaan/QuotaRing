@@ -13,7 +13,7 @@ import os
 ///   than the refresh interval, with jitter and back-off from ``RefreshPlanner``.
 /// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open.
 /// - Pauses on system sleep (and Live while offline), resumes on wake and reconnect.
-/// - Persists the last good snapshot (no secrets) and loads it at launch.
+/// - Persists the last good snapshot (no secrets), bound to the config directory it came from, and loads it at launch.
 ///
 /// All state lives on the main actor; file, Keychain and network work runs in detached tasks or on dedicated queues.
 @MainActor
@@ -31,6 +31,9 @@ final class UsageEngine {
 
     private static let cacheCheckInterval: Duration = .seconds(30)
     private static let transcriptScanInterval: Duration = .seconds(60)
+    /// Saves and deletes of the last snapshot run here one after another, so a delete lands after any pending save.
+    private static let persistenceQueue = DispatchQueue(
+        label: "io.github.bartugkaan.QuotaRing.persistence", qos: .utility)
 
     private let settings: SettingsStore
     private let snapshotStore: LastSnapshotStore?
@@ -75,6 +78,8 @@ final class UsageEngine {
     private var liveTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
     private var cooldownTask: Task<Void, Never>?
+    /// The Live request of a manual refresh, so it can be cancelled like the loop's.
+    private var manualLiveTask: Task<Void, Never>?
     private var pathMonitor: NWPathMonitor?
     private var workspaceObservers: [any NSObjectProtocol] = []
 
@@ -100,7 +105,7 @@ final class UsageEngine {
         guard !isStarted else { return }
         isStarted = true
 
-        persisted = snapshotStore?.load()
+        persisted = snapshotStore?.load(configDirectory: paths.configDirectory)
         if let persisted {
             selected = persisted
             onEvent(.snapshot(persisted, isNew: false))
@@ -129,7 +134,19 @@ final class UsageEngine {
                     liveEnabled: true, freshest: nil, now: Date(), refreshInterval: 0,
                     nextAllowedLiveAt: manualAllowedAt)
             {
-                await performLiveFetch()
+                let task = Task { [weak self] in
+                    guard let self else { return }
+                    await self.performLiveFetch()
+                }
+                manualLiveTask = task
+                await withTaskCancellationHandler {
+                    await task.value
+                } onCancel: {
+                    task.cancel()
+                }
+                if manualLiveTask == task {
+                    manualLiveTask = nil
+                }
             }
         }
         if isPopoverOpen {
@@ -167,6 +184,12 @@ final class UsageEngine {
         cacheTask = nil
         liveTask = nil
         transcriptTask = nil
+        cancelManualLiveFetch()
+    }
+
+    private func cancelManualLiveFetch() {
+        manualLiveTask?.cancel()
+        manualLiveTask = nil
     }
 
     private func restartCacheLoop() {
@@ -257,6 +280,16 @@ final class UsageEngine {
                 cached = snapshot
                 reselect()
             }
+        case .failed(let fingerprint, .accountMismatch):
+            // The cache belongs to an account that is no longer signed in: whatever was read from it, now or in an
+            // earlier run, must not stay on screen.
+            cacheFingerprint = fingerprint
+            hasReadCache = true
+            cacheLog.notice("Cached usage belongs to another account; dropping it")
+            cached = nil
+            persisted = nil
+            deletePersistedSnapshot()
+            reselect()
         case .failed(let fingerprint, let error):
             // Torn reads are expected while Claude Code rewrites the file: keep the previous snapshot and try again
             // when the file changes next.
@@ -297,31 +330,46 @@ final class UsageEngine {
     }
 
     private func performLiveFetch() async {
-        guard !isLiveFetchInFlight, settings.isLiveModeActive else { return }
+        guard settings.isLiveModeActive else { return }
+        let started = Date()
+        let spacedOut = started.addingTimeInterval(RefreshPlanner.minimumLiveSpacing)
+        guard !isLiveFetchInFlight else {
+            // The other request may wait on a Keychain prompt for minutes: look again later, not every second.
+            nextAllowedLiveAt = max(nextAllowedLiveAt ?? started, spacedOut)
+            return
+        }
         isLiveFetchInFlight = true
         defer { isLiveFetchInFlight = false }
 
-        let started = Date()
         lastLiveAttemptAt = started
         // Keep the loop from re-checking while this request runs; the result sets the real back-off below.
-        nextAllowedLiveAt = max(
-            nextAllowedLiveAt ?? started, started.addingTimeInterval(RefreshPlanner.minimumLiveSpacing))
+        nextAllowedLiveAt = max(nextAllowedLiveAt ?? started, spacedOut)
 
+        let requestPaths = paths
         let request = LiveRequest(
             client: UsageAPIClient(transport: transport, userAgent: userAgent),
-            paths: paths
+            paths: requestPaths,
+            isStillAllowed: { [weak self] in self?.isLiveAllowed(for: requestPaths) ?? false }
         )
         let work = Task.detached(priority: .utility) { await request.run() }
-        let result = await withTaskCancellationHandler {
+        let outcome = await withTaskCancellationHandler {
             await work.value
         } onCancel: {
             work.cancel()
         }
 
+        // Abandoned before anything was sent (cancelled, consent withdrawn, asleep or another directory).
+        guard let result = outcome else { return }
         // A request cut off by sleep or by Live mode being turned off says nothing about the server.
         if case .failed(.network) = result, Task.isCancelled { return }
-        guard settings.isLiveModeActive else { return }
+        // Results for a withdrawn consent or a config directory that is no longer selected do not apply.
+        guard isLiveAllowed(for: requestPaths) else { return }
         apply(result, now: Date())
+    }
+
+    /// Whether a Live request for `requestPaths` may still go out (or its result still be used).
+    private func isLiveAllowed(for requestPaths: ClaudePaths) -> Bool {
+        settings.isLiveModeActive && !isAsleep && requestPaths == paths
     }
 
     private func apply(_ result: LiveFetchResult, now: Date) {
@@ -415,12 +463,37 @@ final class UsageEngine {
     // MARK: - Snapshot selection and persistence
 
     private func reselect() {
-        let freshest = SnapshotSelector.freshest([persisted, cached, live])
+        // On a tie the earlier candidate wins (after a live one), so the full cached copy beats the persisted copy,
+        // which has no extra-usage amounts.
+        let freshest = SnapshotSelector.freshest([cached, live, persisted])
         guard freshest != selected else { return }
         selected = freshest
         onEvent(.snapshot(freshest, isNew: true))
-        if let freshest, let snapshotStore {
-            snapshotStore.save(freshest)
+        if let freshest {
+            savePersistedSnapshot(freshest)
+        }
+    }
+
+    private func savePersistedSnapshot(_ snapshot: UsageSnapshot) {
+        guard let snapshotStore else { return }
+        let configDirectory = paths.configDirectory
+        Self.persistenceQueue.async {
+            do {
+                try snapshotStore.save(snapshot, configDirectory: configDirectory)
+            } catch {
+                persistenceLog.error("Could not save the last snapshot")
+            }
+        }
+    }
+
+    private func deletePersistedSnapshot() {
+        guard let snapshotStore else { return }
+        Self.persistenceQueue.async {
+            do {
+                try snapshotStore.delete()
+            } catch {
+                persistenceLog.error("Could not delete the last snapshot")
+            }
         }
     }
 
@@ -456,15 +529,18 @@ final class UsageEngine {
             setLiveStatus(appliedLiveActive ? .ok : .off)
             if !appliedLiveActive {
                 endCooldown()
+                cancelManualLiveFetch()
             }
             restartLiveLoop()
         }
     }
 
     /// A different Claude config directory may belong to a different account, so nothing read from the old one is
-    /// kept.
+    /// kept: not in memory and not on disk.
     private func switchConfigDirectory() {
         engineLog.info("Claude config directory changed")
+        cancelManualLiveFetch()
+        deletePersistedSnapshot()
         paths = ClaudePaths(customConfigDirectory: settings.customConfigDirectory)
         cacheReader = ClaudeCodeCacheReader(fileURL: paths.globalConfigFile)
         scanner = TranscriptScanner(projectsDirectory: paths.projectsDirectory)
@@ -536,11 +612,16 @@ final class UsageEngine {
 private struct LiveRequest: Sendable {
     let client: UsageAPIClient
     let paths: ClaudePaths
+    /// Asked on the main actor right before the request is sent: consent, sleep and the selected config directory may
+    /// all have changed while a Keychain prompt was open.
+    let isStillAllowed: @MainActor @Sendable () -> Bool
 
     private static let credentialQueue = DispatchQueue(
         label: "io.github.bartugkaan.QuotaRing.credentials", qos: .utility)
 
-    func run() async -> LiveFetchResult {
+    /// The fetch result, or `nil` when the request was abandoned before anything was sent.
+    func run() async -> LiveFetchResult? {
+        guard !Task.isCancelled else { return nil }
         let paths = self.paths
         let credential: Result<OAuthCredential, CredentialError> = await withCheckedContinuation { continuation in
             Self.credentialQueue.async {
@@ -551,93 +632,9 @@ private struct LiveRequest: Sendable {
                 }
             }
         }
+        guard !Task.isCancelled, await isStillAllowed() else { return nil }
         let fetcher = LiveUsageFetcher(client: client, credentials: { try credential.get() })
         return await fetcher.fetch()
-    }
-}
-
-// MARK: - Last snapshot on disk
-
-/// Saves the last good snapshot to `~/Library/Application Support/QuotaRing/last-snapshot.json` so the ring is
-/// meaningful right after launch. Only percentages, reset times and the weekly breakdown are written: no token and,
-/// for extra usage, no money amounts. The directory is private to the user (0700) and the file is 0600.
-struct LastSnapshotStore: Sendable {
-    let fileURL: URL
-
-    private static let maxFileSize = 1_048_576
-    private static let formatVersion = 1
-    private static let writeQueue = DispatchQueue(label: "io.github.bartugkaan.QuotaRing.persistence", qos: .utility)
-
-    private struct Envelope: Codable {
-        var version: Int
-        var snapshot: UsageSnapshot
-    }
-
-    static func standard() -> LastSnapshotStore? {
-        guard
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { return nil }
-        let directory = support.appendingPathComponent("QuotaRing", isDirectory: true)
-        return LastSnapshotStore(fileURL: directory.appendingPathComponent("last-snapshot.json", isDirectory: false))
-    }
-
-    /// The saved snapshot, or `nil` when there is none or it cannot be used.
-    func load() -> UsageSnapshot? {
-        guard
-            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-            attributes[.type] as? FileAttributeType == .typeRegular,
-            let size = (attributes[.size] as? NSNumber)?.intValue, size <= Self.maxFileSize,
-            let data = try? Data(contentsOf: fileURL)
-        else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
-        guard let envelope = try? decoder.decode(Envelope.self, from: data), envelope.version == Self.formatVersion
-        else { return nil }
-        return envelope.snapshot
-    }
-
-    /// Writes `snapshot` in the background. Saves run one after another, so the newest one wins.
-    func save(_ snapshot: UsageSnapshot) {
-        guard snapshot.source != .demo else { return }
-        let store = self
-        Self.writeQueue.async {
-            do {
-                try store.write(Self.stripped(snapshot))
-            } catch {
-                persistenceLog.error("Could not save the last snapshot")
-            }
-        }
-    }
-
-    private static func stripped(_ snapshot: UsageSnapshot) -> UsageSnapshot {
-        var copy = snapshot
-        if let extra = copy.report.extraUsage {
-            copy.report.extraUsage = ExtraUsage(isEnabled: extra.isEnabled, percentUsed: extra.percentUsed)
-        }
-        return copy
-    }
-
-    private func write(_ snapshot: UsageSnapshot) throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(Envelope(version: Self.formatVersion, snapshot: snapshot))
-
-        let fileManager = FileManager.default
-        let directory = fileURL.deletingLastPathComponent()
-        try fileManager.createDirectory(
-            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-
-        // Write a private temporary file next to the target and rename it over the target: atomic, and the file is
-        // never readable by others, not even briefly.
-        let temporary = directory.appendingPathComponent(".last-snapshot-\(UUID().uuidString).tmp")
-        guard fileManager.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600])
-        else { throw CocoaError(.fileWriteUnknown) }
-        guard rename(temporary.path, fileURL.path) == 0 else {
-            try? fileManager.removeItem(at: temporary)
-            throw CocoaError(.fileWriteUnknown)
-        }
     }
 }
 
