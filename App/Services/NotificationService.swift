@@ -45,7 +45,7 @@ final class NotificationService: NSObject, UsageNotifier {
         let center = center
         Task {
             // Not authorized (or not asked yet): drop silently. Asking is the job of onboarding and Settings.
-            guard Self.permission(of: await center.notificationSettings().authorizationStatus) == .allowed else {
+            guard Self.permission(of: await Self.currentAuthorizationStatus()) == .allowed else {
                 return
             }
             for request in requests {
@@ -63,7 +63,7 @@ final class NotificationService: NSObject, UsageNotifier {
 
     /// The permission as macOS currently has it; the user can change it in System Settings at any time.
     func permission() async -> NotificationPermission {
-        Self.permission(of: await center.notificationSettings().authorizationStatus)
+        Self.permission(of: await Self.currentAuthorizationStatus())
     }
 
     /// Shows the system permission prompt, but only when macOS has not asked yet (and never when
@@ -95,6 +95,12 @@ final class NotificationService: NSObject, UsageNotifier {
         case .denied: .denied
         @unknown default: .denied
         }
+    }
+
+    /// Reads only the status. `UNNotificationSettings` is not `Sendable` in the Xcode 16 SDK, so it must not leave
+    /// this nonisolated context.
+    private nonisolated static func currentAuthorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     // MARK: - Content
