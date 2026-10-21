@@ -94,8 +94,10 @@ state.
    `cachedUsageUtilization`, and returns a snapshot with `source = claudeCodeCache` and `fetchedAt` taken from the
    file's `fetchedAtMs`. It also compares the account id of the cached entry with `oauthAccount.accountUuid`. If they
    differ, the cache belongs to an account that is no longer signed in, and the app drops everything it holds for it:
-   the cached numbers, the persisted snapshot (also deleted from disk) and any live numbers. The reader never writes the
-   file.
+   the cached numbers, the persisted snapshot (also deleted from disk) and any live numbers (`SnapshotCandidates`). The
+   Live back-off is reset and the Live loop restarts, so the new account's usage is asked for at once; a Live request
+   that started before the mismatch (its token may be the previous account's) is not sent, or its result is dropped. The
+   reader never writes the file.
 2. **Live endpoint (opt-in).** `LiveUsageFetcher` asks `CredentialResolver` for a token, then `UsageAPIClient` performs
    one request. Expired or missing credentials produce a "skipped" result with no network traffic.
 3. **Local transcripts.** `TranscriptScanner` and `UsageAggregator` turn Claude Code's logs into token totals by model,
@@ -119,8 +121,13 @@ interpreted identically.
   fresh data) instead of the old percentage. This covers a laptop that slept through a reset.
 - The UI always shows the source and age ("Claude Code · 3 min ago", "Live · 1 min ago") and marks stale data. A
   snapshot is stale when it is older than two refresh intervals (10 minutes by default). Then the menu bar dims the
-  percentage and draws a hollow, dashed ring, and shows "–" when the stale session window has already reset; the
-  popover adds a hint.
+  percentage and draws a dashed arc on a dashed faint track (`RingImageRenderer`), and shows "–" with a dashed track
+  alone when the stale session window has already reset; the popover adds a hint.
+- A cached snapshot whose `fetchedAtMs` lies more than 5 minutes in the future is rejected as malformed (and a saved one
+  is ignored on load): it would otherwise look fresh until then and hide every real update.
+- A cache file that exists but cannot be used is reported by `CacheReadHealth`: a file over 50 MB or one that cannot be
+  opened shows a warning in the popover at once, a malformed file only after 90 seconds without a good read (Claude
+  Code rewrites the file often, so a single torn read is normal).
 - Only the `claude` command-line tool updates the cache that the default mode reads; the Claude desktop app does not
   (verified 2026-10-21). Desktop-app users therefore see stale data in default mode unless they run `claude` or
   `/usage`, or turn on Live mode (see the README, [Keeping the numbers fresh](../README.md#keeping-the-numbers-fresh)).
@@ -153,7 +160,7 @@ over time:
 | Live interval | 300 s by default; options 180, 300, 600, 900 s; +/-10% jitter |
 | Back-off | Doubles per consecutive failure, capped at 1800 s; `Retry-After` (seconds or HTTP date) is honored but never shortens the base interval |
 | Status codes | 200 decode; 401/403 "needs re-login" state; 429 rate-limited back-off; 5xx and network errors back off and keep stale data |
-| Keychain access denied | Live mode stops asking and shows a message, until the user presses Refresh or switches Live mode off and on again |
+| Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing |
 | Manual refresh | Re-reads the cache immediately; in Live mode also makes one request (never with an expired token), at most once per 60 s |
 | System state | Pauses on sleep and while offline; refreshes on wake and reconnect, respecting cooldown and back-off |
 | Countdown | Ticks locally (every 30 s) between polls; no network needed |
@@ -186,8 +193,9 @@ Rules enforced in code:
 Nothing is read until the user gives consent in onboarding or Settings. Consent is recorded as soon as the user clicks
 "Enable Live mode"; in onboarding, only the first Keychain read is delayed until the notification prompt has settled
 (at most 15 seconds), so two system prompts do not appear together. The consent settings are read from the app's saved
-preferences only, so command-line launch arguments cannot turn Live mode on. If the user denies the Keychain prompt,
-Live mode stops asking until Refresh is pressed or Live mode is switched off and on again.
+preferences only, so command-line launch arguments cannot turn Live mode on. If the user denies the Keychain prompt
+(or the keychain is locked), resolution stops there, without trying another item or the credentials file, and Live mode
+does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing.
 
 ## Transcripts
 
@@ -211,7 +219,7 @@ approximate in the UI.
 - **`UsageEngine`** runs the cache and Live loops (all scheduling), sleep/wake and reachability handling, and
   persistence of the last snapshot. It reports to `AppModel` through events.
 - **`StatusItemController`** owns the `NSStatusItem`, draws the ring with `RingImageRenderer` (dimmed percentage and
-  hollow, dashed ring when the data is stale), hosts the SwiftUI popover in an `NSPopover`, and provides the right-click
+  a dashed arc on a dashed faint track when the data is stale, "–" with a dashed track alone after a stale reset), hosts the SwiftUI popover in an `NSPopover`, and provides the right-click
   menu and VoiceOver label.
 - **`NotificationService`** fires each threshold once per window. The window is identified by `resetsAt` rounded to the
   minute, because the reported value jitters by sub-seconds between fetches.

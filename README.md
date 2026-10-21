@@ -22,8 +22,8 @@ open-source app whose behavior you can read in an afternoon. Everything it reads
   - Anthropic's own "where it went" breakdown for the week, when available;
   - local activity: tokens by model, top projects and a 7-day chart, for the current session, today or the last 7 days.
 - **Honest about old data.** When the numbers are older than two refresh intervals, the menu bar dims the percentage and
-  draws a hollow, dashed ring instead of a solid one, and shows "–" instead of a number when that old session window
-  has already reset. The popover footer says where the numbers came from and how old they are. See
+  draws a dashed arc on a dashed faint track instead of the solid ring, and shows "–" with a dashed track alone instead
+  of a number when that old session window has already reset. The popover footer says where the numbers came from and how old they are. See
   [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 - **Notifications.** Local notifications when session usage crosses a threshold (default 80% and 95% used), once per
   window. An optional notice when the session resets (off by default).
@@ -122,9 +122,9 @@ starting a session or running `/usage` updates it. The Claude desktop app does n
 2026-10-21). If the desktop app is how you use Claude, the default mode has nothing new to show.
 
 QuotaRing does not hide that. When the numbers are older than two refresh intervals (10 minutes with the default
-interval), it marks them as out of date: the menu bar dims the percentage and draws a hollow, dashed ring, and the
-popover says so. If that old session window has already reset, the menu bar shows "–" rather than a number, because
-the old percentage no longer applies.
+interval), it marks them as out of date: the menu bar dims the percentage and draws a dashed arc on a dashed faint
+track, and the popover says so. If that old session window has already reset, the menu bar shows "–" and a dashed track
+alone rather than a number, because the old percentage no longer applies.
 
 If you use the desktop app, you have two options:
 
@@ -144,8 +144,10 @@ An improvement for desktop-app users is being considered for v1.1; nothing is pr
   `oauthAccount` each carry an account id, and QuotaRing checks that they match so that numbers from another account are
   never shown. The ids are compared and dropped, never stored or logged. If they differ, QuotaRing discards everything
   it holds for that account: the cached, the saved and the live numbers. It checks the file's size and modification time
-  every 30 seconds and parses it only when it changed. Files over 50 MB are skipped. QuotaRing **never writes** this
-  file.
+  every 30 seconds and parses it only when it changed. Files over 50 MB are skipped, and a cached snapshot dated more
+  than 5 minutes in the future is rejected (it would otherwise look fresh until then). If the file exists but cannot be
+  read (too large, unreadable, or still malformed after 90 seconds), the popover shows a warning. QuotaRing **never
+  writes** this file.
 - **The transcripts.** Claude Code writes conversation logs to `~/.claude/projects`. QuotaRing parses them to count
   tokens, and keeps only the timestamp, model name, token counts, the project folder name and the message id used to
   avoid double counting. Prompt and response text is not retained. The result stays in memory and is never written to
@@ -173,7 +175,8 @@ When enabled:
   directory it tries only that variant, because the plain item belongs to the default account. If none has a usable
   token, it also checks `.credentials.json` in your Claude config directory, but only when that file is owned by you and
   not readable by others. macOS may ask you to allow Keychain access; that prompt comes from the OS. **If you deny it,
-  QuotaRing stops asking** and shows a message, until you press Refresh or switch Live mode off and on again.
+  QuotaRing stops there** (it tries neither another Keychain item nor the file) and shows a message; it does not ask
+  again until you press Refresh, turn Live mode off and on, or relaunch QuotaRing.
 - The token is **re-read on every poll** and held in memory only for the length of one request. It is never cached
   between polls, written to disk, put in preferences, logged or copied to the pasteboard.
 - It makes a single HTTPS `GET` to `https://api.anthropic.com/api/oauth/usage`. The URL is a compile-time constant and
@@ -251,8 +254,8 @@ whatever it can still read.
 In default mode QuotaRing shows what Claude Code last wrote to its cache; it does not fetch anything itself. Only the
 `claude` command-line tool updates that cache, when a session runs or when you run `/usage`. The Claude desktop app does
 not (verified on 2026-10-21), so if you mostly use the desktop app the cache can be hours or days old. Old numbers are
-marked: the menu bar dims the percentage and draws a hollow, dashed ring (or shows "–" if that session window has
-already reset), and the popover footer shows the source and age. You have two options: run `claude` or `/usage`
+marked: the menu bar dims the percentage and draws a dashed arc on a dashed faint track (or "–" with a dashed track
+alone if that session window has already reset), and the popover footer shows the source and age. You have two options: run `claude` or `/usage`
 occasionally (QuotaRing picks up the new snapshot within about 30 seconds, and the refresh button re-reads the cache
 immediately), or enable Live mode in Settings, which stays fresh for roughly as long as Claude Code's login token is
 valid, about 8 hours after the CLI last ran. A better answer for desktop-app users is being considered for v1.1.
@@ -265,8 +268,9 @@ expired token and does not refresh it (that could sign you out of Claude Code). 
 Running `claude` once renews the Keychain token, and Live mode picks up from there.
 
 **I clicked "Deny" on the Keychain prompt. How do I get it back?**
-QuotaRing does not ask again on its own; it shows a message instead. Press Refresh in the popover, or switch Live mode
-off and on again in Settings, and it asks once more. Choose "Always Allow" to avoid repeated prompts.
+QuotaRing does not ask again until you press Refresh, turn Live mode off and on, or relaunch QuotaRing; until then it
+shows a message. Press Refresh in the popover, or switch Live mode off and on again in Settings, and it asks once
+more. Choose "Always Allow" to avoid repeated prompts.
 
 **I run Claude Code with `CLAUDE_CONFIG_DIR`. Does QuotaRing follow it?**
 Set the same folder in Settings → Data. Apps started from Finder or at login do not see the environment variables of
