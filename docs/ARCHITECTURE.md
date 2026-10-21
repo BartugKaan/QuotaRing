@@ -97,8 +97,9 @@ interpreted identically.
 ## Source selection
 
 - `SnapshotSelector.freshest` picks the candidate with the newest `fetchedAt`. On a tie, the live snapshot wins.
-- The Live loop only runs when Live mode is enabled and the freshest snapshot is older than the refresh interval, so
-  QuotaRing does not call Anthropic when Claude Code has just refreshed its own cache.
+- Automatic Live polls only run when Live mode is enabled, the freshest snapshot is older than the refresh interval and
+  the token has not expired, so QuotaRing does not call Anthropic when Claude Code has just refreshed its own cache.
+  A manual refresh in Live mode is the one exception to the age check, limited by the 60 s cooldown.
 - A failed or partial read never replaces good data. If the cache file is mid-write and cannot be parsed, the reader
   reports a malformed file and the app keeps the previous snapshot. It never shows 0% because of a bad read.
 - The session is evaluated at the current time: if its `resetsAt` has passed, it is shown as reset (0% used, waiting for
@@ -128,7 +129,7 @@ over time:
 | Live interval | 300 s by default; options 180, 300, 600, 900 s; +/-10% jitter |
 | Back-off | Doubles per consecutive failure, capped at 1800 s; `Retry-After` (seconds or HTTP date) is honored but never shortens the base interval |
 | Status codes | 200 decode; 401/403 "needs re-login" state; 429 rate-limited back-off; 5xx and network errors back off and keep stale data |
-| Manual refresh | Re-reads the cache immediately; also calls the endpoint in Live mode, with a 60 s cooldown |
+| Manual refresh | Re-reads the cache immediately; in Live mode also makes one request (never with an expired token), at most once per 60 s |
 | System state | Pauses on sleep and while offline; refreshes on wake and reconnect, respecting cooldown and back-off |
 | Countdown | Ticks locally (every 30 s) between polls; no network needed |
 | Transcripts | Scanned on popover open and every 60 s while it is open |

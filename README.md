@@ -40,22 +40,30 @@ ring shows what remains (100 minus used) by default; you can switch it to show w
 
 ### From GitHub Releases (recommended)
 
-1. Download `QuotaRing.dmg` (or the zip) from the [Releases](https://github.com/BartugKaan/QuotaRing/releases) page.
+1. Download `QuotaRing-<version>.dmg` (or `QuotaRing-<version>.zip`) from the
+   [Releases](https://github.com/BartugKaan/QuotaRing/releases) page.
 2. Open the DMG and drag QuotaRing to Applications, then launch it. It has no Dock icon; look for the ring in the menu
    bar.
 
 Release builds are signed with a Developer ID certificate, **notarized by Apple** and stapled, so Gatekeeper opens them
 normally. macOS may show a one-time "downloaded from the Internet" confirmation on first launch. If macOS ever says it
-cannot verify the app, do not work around the warning: delete the download and check it using the steps below.
+cannot verify the app, do not work around the warning: delete the download and check it using
+[Verify your download](#verify-your-download).
 
-**Verify a download** (optional, recommended if you want to be sure what you run):
+#### Verify your download
+
+Optional, recommended if you want to be sure what you run. Each release publishes
+`QuotaRing-<version>.dmg`, `QuotaRing-<version>.zip` and a `SHA256SUMS` file. Put the file you downloaded and
+`SHA256SUMS` in the same folder, then:
 
 ```sh
-# Compare the file with the published checksums (SHA256SUMS is on the same release page)
-grep 'QuotaRing.dmg$' SHA256SUMS | shasum -a 256 -c
+VERSION=0.1.0   # the version you downloaded
+
+# Compare the file with the published checksums (use .zip instead of .dmg for the zip)
+grep "QuotaRing-$VERSION\.dmg\$" SHA256SUMS | shasum -a 256 -c
 
 # Verify GitHub's build provenance attestation (needs the GitHub CLI)
-gh attestation verify QuotaRing.dmg --repo BartugKaan/QuotaRing
+gh attestation verify "QuotaRing-$VERSION.dmg" --repo BartugKaan/QuotaRing
 
 # Check the installed app's signature and notarization
 codesign --verify --deep --strict --verbose=2 /Applications/QuotaRing.app
@@ -133,8 +141,10 @@ When enabled:
   `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. No body, no cookies. QuotaRing
   identifies itself honestly and does not pretend to be Claude Code.
 - The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials.
-- It is only sent when the cached snapshot is older than your refresh interval and the token has not expired. An
-  expired token is never sent; QuotaRing falls back to the cache and shows a short hint.
+- Automatic polls are sent only when Live mode is on, the cached snapshot is older than your refresh interval, and
+  the token has not expired. Pressing Refresh in the popover while Live mode is on also makes one request, at most
+  once every 60 seconds. An expired token is never sent, not even on a manual refresh; QuotaRing falls back to the
+  cache and shows a short hint.
 - **QuotaRing never refreshes the token.** Refresh tokens are single-use, so a third-party refresh could sign you out
   of Claude Code. When the token has expired, QuotaRing waits until Claude Code renews it.
 

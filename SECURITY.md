@@ -124,10 +124,8 @@ small and separate (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
 ## Verifying a release
 
-```sh
-grep 'QuotaRing.dmg$' SHA256SUMS | shasum -a 256 -c
-gh attestation verify QuotaRing.dmg --repo BartugKaan/QuotaRing
-spctl --assess --type execute --verbose=2 /Applications/QuotaRing.app
-```
+Releases publish `SHA256SUMS` and a GitHub build-provenance attestation next to the DMG and zip. The exact commands
+are in the README under [Verify your download](README.md#verify-your-download); they are kept in one place so they
+cannot drift.
 
-If any of these fail, do not run the app, and please report it using the process above.
+If any check fails, do not run the app, and please report it using the process above.
