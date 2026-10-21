@@ -23,6 +23,33 @@ import Testing
         #expect(QuotaFormat.countdown(to: now.addingTimeInterval(7200), from: now, locale: locale) == "2h")
     }
 
+    @Test func spokenCountdown() {
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(8040), from: now, locale: locale)
+                == "2 hours, 14 minutes")
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(2700), from: now, locale: locale) == "45 minutes")
+        #expect(QuotaFormat.spokenCountdown(to: now.addingTimeInterval(60), from: now, locale: locale) == "1 minute")
+        #expect(QuotaFormat.spokenCountdown(to: now.addingTimeInterval(7200), from: now, locale: locale) == "2 hours")
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(184_800), from: now, locale: locale)
+                == "2 days, 3 hours")
+    }
+
+    @Test func spokenCountdownUnderAMinuteOrInThePast() {
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(59), from: now, locale: locale)
+                == "less than a minute")
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(-500), from: now, locale: locale)
+                == "less than a minute")
+        let french = Locale(identifier: "fr_FR")
+        // No fr.lproj: the template falls back to English.
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(20), from: now, locale: french)
+                == "less than a minute")
+    }
+
     @Test func countdownInThePastIsLessThanAMinute() {
         #expect(QuotaFormat.countdown(to: now.addingTimeInterval(-500), from: now, locale: locale) == "<1m")
     }
