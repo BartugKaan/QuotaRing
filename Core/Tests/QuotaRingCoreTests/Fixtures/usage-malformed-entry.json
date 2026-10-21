@@ -1,0 +1,59 @@
+{
+    "limits": [
+        {
+            "kind": "session",
+            "group": "session",
+            "percent": 12,
+            "severity": "normal",
+            "resets_at": "2026-10-21T22:50:00+00:00",
+            "scope": null,
+            "is_active": true
+        },
+        "this entry is not an object",
+        {
+            "kind": "weekly_all",
+            "group": "weekly",
+            "percent": "lots",
+            "resets_at": "2026-10-27T09:00:00+00:00"
+        },
+        {
+            "group": "weekly",
+            "percent": 50
+        },
+        {
+            "kind": "monthly_pool",
+            "group": "monthly",
+            "percent": 62.5,
+            "severity": "warning",
+            "resets_at": "2026-11-01T00:00:00Z",
+            "scope": null,
+            "is_active": false,
+            "unknown_key": {"nested": true}
+        },
+        {
+            "kind": "weekly_scoped",
+            "group": "weekly",
+            "percent": 3,
+            "resets_at": "not a date at all",
+            "scope": {
+                "model": {
+                    "id": null,
+                    "display_name": "Fable"
+                },
+                "surface": null
+            },
+            "is_active": false
+        }
+    ],
+    "extra_usage": "unexpected string instead of object",
+    "seven_day_breakdown": {
+        "as_of": "2026-10-21T17:55:11.211020+00:00",
+        "window_started_at": "2026-10-20T09:00:00Z",
+        "rows": [
+            {"key": "claude_code", "display_name": "Claude Code", "percent": 60},
+            {"key": "chat"},
+            {"key": "cowork", "display_name": "Cowork", "percent": "many"},
+            {"key": "other", "display_name": "Other", "percent": 40}
+        ]
+    }
+}
