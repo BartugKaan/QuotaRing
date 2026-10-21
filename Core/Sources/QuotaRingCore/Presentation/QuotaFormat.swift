@@ -3,6 +3,9 @@ import Foundation
 /// Locale-aware formatting of the numbers and times the UI shows.
 public enum QuotaFormat {
     /// A percentage given on a `0...100` scale, for example `71.6` becomes `"72%"` (`"%72"` in Turkish).
+    ///
+    /// Ties round half to even, which is `NumberFormatter`'s default and is intentional: `71.5` shows as `72%` used and
+    /// `28.5` as `28%` remaining, so a used and a remaining figure for the same limit still add up to 100.
     public static func percent(_ value: Double, locale: Locale = .current) -> String {
         let formatter = NumberFormatter()
         formatter.locale = locale
@@ -16,9 +19,8 @@ public enum QuotaFormat {
     /// Anything under a minute, including a time already past, is `"<1m"`.
     public static func countdown(to: Date, from: Date, locale: Locale = .current) -> String {
         let interval = to.timeIntervalSince(from)
-        guard interval >= 60 else {
-            return String(localized: "format.lessThanMinute", bundle: .module)
-        }
+        let lessThanMinute = template("format.lessThanMinute", locale: locale)
+        guard interval >= 60 else { return lessThanMinute }
 
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = locale
@@ -27,7 +29,7 @@ public enum QuotaFormat {
         formatter.unitsStyle = .abbreviated
         formatter.allowedUnits = [.day, .hour, .minute]
         formatter.maximumUnitCount = 2
-        return formatter.string(from: interval) ?? String(localized: "format.lessThanMinute", bundle: .module)
+        return formatter.string(from: interval) ?? lessThanMinute
     }
 
     /// How long ago `date` was, as of `now`: `"just now"`, `"3 min ago"`, `"2 h ago"` or `"4 d ago"`.
@@ -35,9 +37,9 @@ public enum QuotaFormat {
     public static func age(of date: Date, now: Date, locale: Locale = .current) -> String {
         let seconds = now.timeIntervalSince(date)
         if seconds < 60 {
-            return String(localized: "format.justNow", bundle: .module)
+            return template("format.justNow", locale: locale)
         }
-        let key: String.LocalizationValue
+        let key: String
         let count: Int
         if seconds < 3600 {
             key = "format.minutesAgo"
@@ -49,7 +51,7 @@ public enum QuotaFormat {
             key = "format.daysAgo"
             count = Int(seconds / 86_400)
         }
-        return String(format: String(localized: key, bundle: .module), locale: locale, count)
+        return String(format: template(key, locale: locale), locale: locale, count)
     }
 
     /// A compact token count: `"980"`, `"34.2K"`, `"1.3M"`. A trailing `.0` is dropped.
@@ -75,5 +77,23 @@ public enum QuotaFormat {
             return scaled(1_000, suffix: "K")
         }
         return scaled(1_000_000, suffix: "M")
+    }
+
+    /// The string template for `key` in the language of `locale`.
+    ///
+    /// `String(localized:bundle:)` would pick the language from the process's preferred languages and ignore the
+    /// `locale` argument. Looking in the locale's own `.lproj` keeps a format call self-consistent. Languages without
+    /// an `.lproj`, and keys missing from one, fall back to English.
+    private static func template(_ key: String, locale: Locale) -> String {
+        let missing = "\u{0}missing"
+        if let code = locale.language.languageCode?.identifier, let bundle = languageBundle(code) {
+            let value = bundle.localizedString(forKey: key, value: missing, table: nil)
+            if value != missing { return value }
+        }
+        return languageBundle("en")?.localizedString(forKey: key, value: nil, table: nil) ?? key
+    }
+
+    private static func languageBundle(_ code: String) -> Bundle? {
+        Bundle.module.path(forResource: code, ofType: "lproj").flatMap { Bundle(path: $0) }
     }
 }

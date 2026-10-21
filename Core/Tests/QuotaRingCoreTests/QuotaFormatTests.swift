@@ -43,6 +43,16 @@ import Testing
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-3 * 86_400), now: now, locale: locale) == "3 d ago")
     }
 
+    @Test func templatesFallBackToEnglishForLocalesWithoutTranslation() {
+        // There is no fr.lproj, so French locales get the English templates (with French number formatting).
+        let french = Locale(identifier: "fr_FR")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(20), from: now, locale: french) == "<1m")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-10), now: now, locale: french) == "just now")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-180), now: now, locale: french) == "3 min ago")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 3600), now: now, locale: french) == "2 h ago")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 86_400), now: now, locale: french) == "2 d ago")
+    }
+
     @Test func ageInTheFutureIsJustNow() {
         #expect(QuotaFormat.age(of: now.addingTimeInterval(30), now: now, locale: locale) == "just now")
     }
