@@ -67,6 +67,10 @@ final class UsageEngine {
     private var isLiveSuspended = false
     /// No Live request (automatic or manual) before this time, while another system prompt may be on screen.
     private var liveHoldUntil: Date?
+    /// Changes whenever the signed-in account may have changed (an account mismatch begins, or another config
+    /// directory is chosen). A Live request remembers the value it started with; if it changed meanwhile, the token it
+    /// read may belong to the previous account, so the request is not sent or its result is dropped.
+    private var accountGeneration = 0
 
     // System state.
     private var isStarted = false
@@ -313,11 +317,14 @@ final class UsageEngine {
             // from disk or from Live mode with the previous account's login, must not stay on screen or be saved again.
             if candidates.recordAccountMismatch() {
                 cacheLog.notice("Cached usage belongs to another account; dropping everything read so far")
-                // The previous account's back-off says nothing about the new login.
+                // A Live request already under way may carry the previous account's token: its result must not land.
+                accountGeneration += 1
+                // The previous account's back-off says nothing about the new login: ask for the new account's usage now.
                 nextAllowedLiveAt = nil
                 consecutiveFailures = 0
                 deletePersistedSnapshot()
                 reselect()
+                restartLiveLoop()
             }
         case .failed(let fingerprint, let error):
             // Torn reads are expected while Claude Code rewrites the file: keep the previous snapshot and try again
@@ -392,10 +399,13 @@ final class UsageEngine {
         nextAllowedLiveAt = max(nextAllowedLiveAt ?? started, spacedOut)
 
         let requestPaths = paths
+        let generation = accountGeneration
         let request = LiveRequest(
             client: UsageAPIClient(transport: transport, userAgent: userAgent),
             paths: requestPaths,
-            isStillAllowed: { [weak self] in self?.isLiveAllowed(for: requestPaths) ?? false }
+            isStillAllowed: { [weak self] in
+                self?.isLiveAllowed(for: requestPaths, generation: generation) ?? false
+            }
         )
         let work = Task.detached(priority: .utility) { await request.run() }
         let outcome = await withTaskCancellationHandler {
@@ -408,14 +418,16 @@ final class UsageEngine {
         guard let result = outcome else { return }
         // A request cut off by sleep or by Live mode being turned off says nothing about the server.
         if case .failed(.network) = result, Task.isCancelled { return }
-        // Results for a withdrawn consent or a config directory that is no longer selected do not apply.
-        guard isLiveAllowed(for: requestPaths) else { return }
+        // Results for a withdrawn consent, a config directory that is no longer selected or an account that is no
+        // longer signed in do not apply: they are neither shown nor saved.
+        guard isLiveAllowed(for: requestPaths, generation: generation) else { return }
         apply(result, now: Date())
     }
 
-    /// Whether a Live request for `requestPaths` may still go out (or its result still be used).
-    private func isLiveAllowed(for requestPaths: ClaudePaths) -> Bool {
-        settings.isLiveModeActive && !isAsleep && requestPaths == paths
+    /// Whether a Live request for `requestPaths`, started in account generation `generation`, may still go out (or its
+    /// result still be used).
+    private func isLiveAllowed(for requestPaths: ClaudePaths, generation: Int) -> Bool {
+        settings.isLiveModeActive && !isAsleep && requestPaths == paths && generation == accountGeneration
     }
 
     private func apply(_ result: LiveFetchResult, now: Date) {
@@ -598,6 +610,7 @@ final class UsageEngine {
         engineLog.info("Claude config directory changed")
         cancelManualLiveFetch()
         deletePersistedSnapshot()
+        accountGeneration += 1
         paths = ClaudePaths(customConfigDirectory: settings.customConfigDirectory)
         cacheReader = ClaudeCodeCacheReader(fileURL: paths.globalConfigFile)
         scanner = TranscriptScanner(projectsDirectory: paths.projectsDirectory)

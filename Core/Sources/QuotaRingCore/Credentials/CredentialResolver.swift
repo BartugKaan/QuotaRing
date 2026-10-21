@@ -20,27 +20,25 @@ public struct CredentialResolver: Sendable {
 
     /// Returns the credential from the first source whose data parses with a non-empty access token.
     ///
-    /// A source that is missing, fails to read or holds unusable data is skipped. Once the user refused Keychain access
-    /// (``CredentialError/isKeychainAccessDenied``), sources that could show another access prompt are not read, so one
-    /// "Deny" never leads to a second prompt; other sources (the credentials file) are still tried.
+    /// A source that is missing, fails to read or holds unusable data is skipped.
     ///
-    /// If no source succeeds, throws the refusal if there was one (it is what the user has to act on), else the first
-    /// error encountered, or ``CredentialError/notFound`` when no source had any data.
+    /// A Keychain refusal (``CredentialError/isKeychainAccessDenied``) stops the search and is thrown at once: the user
+    /// said no. Reading on (another Keychain item would prompt again; the credentials file could quietly supply a token)
+    /// would hide that answer, and the app would keep asking and keep prompting.
+    ///
+    /// If no source succeeds, throws the first error encountered, or ``CredentialError/notFound`` when no source had
+    /// any data.
     public func resolve() throws(CredentialError) -> OAuthCredential {
         var firstError: CredentialError?
-        var denial: CredentialError?
         for source in sources {
-            if denial != nil, source.mayShowAccessPrompt { continue }
             do throws(CredentialError) {
                 guard let data = try source.readCredentialData() else { continue }
                 return try OAuthCredential.parse(data)
             } catch {
+                if error.isKeychainAccessDenied { throw error }
                 firstError = firstError ?? error
-                if error.isKeychainAccessDenied {
-                    denial = denial ?? error
-                }
             }
         }
-        throw denial ?? firstError ?? .notFound
+        throw firstError ?? .notFound
     }
 }

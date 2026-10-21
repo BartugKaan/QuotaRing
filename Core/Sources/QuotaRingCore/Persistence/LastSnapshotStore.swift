@@ -3,8 +3,9 @@ import Foundation
 
 /// Saves the last good usage snapshot so the menu bar is meaningful right after launch.
 ///
-/// - Only percentages, reset times and the weekly breakdown are written: no token, and no extra-usage money
-///   amounts.
+/// - Only the usage report is written, with when and from which source it was fetched: the limits (percentages, reset
+///   times and metadata such as kind, group, scope name, severity and whether active), the weekly breakdown, and
+///   whether extra usage is on with its percentage. No token, and no extra-usage money amounts.
 /// - Each file records the Claude config directory it was read from. ``load(configDirectory:)`` returns nothing for
 ///   any other directory, because another directory can belong to another account.
 /// - The directory is private to the user (0700). The file is 0600 from the moment it exists: it is written to a
