@@ -7,14 +7,16 @@ import Foundation
 public enum CredentialError: Error, Equatable {
     /// No source had any credential data.
     case notFound
-    /// The data is unreadable, too large, not the expected JSON shape, or the token has invalid characters.
+    /// The data is too large, not the expected JSON shape, or the token has invalid characters; or the source could
+    /// not be read for a reason other than a security refusal (for example `EMFILE`, `ENFILE`, `ENOTDIR`, an I/O
+    /// error, or a Keychain result that is not data).
     case malformed
     /// The JSON has no `claudeAiOauth` object (for example it holds only `mcpOAuth`).
     case missingClaudeAiOauth
     /// `claudeAiOauth.accessToken` is missing, `null` or empty.
     case emptyToken
-    /// The credentials file is not a regular file owned by the current user with owner-only permissions, or is larger
-    /// than 1 MiB.
+    /// The credentials file was refused: it is a symlink (`ELOOP`), opening it was denied (`EACCES`, `EPERM`), or it is
+    /// not a regular file owned by the current user with owner-only permissions and at most 1 MiB.
     case insecureFile
     /// The Keychain lookup failed with this status (other than `errSecItemNotFound`).
     case keychain(OSStatus)

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 import Testing
@@ -94,7 +95,7 @@ private func renderings(of value: Any) -> [String] {
 
     /// The token ends up in an HTTP header, so anything but visible ASCII (spaces, CR/LF, other control characters,
     /// non-ASCII) is refused rather than sent.
-    @Test func tokenMustBeVisibleASCII() {
+    @Test func tokenMustBeVisibleASCII() throws {
         let tokens = [
             "sk-ant-oat01-TEST\r\nX-Injected: 1",
             "sk-ant-oat01-TEST\n",
@@ -108,7 +109,7 @@ private func renderings(of value: Any) -> [String] {
         ]
         for token in tokens {
             let object = ["claudeAiOauth": ["accessToken": token]]
-            let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+            let data = try JSONSerialization.data(withJSONObject: object)
             #expect(parseError(data) == .malformed, "\(token.debugDescription)")
         }
     }
@@ -314,6 +315,80 @@ private func token(_ value: String) -> String {
         #expect((sources[1] as? KeychainCredentialSource)?.service == hashedService)
         #expect((sources[2] as? FileCredentialSource)?.fileURL == paths.credentialsFile)
     }
+
+    /// The plain item belongs to the default config directory, so a custom `D` must never read it.
+    @Test func standardOrderForCustomDirectoryOmitsThePlainItem() {
+        let custom = FileManager.default.temporaryDirectory
+            .appendingPathComponent("QuotaRingCustomClaude-\(UUID().uuidString)", isDirectory: true)
+        let paths = ClaudePaths(
+            customConfigDirectory: custom,
+            homeDirectory: URL(fileURLWithPath: "/Users/test", isDirectory: true)
+        )
+        let directory = custom.path
+        #expect(!directory.hasSuffix("/") && paths.configDirectory.path == directory)
+        let digest = SHA256.hash(data: Data(directory.utf8))
+        let hash8 = String(digest.map { String(format: "%02x", $0) }.joined().prefix(8))
+
+        let labels = CredentialResolver.standard(paths: paths).sources.map { $0.label }
+
+        #expect(
+            labels == [
+                "Keychain: Claude Code-credentials-\(hash8)",
+                "File: \(directory)/.credentials.json",
+            ]
+        )
+        #expect(!labels.contains("Keychain: Claude Code-credentials"))
+    }
+}
+
+// MARK: - Keychain source
+
+/// The Keychain itself is never touched in tests; only the query that would be sent is checked.
+@Suite struct KeychainCredentialSourceTests {
+    @Test func keychainQueryIsPinnedAndReadOnly() {
+        let query = KeychainCredentialSource.query(service: "Claude Code-credentials")
+
+        #expect(
+            Set(query.keys) == [
+                kSecClass as String,
+                kSecAttrService as String,
+                kSecMatchLimit as String,
+                kSecReturnData as String,
+            ]
+        )
+        #expect(query[kSecClass as String] as? String == kSecClassGenericPassword as String)
+        #expect(query[kSecAttrService as String] as? String == "Claude Code-credentials")
+        #expect(query[kSecMatchLimit as String] as? String == kSecMatchLimitOne as String)
+        #expect(query[kSecReturnData as String] as? Bool == true)
+
+        // Spelled out for auditors (the exact key set above already excludes them): no account filter, no Data
+        // Protection keychain, no attribute or reference returns, and nothing that writes or changes an item.
+        let absent: [CFString] = [
+            kSecAttrAccount,
+            kSecUseDataProtectionKeychain,
+            kSecReturnAttributes,
+            kSecReturnRef,
+            kSecReturnPersistentRef,
+            kSecValueData,
+            kSecValueRef,
+            kSecValuePersistentRef,
+            kSecAttrAccessible,
+            kSecAttrAccessControl,
+            kSecAttrAccessGroup,
+            kSecAttrSynchronizable,
+            kSecAttrLabel,
+            kSecAttrComment,
+        ]
+        for key in absent {
+            #expect(query[key as String] == nil, "\(key)")
+        }
+    }
+
+    @Test func keychainQueryUsesTheGivenService() {
+        let hashed = "Claude Code-credentials-0123abcd"
+        #expect(KeychainCredentialSource.query(service: hashed)[kSecAttrService as String] as? String == hashed)
+        #expect(KeychainCredentialSource(service: hashed).service == hashed)
+    }
 }
 
 // MARK: - File source
@@ -436,6 +511,25 @@ private struct TemporaryDirectory {
         let overLimit = try directory.file("over-limit.json", contents: Data(count: limit + 1), mode: 0o600)
         #expect(throws: CredentialError.insecureFile) {
             try FileCredentialSource(fileURL: overLimit).readCredentialData()
+        }
+    }
+
+    /// `open(2)` failures: permission problems are security refusals, anything else is an unreadable source.
+    @Test func fileSourceMapsOpenFailures() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+
+        // EACCES: a file the owner cannot read.
+        let unreadable = try directory.file("unreadable.json", contents: contents, mode: 0o000)
+        #expect(throws: CredentialError.insecureFile) {
+            try FileCredentialSource(fileURL: unreadable).readCredentialData()
+        }
+
+        // ENOTDIR: a path under a regular file.
+        let regular = try directory.file("not-a-directory", contents: contents, mode: 0o600)
+        let underFile = regular.appendingPathComponent(".credentials.json", isDirectory: false)
+        #expect(throws: CredentialError.malformed) {
+            try FileCredentialSource(fileURL: underFile).readCredentialData()
         }
     }
 

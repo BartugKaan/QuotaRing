@@ -11,8 +11,8 @@ public struct CredentialResolver: Sendable {
         self.sources = sources
     }
 
-    /// Spec order: Keychain item `Claude Code-credentials`, then `Claude Code-credentials-<hash of D>`, then
-    /// `D/.credentials.json`.
+    /// Sources in order: a ``KeychainCredentialSource`` for each service in `paths.keychainServiceNames`, in order,
+    /// then a ``FileCredentialSource`` for `paths.credentialsFile`.
     public static func standard(paths: ClaudePaths) -> CredentialResolver {
         let keychain: [any CredentialSource] = paths.keychainServiceNames.map { KeychainCredentialSource(service: $0) }
         return CredentialResolver(sources: keychain + [FileCredentialSource(fileURL: paths.credentialsFile)])

@@ -12,9 +12,14 @@ public protocol CredentialSource: Sendable {
     func readCredentialData() throws(CredentialError) -> Data?
 }
 
-/// One generic-password item in the user's login Keychain, looked up by service name.
+/// One generic-password item in the user's Keychain, looked up by service name.
 ///
-/// The only Keychain call is `SecItemCopyMatching`, which reads; nothing is added, updated or deleted.
+/// The only Keychain call is `SecItemCopyMatching`, which reads; nothing is added, updated or deleted. The query
+/// searches the default keychain search list and matches any account. If several items share the service name,
+/// `kSecMatchLimitOne` returns one of them, and which one is unspecified.
+///
+/// `SecItemCopyMatching` may show a modal access prompt and blocks the calling thread until it is answered, so callers
+/// must not call ``readCredentialData()`` on the main actor.
 public struct KeychainCredentialSource: CredentialSource {
     public let service: String
 
@@ -24,15 +29,19 @@ public struct KeychainCredentialSource: CredentialSource {
         self.service = service
     }
 
-    public func readCredentialData() throws(CredentialError) -> Data? {
-        let query: [String: Any] = [
+    /// The complete lookup query: generic password, this service, one match, return its data. Nothing else.
+    static func query(service: String) -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
         ]
+    }
+
+    public func readCredentialData() throws(CredentialError) -> Data? {
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = SecItemCopyMatching(Self.query(service: service) as CFDictionary, &result)
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else { throw .malformed }
@@ -50,8 +59,11 @@ public struct KeychainCredentialSource: CredentialSource {
 /// The file is read only if it is a regular file, owned by the current user, with no group or other permission bits,
 /// and at most 1 MiB. A symlink as the final path component is refused; symlinks in parent directories (for example
 /// a `~/.claude` that links elsewhere) are followed. The checks run on the opened descriptor, so the file cannot be
-/// swapped between the check and the read. A missing file is `nil`; a file that cannot be opened or fails a check is
-/// ``CredentialError/insecureFile``.
+/// swapped between the check and the read.
+///
+/// Results: a missing file (`ENOENT`) is `nil`. A symlink (`ELOOP`), a permission error (`EACCES`, `EPERM`) or a
+/// failed check is ``CredentialError/insecureFile``. Any other failure to open or read the file (for example `EMFILE`,
+/// `ENFILE`, `ENOTDIR`, or `EINTR` after retries) is ``CredentialError/malformed``.
 public struct FileCredentialSource: CredentialSource {
     public let fileURL: URL
 
@@ -63,11 +75,23 @@ public struct FileCredentialSource: CredentialSource {
 
     public func readCredentialData() throws(CredentialError) -> Data? {
         // O_NOFOLLOW: a symlink fails with ELOOP. O_NONBLOCK: a FIFO cannot make open(2) wait for a writer; it has no
-        // effect on reading a regular file.
-        let descriptor = open(fileURL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        // effect on reading a regular file. A call interrupted by a signal is retried a few times.
+        var descriptor: Int32 = -1
+        var openError: Int32 = 0
+        for _ in 0..<3 {
+            descriptor = open(fileURL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+            openError = descriptor < 0 ? errno : 0
+            if openError != EINTR { break }
+        }
         guard descriptor >= 0 else {
-            if errno == ENOENT { return nil }
-            throw .insecureFile
+            switch openError {
+            case ENOENT:
+                return nil
+            case ELOOP, EACCES, EPERM:
+                throw .insecureFile
+            default:
+                throw .malformed
+            }
         }
         defer { close(descriptor) }
 
