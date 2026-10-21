@@ -61,7 +61,7 @@ public struct TranscriptEntry: Hashable, Sendable {
     public var timestamp: Date
     /// The model id exactly as written in the transcript, e.g. `claude-opus-4-8`.
     public var model: String
-    /// The last path component of the working directory, or `"Unknown"`.
+    /// The repository folder of the working directory (worktree folders map to their repository), or `"Unknown"`.
     public var project: String
     public var tokens: TokenCounts
 

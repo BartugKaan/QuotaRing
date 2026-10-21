@@ -33,7 +33,7 @@ public enum TranscriptLineParser {
             dedupeKey: messageID + "|" + requestID,
             timestamp: timestamp,
             model: model,
-            project: project(fromWorkingDirectory: JSONValue.nonEmptyString(root["cwd"])),
+            project: projectName(fromCWD: JSONValue.nonEmptyString(root["cwd"]) ?? ""),
             tokens: TokenCounts(
                 input: count(usage["input_tokens"]),
                 output: count(usage["output_tokens"]),
@@ -46,10 +46,32 @@ public enum TranscriptLineParser {
         return number
     }
 
-    private static func project(fromWorkingDirectory cwd: String?) -> String {
-        guard let name = cwd?.split(separator: "/", omittingEmptySubsequences: true).last else {
-            return TranscriptEntry.unknownLabel
+    /// Names the project a working directory belongs to.
+    ///
+    /// The rule is purely lexical (no file system access). Empty path components, as left by a leading or trailing
+    /// `/`, are ignored. Scanning from the outermost folder inward, the first of these markers decides:
+    ///
+    /// - `<repo>/.claude/worktrees/<name>[/...]`: Claude Code's subagent and worktree folders; the project is `<repo>`,
+    ///   the folder that contains `.claude`.
+    /// - `<repo>/.worktrees/<name>[/...]` and `<repo>/worktrees/<name>[/...]`: the common git worktree layouts; the
+    ///   project is `<repo>`, the folder directly above the marker.
+    ///
+    /// A marker only counts when a `<name>` folder follows it and a `<repo>` folder precedes it, so a working directory
+    /// that is itself `worktrees` (or `.claude/worktrees`) is not rewritten. Without a marker the project is the last
+    /// path component, and `"Unknown"` when there is none (empty string or `/`).
+    static func projectName(fromCWD cwd: String) -> String {
+        let components = cwd.split(separator: "/", omittingEmptySubsequences: true)
+        for index in components.indices.dropFirst() {
+            let name = components[index]
+            let isClaudeWorktrees =
+                name == ".claude" && index + 2 < components.endIndex && components[index + 1] == "worktrees"
+            let isPlainWorktrees =
+                (name == ".worktrees" || name == "worktrees") && index + 1 < components.endIndex
+                && components[index - 1] != ".claude"
+            if isClaudeWorktrees || isPlainWorktrees {
+                return String(components[index - 1])
+            }
         }
-        return String(name)
+        return components.last.map(String.init) ?? TranscriptEntry.unknownLabel
     }
 }

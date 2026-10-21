@@ -130,6 +130,48 @@ func assistantLine(
         #expect(try #require(parse(assistantLine(cwd: "/"))).project == "Unknown")
     }
 
+    @Test(arguments: [
+        // Plain folders keep the last path component.
+        ("/Users/test/dev/alpha", "alpha"),
+        ("/Users/test/dev/alpha/", "alpha"),
+        ("/Users/test/dev/alpha/Core", "Core"),
+        ("beta", "beta"),
+        // Claude Code worktrees and subagents belong to the folder that contains `.claude`, at any depth.
+        ("/Users/test/dev/alpha/.claude/worktrees/agent-a7b43e4dba130ce59", "alpha"),
+        ("/Users/test/dev/alpha/.claude/worktrees/agent-a7b43e4dba130ce59/", "alpha"),
+        ("/Users/test/dev/alpha/.claude/worktrees/agent-x/Core", "alpha"),
+        ("/Users/test/dev/alpha/.claude/worktrees/agent-x/Core/Sources/", "alpha"),
+        ("/Users/test/dev/alpha/.claude/worktrees/agent-x/.claude/worktrees/agent-y", "alpha"),
+        // `.worktrees/<name>` and `worktrees/<name>` directly inside a repository folder.
+        ("/Users/test/dev/alpha/.worktrees/feature-y", "alpha"),
+        ("/Users/test/dev/alpha/.worktrees/feature-y/App/", "alpha"),
+        ("/Users/test/dev/alpha/worktrees/feature-y", "alpha"),
+        ("/Users/test/dev/alpha/worktrees/feature-y/Core", "alpha"),
+        // A marker without a `<name>` below it, or without a repository above it, is just a folder.
+        ("/Users/test/dev/alpha/worktrees", "worktrees"),
+        ("/Users/test/dev/alpha/worktrees/", "worktrees"),
+        ("/Users/test/dev/alpha/.worktrees", ".worktrees"),
+        ("/Users/test/dev/alpha/.claude/worktrees", "worktrees"),
+        ("/Users/test/dev/alpha/.claude", ".claude"),
+        ("/worktrees", "worktrees"),
+        ("/worktrees/feature-y", "feature-y"),
+        ("/.worktrees/feature-y", "feature-y"),
+        ("/.claude/worktrees/agent-x", "agent-x"),
+        (".claude/worktrees/agent-x", "agent-x"),
+        // Nothing to name.
+        ("/", "Unknown"),
+        ("//", "Unknown"),
+        ("", "Unknown"),
+    ])
+    func projectNameFollowsTheWorktreeRule(cwd: String, expected: String) {
+        #expect(TranscriptLineParser.projectName(fromCWD: cwd) == expected)
+    }
+
+    @Test func worktreeTranscriptsAreAttributedToTheirRepository() throws {
+        let cwd = "/Users/test/dev/alpha/.claude/worktrees/agent-a7b43e4dba130ce59/Core"
+        #expect(try #require(parse(assistantLine(cwd: cwd))).project == "alpha")
+    }
+
     @Test func missingModelIsCountedAsUnknown() throws {
         let entry = try #require(parse(assistantLine(model: nil)))
         #expect(entry.model == "Unknown")
