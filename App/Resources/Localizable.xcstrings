@@ -1,7 +1,47 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-
+    "%@ left" : {},
+    "About QuotaRing" : {
+      "comment" : "Status item menu: show the About panel"
+    },
+    "Last updated %@." : {
+      "comment" : "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago"
+    },
+    "less than a minute" : {
+      "comment" : "Spoken countdown shorter than one minute"
+    },
+    "Live mode needs attention." : {
+      "comment" : "Appended to the menu bar VoiceOver label when Live mode cannot fetch"
+    },
+    "No usage data yet" : {},
+    "Quit QuotaRing" : {
+      "comment" : "Status item menu: quit the app"
+    },
+    "QuotaRing: %@ of 5-hour limit remaining" : {
+      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage"
+    },
+    "QuotaRing: %@ of 5-hour limit remaining, resets in %@" : {
+      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
+    },
+    "QuotaRing: %@ of 5-hour limit used" : {
+      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage"
+    },
+    "QuotaRing: %@ of 5-hour limit used, resets in %@" : {
+      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
+    },
+    "QuotaRing: no usage data yet" : {
+      "comment" : "VoiceOver label of the menu bar item before any usage is known"
+    },
+    "Refresh" : {
+      "comment" : "Status item menu: reload usage now"
+    },
+    "Resets in %@" : {},
+    "Settings" : {},
+    "Settings…" : {
+      "comment" : "Status item menu: open the Settings window"
+    },
+    "Waiting for fresh data" : {}
   },
   "version" : "1.0"
 }
