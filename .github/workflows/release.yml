@@ -37,9 +37,6 @@ jobs:
       # How long each notarization round may wait for Apple (e.g. 45m, 2h).
       # Override with a variable of the same name on the "release" environment.
       NOTARY_TIMEOUT: ${{ vars.NOTARY_TIMEOUT || '45m' }}
-      HOMEBREW_NO_ANALYTICS: "1"
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -116,8 +113,9 @@ jobs:
       - name: Select Xcode
         run: scripts/ci/select-xcode.sh
 
+      # A pinned release with a verified checksum, not whatever Homebrew has today.
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: scripts/ci/install-xcodegen.sh
 
       - name: Generate the Xcode project
         run: xcodegen generate

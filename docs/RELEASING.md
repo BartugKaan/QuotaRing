@@ -10,7 +10,8 @@ Pushing a version tag such as `v0.1.0` starts the **Release** workflow
 1. checks the tag, that the tagged commit is on `main`, that the repository is
    public, that no release for the tag exists yet, and that all secrets are set
    (each of these fails within seconds instead of after the long build);
-2. generates the Xcode project and checks that the tag equals `MARKETING_VERSION`
+2. installs the pinned XcodeGen (see "Updating the pinned XcodeGen" below),
+   generates the Xcode project and checks that the tag equals `MARKETING_VERSION`
    in `project.yml`;
 3. imports your Developer ID certificate into a temporary keychain;
 4. archives and exports the app with Developer ID signing and the Hardened Runtime;
@@ -228,6 +229,7 @@ The release job fails early and with a readable message in most cases.
 | `A release for v... already exists; delete the draft or bump the version` | An earlier run left a draft (or you published that version). Delete the draft under Releases, or release the next version number instead. |
 | `NOTARY_TIMEOUT '...' must be a number followed by s, m or h` | Fix the `NOTARY_TIMEOUT` environment variable, for example `90m` or `2h`. |
 | `Notarization did not succeed (status: unknown ...)` after a long wait | Apple did not answer within `NOTARY_TIMEOUT` (see the note on new accounts above). Re-run the failed job; consider a larger `NOTARY_TIMEOUT`. |
+| `XcodeGen ... checksum mismatch` | The download does not match the SHA-256 pinned in `scripts/ci/install-xcodegen.sh`, and nothing was installed. Re-run once. If it fails again, compare the hash with the one shown for that asset on XcodeGen's GitHub release page before you change anything; never just paste in the hash from the error message. |
 | `Tag ... does not match MARKETING_VERSION` | Bump `MARKETING_VERSION` in `project.yml`, merge, and re-tag (see below). |
 | `DEVELOPER_ID_P12_BASE64 is not valid base64` | Re-create the value with `base64 -i DeveloperID.p12`. |
 | `MAC verification failed` while importing | `DEVELOPER_ID_P12_PASSWORD` does not match the password used for the export. |
@@ -273,3 +275,40 @@ Delete any draft release that was created for that tag before re-tagging.
 - No script prints a secret, and none enables shell tracing.
 - Third-party actions are pinned to full commit SHAs; Dependabot proposes updates
   weekly. The workflow itself holds the minimum permissions it needs.
+- XcodeGen is not installed with Homebrew. `scripts/ci/install-xcodegen.sh`
+  downloads one exact release from the official GitHub releases, refuses to use
+  it unless its SHA-256 equals the value written in the script, and only then
+  unpacks it. CI and CodeQL use the same script.
+
+## Updating the pinned XcodeGen
+
+Dependabot does not track this pin, so look at
+[XcodeGen's releases](https://github.com/yonaskolb/XcodeGen/releases) now and then.
+To move to a new version:
+
+1. Download `xcodegen.zip` of that release into an empty folder and compute the
+   hash yourself:
+
+   ```sh
+   curl -fsSL -o xcodegen.zip \
+     https://github.com/yonaskolb/XcodeGen/releases/download/<version>/xcodegen.zip
+   shasum -a 256 xcodegen.zip
+   ```
+
+2. Put the version in `XCODEGEN_VERSION` and the hash in `XCODEGEN_SHA256` at the
+   top of `scripts/ci/install-xcodegen.sh`, in the same commit.
+3. Check it locally: `XCODEGEN_INSTALL_DIR=$(mktemp -d) scripts/ci/install-xcodegen.sh`
+   must print "SHA-256 verified" and "Installed XcodeGen <version>". Change one
+   character of the hash and it must fail with "checksum mismatch".
+
+The script is the single source of truth for the version. `make setup` (local
+development) still installs whatever version Homebrew has.
+
+## The Xcode 16.4 job
+
+The README promises "Xcode 16.4 or later", so the CI workflow has a job that
+selects Xcode 16.4 exactly (`XCODE_VERSION` in `scripts/ci/select-xcode.sh`) and
+runs `make test` and an unsigned `make build` with it. If GitHub removes Xcode 16.4
+from the `macos-15` image, that job fails on purpose instead of testing another
+version. Then raise the documented minimum (README, CONTRIBUTING, and the job)
+together.
