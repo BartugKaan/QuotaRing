@@ -13,7 +13,8 @@
 #   ASC_KEY_ID          App Store Connect API key ID                      (secret)
 #   ASC_ISSUER_ID       App Store Connect issuer ID                       (secret)
 #   ASC_KEY_P8_BASE64   base64 of the AuthKey_XXXX.p8 private key         (secret)
-#   NOTARY_TIMEOUT      how long to wait for Apple, e.g. 45m              (default: 45m)
+#   NOTARY_TIMEOUT      how long to wait for Apple: digits plus s, m or h,
+#                       e.g. 45m or 2h                                    (default: 45m)
 #   RUNNER_TEMP         scratch directory root (default: $TMPDIR)
 #
 # The decoded key lives in a private temp directory that is removed by an EXIT
@@ -38,6 +39,9 @@ artifact="${artifact%/}"
 : "${ASC_KEY_P8_BASE64:?ASC_KEY_P8_BASE64 is not set}"
 
 timeout="${NOTARY_TIMEOUT:-45m}"
+if [[ ! "$timeout" =~ ^[0-9]+[smh]$ ]]; then
+    fail "NOTARY_TIMEOUT '${timeout}' must be a number followed by s, m or h (for example 45m)"
+fi
 staple_attempts=5
 staple_delay="${STAPLE_RETRY_DELAY:-20}"
 

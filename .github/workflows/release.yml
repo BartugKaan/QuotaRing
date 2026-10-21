@@ -24,7 +24,9 @@ jobs:
   release:
     name: Build, notarize and draft the release
     runs-on: macos-15
-    timeout-minutes: 90
+    # Build (~30 min) plus two notarization rounds of up to NOTARY_TIMEOUT each,
+    # with headroom. A first submission from a new developer account can be slow.
+    timeout-minutes: 150
     environment: release
     permissions:
       contents: write # create the draft release and upload its assets
@@ -32,7 +34,11 @@ jobs:
       attestations: write # store the build provenance attestation
     env:
       TAG: ${{ github.ref_name }}
+      # How long each notarization round may wait for Apple (e.g. 45m, 2h).
+      # Override with a variable of the same name on the "release" environment.
+      NOTARY_TIMEOUT: ${{ vars.NOTARY_TIMEOUT || '45m' }}
       HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - name: Check out
@@ -42,8 +48,9 @@ jobs:
           fetch-depth: 0
 
       # Fail within seconds, not after a 20-minute build, when something is off.
-      - name: Check the tag and the release secrets
+      - name: Check the tag, the repository and the release secrets
         env:
+          GH_TOKEN: ${{ github.token }}
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -59,6 +66,34 @@ jobs:
 
           if ! git merge-base --is-ancestor HEAD origin/main; then
             echo "::error::Tag ${TAG} does not point at a commit on main. Merge first, then tag."
+            exit 1
+          fi
+
+          # Build provenance attestation is unavailable for private repositories
+          # (docs/RELEASING.md), so the run could never finish. Fail closed if
+          # the visibility cannot be read.
+          if ! is_private="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)"; then
+            echo "::error::Could not read the repository visibility from the GitHub API."
+            exit 1
+          fi
+          if [[ "$is_private" == "true" ]]; then
+            echo "::error::This repository is private. Build provenance attestation needs a public repository; make it public first (see docs/RELEASING.md)."
+            exit 1
+          fi
+
+          # A release for this tag (published or draft) would make the final
+          # step fail after 1-2 hours of build and notarization. `gh release
+          # view` does not always find drafts, so also look through the list.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::A release for ${TAG} already exists; delete the draft or bump the version."
+            exit 1
+          fi
+          if ! release_tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')"; then
+            echo "::error::Could not list the existing releases."
+            exit 1
+          fi
+          if grep -qxF "$TAG" <<<"$release_tags"; then
+            echo "::error::A release for ${TAG} already exists; delete the draft or bump the version."
             exit 1
           fi
 

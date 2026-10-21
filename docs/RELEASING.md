@@ -7,7 +7,9 @@ Account Holder, and the repository `BartugKaan/QuotaRing`.
 Pushing a version tag such as `v0.1.0` starts the **Release** workflow
 (`.github/workflows/release.yml`). After you approve it, it:
 
-1. checks the tag, the secrets and that the tagged commit is on `main`;
+1. checks the tag, that the tagged commit is on `main`, that the repository is
+   public, that no release for the tag exists yet, and that all secrets are set
+   (each of these fails within seconds instead of after the long build);
 2. generates the Xcode project and checks that the tag equals `MARKETING_VERSION`
    in `project.yml`;
 3. imports your Developer ID certificate into a temporary keychain;
@@ -31,7 +33,8 @@ the repository (`*.p12` and `*.p8` are in `.gitignore`).
 - The repository must be **public** before the first release. Build provenance
   attestations (and CodeQL results) are not available for private repositories
   on GitHub Free/Pro/Team. While the repository is private the CodeQL job is
-  skipped on purpose.
+  skipped on purpose, and the release workflow stops at its first step with an
+  explanatory error.
 - Merge the work to `main`. The release workflow refuses tags that are not on
   `main`.
 
@@ -122,12 +125,28 @@ characters, letters and digits). This is `APPLE_TEAM_ID`.
    | `ASC_ISSUER_ID` | Issuer ID of the App Store Connect API key (step 3) |
    | `ASC_KEY_P8_BASE64` | Base64 of `AuthKey_<KEYID>.p8` (step 3) |
 
-### 6. Protect release tags (recommended)
+### 6. Protect release tags (required)
 
-GitHub > **Settings** > **Rules** > **Rulesets** > **New tag ruleset**, target
-the pattern `v*`, and restrict creation, update and deletion so that only you
-(repository admin) can bypass it. A tag push is what starts the signing
-workflow, so tags deserve the same care as the secrets.
+Do not skip this and do it **before** the first tag. A tag push is what starts
+the signing workflow, so who may create, move or delete `v*` tags decides who
+can ask for your certificate to be used.
+
+1. GitHub > the repository > **Settings** > **Rules** > **Rulesets** > **New
+   ruleset** > **New tag ruleset**.
+2. Name it "Protect release tags" and set **Enforcement status** to **Active**.
+3. Under **Bypass list** click **Add bypass** and add the **Repository admin**
+   role (bypass mode **Always**). This is what still lets you, as the owner,
+   create the tag and delete it again when a release has to be redone.
+4. Under **Target tags** choose **Add target** > **Include by pattern** and enter
+   `v*`.
+5. Under **Rules** tick **Restrict creations**, **Restrict updates** and
+   **Restrict deletions** (and **Block force pushes** if it is offered).
+6. Click **Create**.
+
+Afterwards, test it once: a `v*` tag pushed by anyone without the bypass should
+be rejected. Together with the required reviewer and the `v*` rule on the
+`release` environment (step 5), a stolen or compromised collaborator account
+cannot start a signed release by itself.
 
 ## Cutting a release (example: v0.1.0)
 
@@ -147,10 +166,31 @@ workflow, so tags deserve the same care as the secrets.
    git push origin v0.1.0
    ```
 
-5. GitHub > **Actions** > the **Release** run > **Review deployments** > tick
-   `release` > **Approve and deploy**.
+5. GitHub > **Actions** > the **Release** run. **Before approving, confirm that
+   the commit SHA of the run equals the tip of `main`.** The workflow only checks
+   that the tagged commit is somewhere on `main`, so an older commit would pass
+   its check; you are the one who checks that this is the commit you meant to
+   ship:
+
+   ```sh
+   git ls-remote origin refs/heads/main     # tip of main on GitHub
+   git rev-parse v0.1.0^{commit}            # commit the tag points at
+   ```
+
+   Both must print the same SHA, and it must be the commit shown at the top of the
+   run. If it differs, click **Reject** instead, and find out why. If it matches,
+   open **Review deployments**, tick `release` and click **Approve and deploy**.
 6. Wait. Archiving takes a few minutes; each of the two notarization rounds
-   usually takes 2 to 15 minutes but Apple can be slower.
+   usually takes 2 to 15 minutes but Apple can be slower. Each round waits at
+   most 45 minutes by default and the whole job is cut off after 150 minutes.
+   **The very first notarization on a new developer account can take much longer
+   than usual (hours, in bad cases).** To avoid your first release being that
+   first submission, notarize any small signed test app once beforehand with
+   `xcrun notarytool submit`. If you expect a slow day, set a variable named
+   `NOTARY_TIMEOUT` (for example `90m`) under the `release` environment's
+   **Environment variables**, and raise `timeout-minutes` in
+   `.github/workflows/release.yml` to match (two rounds plus about 30 minutes
+   for the build). The value is a number followed by `s`, `m` or `h`.
 7. GitHub > **Releases** now shows a **draft** `QuotaRing 0.1.0` with
    `QuotaRing-0.1.0.dmg`, `QuotaRing-0.1.0.zip` and `SHA256SUMS`.
 
@@ -184,6 +224,10 @@ The release job fails early and with a readable message in most cases.
 | `Missing secrets in the 'release' environment: ...` | A secret is absent or empty, or it was added as a repository secret instead of an environment secret. |
 | `Tag ... must look like v0.1.0` | Only `vMAJOR.MINOR.PATCH` tags are accepted. |
 | `Tag ... does not point at a commit on main` | Merge to `main` first and tag the merged commit. |
+| `This repository is private. Build provenance attestation needs a public repository` | Make the repository public (Settings > General > Danger Zone), then re-run. |
+| `A release for v... already exists; delete the draft or bump the version` | An earlier run left a draft (or you published that version). Delete the draft under Releases, or release the next version number instead. |
+| `NOTARY_TIMEOUT '...' must be a number followed by s, m or h` | Fix the `NOTARY_TIMEOUT` environment variable, for example `90m` or `2h`. |
+| `Notarization did not succeed (status: unknown ...)` after a long wait | Apple did not answer within `NOTARY_TIMEOUT` (see the note on new accounts above). Re-run the failed job; consider a larger `NOTARY_TIMEOUT`. |
 | `Tag ... does not match MARKETING_VERSION` | Bump `MARKETING_VERSION` in `project.yml`, merge, and re-tag (see below). |
 | `DEVELOPER_ID_P12_BASE64 is not valid base64` | Re-create the value with `base64 -i DeveloperID.p12`. |
 | `MAC verification failed` while importing | `DEVELOPER_ID_P12_PASSWORD` does not match the password used for the export. |
