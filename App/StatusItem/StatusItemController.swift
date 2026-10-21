@@ -310,9 +310,9 @@ struct StatusPresentation {
                 comment: "VoiceOver label of the menu bar item; the argument is a percentage")
         }
         if isStale {
-            label += " " + Self.outOfDateNote(snapshot: snapshot, now: now, needsAttention: style.needsAttention)
+            label += ". " + Self.outOfDateNote(snapshot: snapshot, now: now, needsAttention: style.needsAttention)
         } else if style.needsAttention {
-            label += " " + Self.liveNeedsAttention
+            label += ". " + Self.liveNeedsAttention
         }
         accessibilityLabel = label
     }
