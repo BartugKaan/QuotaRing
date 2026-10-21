@@ -1,0 +1,18 @@
+/* Age of a snapshot in days; the argument is a whole number. */
+"format.daysAgo" = "%lld gün önce";
+
+/* Age of a snapshot in hours; the argument is a whole number. */
+"format.hoursAgo" = "%lld sa önce";
+
+/* Age of a snapshot under one minute. */
+"format.justNow" = "az önce";
+
+/* Countdown shorter than one minute. */
+"format.lessThanMinute" = "<1d";
+
+/* Age of a snapshot in minutes; the argument is a whole number. */
+"format.minutesAgo" = "%lld dk önce";
+
+/* Spoken countdown shorter than one minute (for VoiceOver). */
+"format.spokenLessThanMinute" = "bir dakikadan az";
+

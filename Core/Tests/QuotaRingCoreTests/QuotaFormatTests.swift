@@ -80,6 +80,41 @@ import Testing
         #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 86_400), now: now, locale: french) == "2 d ago")
     }
 
+    @Test func turkishTemplates() {
+        // Turkish has its own tr.lproj; the lookup follows the locale argument, not the language of the test process.
+        let turkish = Locale(identifier: "tr_TR")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-10), now: now, locale: turkish) == "az önce")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-180), now: now, locale: turkish) == "3 dk önce")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-2 * 3600), now: now, locale: turkish) == "2 sa önce")
+        #expect(QuotaFormat.age(of: now.addingTimeInterval(-3 * 86_400), now: now, locale: turkish) == "3 gün önce")
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(20), from: now, locale: turkish) == "<1d")
+        #expect(
+            QuotaFormat.spokenCountdown(to: now.addingTimeInterval(20), from: now, locale: turkish)
+                == "bir dakikadan az")
+        // The Turkish countdown itself comes from DateComponentsFormatter, which writes minutes as "d" ("45d").
+        #expect(QuotaFormat.countdown(to: now.addingTimeInterval(2700), from: now, locale: turkish).hasPrefix("45"))
+    }
+
+    @Test func turkishTemplatesCoverEveryEnglishKeyWithTheSameFormatSpecifiers() throws {
+        // A key missing from tr.lproj would silently fall back to English, so the two files are compared directly.
+        let resources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Sources/QuotaRingCore/Resources")
+        func strings(_ language: String) throws -> [String: String] {
+            let url = resources.appending(path: "\(language).lproj/Localizable.strings")
+            return try #require(NSDictionary(contentsOf: url) as? [String: String])
+        }
+        let specifier = /%(?:\d+\$)?l{0,2}[@dsf]/
+        let english = try strings("en")
+        let turkish = try strings("tr")
+        #expect(Set(turkish.keys) == Set(english.keys))
+        for (key, template) in english {
+            let expected = template.matches(of: specifier).map { String($0.output) }
+            let actual = (turkish[key] ?? "").matches(of: specifier).map { String($0.output) }
+            #expect(actual == expected, "format specifiers of \(key)")
+        }
+    }
+
     @Test func ageInTheFutureIsJustNow() {
         #expect(QuotaFormat.age(of: now.addingTimeInterval(30), now: now, locale: locale) == "just now")
     }

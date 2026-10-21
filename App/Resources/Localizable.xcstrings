@@ -1,47 +1,1633 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ left" : {},
+    "%@ left" : {
+      "comment" : "VoiceOver: share of the limit still available",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kaldı"
+          }
+        }
+      }
+    },
+    "%@ of %@" : {
+      "comment" : "Extra usage: amount spent of the monthly limit",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ tokens" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ token"
+          }
+        }
+      }
+    },
+    "%@ tokens, approximate, from Claude Code on this Mac" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ token, yaklaşık, bu Mac’teki Claude Code’dan"
+          }
+        }
+      }
+    },
+    "%@ used" : {
+      "comment" : "VoiceOver: share of a limit already used\nVoiceOver: share of the limit already used",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kullanıldı"
+          }
+        }
+      }
+    },
+    "%@: %@ tokens" : {
+      "comment" : "Tooltip of a bar in the 7-day chart: a date, then a count",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ tokens"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ token"
+          }
+        }
+      }
+    },
+    "5-hour session" : {
+      "comment" : "VoiceOver: name of the session ring",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 saatlik oturum"
+          }
+        }
+      }
+    },
+    "7 days" : {
+      "comment" : "Activity range: the last seven days",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 gün"
+          }
+        }
+      }
+    },
+    "About" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hakkında"
+          }
+        }
+      }
+    },
+    "About %@ left" : {
+      "comment" : "Notification body; the argument is a percentage",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaklaşık %@ kaldı"
+          }
+        }
+      }
+    },
+    "About %@ left · resets in %@" : {
+      "comment" : "Notification body; a percentage and a duration such as 1h 22m",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About %1$@ left · resets in %2$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaklaşık %1$@ kaldı · %2$@ sonra sıfırlanır"
+          }
+        }
+      }
+    },
     "About QuotaRing" : {
-      "comment" : "Status item menu: show the About panel"
+      "comment" : "Status item menu: show the About panel",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing Hakkında"
+          }
+        }
+      }
+    },
+    "Activity" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etkinlik"
+          }
+        }
+      }
+    },
+    "All models" : {
+      "comment" : "Weekly limit that covers every model",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tüm modeller"
+          }
+        }
+      }
+    },
+    "Allow Notifications…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildirimlere İzin Ver…"
+          }
+        }
+      }
+    },
+    "Anthropic asked QuotaRing to slow down. It tries again in %@." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic, QuotaRing’in daha yavaş çalışmasını istedi. %@ sonra yeniden denenecek."
+          }
+        }
+      }
+    },
+    "Anthropic's breakdown, all devices" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic’e göre, tüm cihazlar"
+          }
+        }
+      }
+    },
+    "Approximate, from Claude Code on this Mac" : {
+      "comment" : "Caption under the total token count",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaklaşık, bu Mac’teki Claude Code’dan"
+          }
+        }
+      }
+    },
+    "By default, QuotaRing works entirely on this Mac:" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varsayılan olarak QuotaRing tamamen bu Mac’te çalışır:"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vazgeç"
+          }
+        }
+      }
+    },
+    "Choose" : {
+      "comment" : "Folder picker confirm button",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seç"
+          }
+        }
+      }
+    },
+    "Choose the folder Claude Code keeps its data in. The default is ~/.claude." : {
+      "comment" : "Folder picker message",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un verilerini sakladığı klasörü seçin. Varsayılan: ~/.claude"
+          }
+        }
+      }
+    },
+    "Choose…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seç…"
+          }
+        }
+      }
+    },
+    "Claude Code · %@" : {
+      "comment" : "Popover footer: data came from Claude Code's own cache; the argument is like 3 min ago",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code · %@"
+          }
+        }
+      }
+    },
+    "Claude Code's login (an access token) from your macOS Keychain, or from Claude Code's own credentials file if there is no Keychain item. Read-only: QuotaRing reads it again on each refresh and never stores it or changes it." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un giriş bilgisi (bir erişim token’ı), macOS Anahtar Zinciri’nizden veya Anahtar Zinciri öğesi yoksa Claude Code’un kendi kimlik bilgileri dosyasından okunur. Salt okunurdur: QuotaRing bunu her yenilemede yeniden okur, asla saklamaz veya değiştirmez."
+          }
+        }
+      }
+    },
+    "Claude Code's login has expired. Run `claude` once to renew it, and usage will appear here." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code girişinin süresi doldu. Yenilemek için `claude` komutunu bir kez çalıştırın; kullanım burada görünecek."
+          }
+        }
+      }
+    },
+    "Claude config directory" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude yapılandırma klasörü"
+          }
+        }
+      }
+    },
+    "Claude config directory: %@" : {
+      "comment" : "VoiceOver label of the folder path; the argument is a path such as ~/.claude",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude yapılandırma klasörü: %@"
+          }
+        }
+      }
+    },
+    "Claude session at %@" : {
+      "comment" : "Notification title when 5-hour session usage crossed a threshold; the argument is a percentage",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude oturumu: %@ kullanıldı"
+          }
+        }
+      }
+    },
+    "Could not turn off launch at login: %@" : {
+      "comment" : "Inline error under the Launch at login switch; the argument is the system's reason",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Girişte aç” kapatılamadı: %@"
+          }
+        }
+      }
+    },
+    "Could not turn on launch at login: %@" : {
+      "comment" : "Inline error under the Launch at login switch; the argument is the system's reason",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Girişte aç” açılamadı: %@"
+          }
+        }
+      }
+    },
+    "Data" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veri"
+          }
+        }
+      }
+    },
+    "Data is out of date" : {
+      "comment" : "VoiceOver: the shown usage is old",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veriler güncel değil"
+          }
+        }
+      }
+    },
+    "Data is out of date — run `/usage` in Claude Code, or open it, to refresh" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veriler güncel değil — yenilemek için Claude Code’da `/usage` komutunu çalıştırın veya Claude Code’u açın"
+          }
+        }
+      }
+    },
+    "Day" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gün"
+          }
+        }
+      }
+    },
+    "Demo data" : {
+      "comment" : "Popover footer: the numbers shown are made-up demo data",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo verisi"
+          }
+        }
+      }
+    },
+    "Demo mode shows sample data and reads no files." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo modu örnek veri gösterir ve hiçbir dosyayı okumaz."
+          }
+        }
+      }
+    },
+    "Demo mode shows sample data: Live mode cannot be changed." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo modu örnek veri gösterir: Canlı mod değiştirilemez."
+          }
+        }
+      }
+    },
+    "Each notification appears once per 5-hour session. Everything stays on this Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her bildirim, 5 saatlik oturum başına yalnızca bir kez görünür. Her şey bu Mac’te kalır."
+          }
+        }
+      }
+    },
+    "Enable Live mode" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı modu etkinleştir"
+          }
+        }
+      }
+    },
+    "Enable Live mode…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı modu etkinleştir…"
+          }
+        }
+      }
+    },
+    "Extra usage" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ek kullanım"
+          }
+        }
+      }
+    },
+    "Finish the welcome window first." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önce karşılama penceresini tamamlayın."
+          }
+        }
+      }
+    },
+    "For up-to-date limits without opening Claude Code, you can turn on Live mode in Settings." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’u açmadan güncel limitleri görmek için Ayarlar’dan Canlı modu açabilirsiniz."
+          }
+        }
+      }
+    },
+    "General" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genel"
+          }
+        }
+      }
+    },
+    "Good to know" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilinmesi gerekenler"
+          }
+        }
+      }
+    },
+    "It counts tokens from Claude Code's local transcripts. The text of your conversations is not kept." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un yerel konuşma kayıtlarındaki token’ları sayar. Konuşmalarınızın metni saklanmaz."
+          }
+        }
+      }
+    },
+    "It reads the usage numbers Claude Code already saves in its own cache file." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kendi önbellek dosyasına zaten kaydettiği kullanım değerlerini okur."
+          }
+        }
+      }
+    },
+    "Just refreshed. Live requests are limited to one a minute." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az önce yenilendi. Canlı istekler dakikada bir kez yapılabilir."
+          }
+        }
+      }
+    },
+    "Keychain prompt" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri izni"
+          }
+        }
+      }
     },
     "Last updated %@." : {
-      "comment" : "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago"
+      "comment" : "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son güncelleme: %@."
+          }
+        }
+      }
     },
-    "less than a minute" : {
-      "comment" : "Spoken countdown shorter than one minute"
+    "Launch at login" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girişte aç"
+          }
+        }
+      }
+    },
+    "left" : {
+      "comment" : "Under the percentage in the ring: the share of the limit still available",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kaldı"
+          }
+        }
+      }
+    },
+    "Live · %@" : {
+      "comment" : "Popover footer: data came from Anthropic's usage endpoint; the argument is like 3 min ago",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı · %@"
+          }
+        }
+      }
+    },
+    "Live mode" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod"
+          }
+        }
+      }
+    },
+    "Live mode asks Anthropic for fresh numbers, even when Claude Code has not run for a while." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod, Claude Code bir süredir çalışmamış olsa bile Anthropic’ten güncel değerler ister."
+          }
+        }
+      }
+    },
+    "Live mode asks Anthropic for fresher numbers. Here is exactly what happens." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod, Anthropic’ten daha güncel değerler ister. Neler olduğunu aşağıda ayrıntılı olarak görebilirsiniz."
+          }
+        }
+      }
+    },
+    "Live mode asks Anthropic for new numbers at most this often. Numbers older than twice this are shown as out of date. The Claude Code cache is checked every 30 s." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod, Anthropic’ten yeni değerleri en fazla bu sıklıkta ister. Bunun iki katından eski değerler için “güncel değil” uyarısı gösterilir. Claude Code önbelleği her 30 saniyede bir kontrol edilir."
+          }
+        }
+      }
+    },
+    "Live mode can't reach Anthropic" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod Anthropic’e ulaşamıyor"
+          }
+        }
+      }
+    },
+    "Live mode could not reach Anthropic — showing the last known usage" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod Anthropic’e ulaşamadı — bilinen son kullanım gösteriliyor"
+          }
+        }
+      }
+    },
+    "Live mode found no Claude Code login — run `claude` once to sign in" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod Claude Code girişi bulamadı — giriş yapmak için `claude` komutunu bir kez çalıştırın"
+          }
+        }
+      }
+    },
+    "Live mode is off. Nothing is read from the Keychain and QuotaRing makes no network requests." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod kapalı. Anahtar Zinciri’nden hiçbir şey okunmaz ve QuotaRing ağ isteği yapmaz."
+          }
+        }
+      }
+    },
+    "Live mode is on. The first reading should arrive in a moment." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod açık. İlk veriler birazdan gelmeli."
+          }
+        }
+      }
+    },
+    "Live mode is on. Turning it off stops all Keychain reads and network requests right away." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod açık. Kapatırsanız tüm Anahtar Zinciri okumaları ve ağ istekleri hemen durur."
+          }
+        }
+      }
+    },
+    "Live mode is paused" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod duraklatıldı"
+          }
+        }
+      }
+    },
+    "Live mode is rate limited" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod istek sınırına takıldı"
+          }
+        }
+      }
+    },
+    "Live mode is rate limited — trying again in %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod istek sınırına takıldı — %@ sonra yeniden denenecek"
+          }
+        }
+      }
+    },
+    "Live mode needs a Claude Code login. Run `claude` once to sign in, and usage will appear here." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod için Claude Code girişi gerekiyor. Giriş yapmak için `claude` komutunu bir kez çalıştırın; kullanım burada görünecek."
+          }
+        }
+      }
     },
     "Live mode needs attention." : {
-      "comment" : "Appended to the menu bar VoiceOver label when Live mode cannot fetch"
+      "comment" : "Appended to the menu bar VoiceOver label when Live mode cannot fetch",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod dikkat gerektiriyor."
+          }
+        }
+      }
     },
-    "No usage data yet" : {},
+    "Live mode paused: Claude Code login expired — run `claude` once to renew" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod duraklatıldı: Claude Code girişinin süresi doldu — yenilemek için `claude` komutunu bir kez çalıştırın"
+          }
+        }
+      }
+    },
+    "macOS has not been asked to allow notifications from QuotaRing yet." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing bildirimleri için macOS’ten henüz izin istenmedi."
+          }
+        }
+      }
+    },
+    "macOS is waiting for your approval. Allow QuotaRing in System Settings → General → Login Items." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS onayınızı bekliyor. QuotaRing’e Sistem Ayarları → Genel → Giriş Öğeleri bölümünden izin verin."
+          }
+        }
+      }
+    },
+    "macOS may ask to allow Keychain access: choose \"Always Allow\" to avoid repeated prompts." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS, Anahtar Zinciri erişimine izin vermenizi isteyebilir: tekrarlanan istemlerden kaçınmak için “Her Zaman İzin Ver” seçeneğini seçin."
+          }
+        }
+      }
+    },
+    "macOS may ask whether QuotaRing can use Claude Code's Keychain item. Choose \"Always Allow\" to avoid repeated prompts." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS, QuotaRing’in Claude Code’un Anahtar Zinciri öğesini kullanıp kullanamayacağını sorabilir. Tekrarlanan istemlerden kaçınmak için “Her Zaman İzin Ver” seçeneğini seçin."
+          }
+        }
+      }
+    },
+    "Menu bar" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menü çubuğu"
+          }
+        }
+      }
+    },
+    "MIT License" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MIT Lisansı"
+          }
+        }
+      }
+    },
+    "Models" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modeller"
+          }
+        }
+      }
+    },
+    "No activity in this period" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu dönemde etkinlik yok"
+          }
+        }
+      }
+    },
+    "No Claude Code login found" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code girişi bulunamadı"
+          }
+        }
+      }
+    },
+    "No data yet." : {
+      "comment" : "VoiceOver: the session ring has no data",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henüz veri yok."
+          }
+        }
+      }
+    },
+    "No usage data yet" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henüz kullanım verisi yok"
+          }
+        }
+      }
+    },
+    "Nothing leaves your Mac: no account, no analytics, no network connections." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiçbir şey Mac’inizden çıkmaz: hesap yok, analitik yok, ağ bağlantısı yok."
+          }
+        }
+      }
+    },
+    "Notifications" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildirimler"
+          }
+        }
+      }
+    },
+    "Notifications are turned off for QuotaRing in System Settings." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing için bildirimler Sistem Ayarları’nda kapalı."
+          }
+        }
+      }
+    },
+    "Notify me when I'm close to my limit" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limite yaklaştığımda bana bildir"
+          }
+        }
+      }
+    },
+    "Notify when the session resets" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum sıfırlandığında bildir"
+          }
+        }
+      }
+    },
+    "One model" : {
+      "comment" : "Weekly limit for a model whose name is unknown",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tek model"
+          }
+        }
+      }
+    },
+    "Only Claude Code sessions on this Mac are counted." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yalnızca bu Mac’teki Claude Code oturumları sayılır."
+          }
+        }
+      }
+    },
+    "Only needed if you run Claude Code with a custom config directory (CLAUDE_CONFIG_DIR)." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yalnızca Claude Code’u özel bir yapılandırma klasörüyle (CLAUDE_CONFIG_DIR) çalıştırıyorsanız gerekir."
+          }
+        }
+      }
+    },
+    "Only to **api.anthropic.com**: one request to /api/oauth/usage to ask for your current usage. Nothing else is sent anywhere." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yalnızca **api.anthropic.com** adresine: güncel kullanımınızı sormak için /api/oauth/usage yoluna tek bir istek. Başka hiçbir şey hiçbir yere gönderilmez."
+          }
+        }
+      }
+    },
+    "Open Login Items Settings…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giriş Öğeleri Ayarlarını Aç…"
+          }
+        }
+      }
+    },
+    "Open Notification Settings…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildirim Ayarlarını Aç…"
+          }
+        }
+      }
+    },
+    "Open Settings, where Live mode is explained and can be turned on" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı modun açıklandığı ve açılabildiği Ayarlar’ı açın"
+          }
+        }
+      }
+    },
+    "Optional — Live mode:" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İsteğe bağlı — Canlı mod:"
+          }
+        }
+      }
+    },
+    "Projects" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projeler"
+          }
+        }
+      }
+    },
     "Quit QuotaRing" : {
-      "comment" : "Status item menu: quit the app"
+      "comment" : "Popover footer button: quit the app\nStatus item menu: quit the app",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing’den Çık"
+          }
+        }
+      }
+    },
+    "QuotaRing" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing"
+          }
+        }
+      }
+    },
+    "QuotaRing is an independent project and is not affiliated with, endorsed or sponsored by Anthropic. Claude is a trademark of Anthropic." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing bağımsız bir projedir; Anthropic ile bağlantısı yoktur ve Anthropic tarafından onaylanmamış ya da desteklenmemiştir. Claude, Anthropic’in ticari markasıdır."
+          }
+        }
+      }
+    },
+    "QuotaRing keeps trying. Usage will appear here as soon as a request succeeds." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing denemeye devam ediyor. Bir istek başarılı olur olmaz kullanım burada görünecek."
+          }
+        }
+      }
+    },
+    "QuotaRing shows the numbers Claude Code keeps on this Mac. Use Claude Code, or run `/usage` there, and they appear here." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing, Claude Code’un bu Mac’te tuttuğu değerleri gösterir. Claude Code’u kullanın veya orada `/usage` komutunu çalıştırın; değerler burada görünür."
+          }
+        }
+      }
     },
     "QuotaRing: %@ of 5-hour limit remaining" : {
-      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage"
+      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: 5 saatlik limitten %@ kaldı"
+          }
+        }
+      }
     },
     "QuotaRing: %@ of 5-hour limit remaining, resets in %@" : {
-      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
+      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: 5 saatlik limitten %1$@ kaldı, %2$@ sonra sıfırlanır"
+          }
+        }
+      }
     },
     "QuotaRing: %@ of 5-hour limit used" : {
-      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage"
+      "comment" : "VoiceOver label of the menu bar item; the argument is a percentage",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: 5 saatlik limitten %@ kullanıldı"
+          }
+        }
+      }
     },
     "QuotaRing: %@ of 5-hour limit used, resets in %@" : {
-      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes"
+      "comment" : "VoiceOver label of the menu bar item; a percentage and a duration such as 2 hours, 14 minutes",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: 5 saatlik limitten %1$@ kullanıldı, %2$@ sonra sıfırlanır"
+          }
+        }
+      }
     },
     "QuotaRing: no usage data yet" : {
-      "comment" : "VoiceOver label of the menu bar item before any usage is known"
+      "comment" : "VoiceOver label of the menu bar item before any usage is known",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: henüz kullanım verisi yok"
+          }
+        }
+      }
+    },
+    "Reading local activity…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yerel etkinlik okunuyor…"
+          }
+        }
+      }
+    },
+    "Reads Claude Code's login from your Keychain, or from Claude Code's credentials file if there is no Keychain item. Read-only, again on each refresh, never stored." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un giriş bilgisini Anahtar Zinciri’nizden veya Anahtar Zinciri öğesi yoksa Claude Code’un kimlik bilgileri dosyasından okur. Salt okunur, her yenilemede yeniden okunur, asla saklanmaz."
+          }
+        }
+      }
     },
     "Refresh" : {
-      "comment" : "Status item menu: reload usage now"
+      "comment" : "Popover footer button: reload usage now\nStatus item menu: reload usage now",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yenile"
+          }
+        }
+      }
     },
-    "Resets in %@" : {},
-    "Settings" : {},
+    "Refresh interval" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yenileme aralığı"
+          }
+        }
+      }
+    },
+    "Refresh now" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şimdi yenile"
+          }
+        }
+      }
+    },
+    "Refreshing" : {
+      "comment" : "VoiceOver: a refresh is in progress",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yenileniyor"
+          }
+        }
+      }
+    },
+    "Refreshing…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yenileniyor…"
+          }
+        }
+      }
+    },
+    "Remaining" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kalan"
+          }
+        }
+      }
+    },
+    "Report a security issue" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güvenlik sorunu bildir"
+          }
+        }
+      }
+    },
+    "Reset time unknown" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sıfırlanma zamanı bilinmiyor"
+          }
+        }
+      }
+    },
+    "Reset to default" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varsayılana sıfırla"
+          }
+        }
+      }
+    },
+    "Resets %@" : {
+      "comment" : "VoiceOver: weekday and time of the reset",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sıfırlanma: %@"
+          }
+        }
+      }
+    },
+    "Resets in %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sonra sıfırlanır"
+          }
+        }
+      }
+    },
+    "Resets in %@, at %@" : {
+      "comment" : "VoiceOver: a duration such as 2 hours, 14 minutes, then a clock time",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resets in %1$@, at %2$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ sonra sıfırlanır, saat %2$@"
+          }
+        }
+      }
+    },
+    "Ring shows" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halkada gösterilen"
+          }
+        }
+      }
+    },
+    "See how much of your Claude session limit is left, right in the menu bar." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude oturum limitinizden ne kadarının kaldığını doğrudan menü çubuğunda görün."
+          }
+        }
+      }
+    },
+    "Sends it only to **api.anthropic.com** (/api/oauth/usage) to ask for your usage. Nothing else is sent anywhere." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bunu yalnızca kullanımınızı sormak için **api.anthropic.com** adresine (/api/oauth/usage) gönderir. Başka hiçbir şey hiçbir yere gönderilmez."
+          }
+        }
+      }
+    },
+    "Session" : {
+      "comment" : "Activity range: the current 5-hour session",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum"
+          }
+        }
+      }
+    },
+    "Settings" : {
+      "comment" : "Popover footer button: open the Settings window",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayarlar"
+          }
+        }
+      }
+    },
     "Settings…" : {
-      "comment" : "Status item menu: open the Settings window"
+      "comment" : "Status item menu: open the Settings window",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayarlar…"
+          }
+        }
+      }
     },
-    "Waiting for fresh data" : {}
+    "Show percentage text" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüzde metnini göster"
+          }
+        }
+      }
+    },
+    "The latest usage report has no 5-hour data." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son kullanım raporunda 5 saatlik veri yok."
+          }
+        }
+      }
+    },
+    "The text below explains what Live mode reads and where it sends it." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aşağıdaki metin, Canlı modun neleri okuduğunu ve nereye gönderdiğini açıklar."
+          }
+        }
+      }
+    },
+    "The usage numbers Claude Code already saves for itself. QuotaRing never writes to the file." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kendisi için zaten kaydettiği kullanım değerleri. QuotaRing bu dosyaya asla yazmaz."
+          }
+        }
+      }
+    },
+    "These two are read on this Mac only; they are never sent anywhere." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu ikisi yalnızca bu Mac’te okunur; hiçbir yere gönderilmez."
+          }
+        }
+      }
+    },
+    "This uses an undocumented Anthropic endpoint that can change or stop working at any time. QuotaRing is independent and not affiliated with Anthropic." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu özellik, Anthropic’in belgelenmemiş bir uç noktasını kullanır; uç nokta her an değişebilir veya çalışmayı bırakabilir. QuotaRing bağımsızdır ve Anthropic ile bağlantılı değildir."
+          }
+        }
+      }
+    },
+    "Time range" : {
+      "comment" : "VoiceOver label of the Activity range control",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaman aralığı"
+          }
+        }
+      }
+    },
+    "Today" : {
+      "comment" : "Activity range: since midnight",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bugün"
+          }
+        }
+      }
+    },
+    "Token counts per model, project and day. The text of your conversations is not kept." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model, proje ve gün başına token sayıları. Konuşmalarınızın metni saklanmaz."
+          }
+        }
+      }
+    },
+    "tokens" : {
+      "comment" : "Unit after a total such as 4.2M",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "token"
+          }
+        }
+      }
+    },
+    "Tokens" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token"
+          }
+        }
+      }
+    },
+    "Tokens per day, last 7 days" : {
+      "comment" : "VoiceOver label of the 7-day chart",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Günlük token sayısı, son 7 gün"
+          }
+        }
+      }
+    },
+    "Transcripts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konuşma kayıtları"
+          }
+        }
+      }
+    },
+    "Turn on Live mode?" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod açılsın mı?"
+          }
+        }
+      }
+    },
+    "Usage cache" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kullanım önbelleği"
+          }
+        }
+      }
+    },
+    "Use without Live mode" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod olmadan kullan"
+          }
+        }
+      }
+    },
+    "used" : {
+      "comment" : "Under the percentage in the ring: the share of the limit already used",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kullanıldı"
+          }
+        }
+      }
+    },
+    "Used" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kullanılan"
+          }
+        }
+      }
+    },
+    "Uses an undocumented endpoint that may stop working. QuotaRing is independent and not affiliated with Anthropic." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Belgelenmemiş bir uç nokta kullanır; çalışmayı bırakabilir. QuotaRing bağımsızdır ve Anthropic ile bağlantılı değildir."
+          }
+        }
+      }
+    },
+    "Version %@ (%@)" : {
+      "comment" : "About tab; the arguments are a version such as 0.1.0 and a build number",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %1$@ (%2$@)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sürüm %1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "Waiting for fresh data" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güncel veri bekleniyor"
+          }
+        }
+      }
+    },
+    "Weekly limits" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haftalık limitler"
+          }
+        }
+      }
+    },
+    "Welcome to QuotaRing" : {
+      "comment" : "Title of the first-run window",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing’e Hoş Geldiniz"
+          }
+        }
+      }
+    },
+    "What QuotaRing reads" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing neleri okur"
+          }
+        }
+      }
+    },
+    "When 5-hour usage reaches %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 saatlik kullanım %@ olduğunda"
+          }
+        }
+      }
+    },
+    "Where it goes" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nereye gönderilir"
+          }
+        }
+      }
+    },
+    "Where it went" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nereye gitti"
+          }
+        }
+      }
+    },
+    "Where QuotaRing gets its numbers" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing verileri nereden alır"
+          }
+        }
+      }
+    },
+    "You can turn Live mode on or off at any time in Settings → Data." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı modu istediğiniz zaman Ayarlar → Veri bölümünden açıp kapatabilirsiniz."
+          }
+        }
+      }
+    },
+    "Your Claude session limit has reset" : {
+      "comment" : "Notification title when a new 5-hour session window began",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude oturum limitiniz sıfırlandı"
+          }
+        }
+      }
+    }
   },
   "version" : "1.0"
 }
