@@ -220,6 +220,36 @@
         }
       }
     },
+    "Can't read Claude Code's usage cache (its contents are not in the expected format)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kullanım önbelleği okunamıyor (içeriği beklenen biçimde değil)"
+          }
+        }
+      }
+    },
+    "Can't read Claude Code's usage cache (the file can't be opened)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kullanım önbelleği okunamıyor (dosya açılamıyor)"
+          }
+        }
+      }
+    },
+    "Can't read Claude Code's usage cache (the file is larger than 50 MB)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kullanım önbelleği okunamıyor (dosya 50 MB’tan büyük)"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "tr" : {
@@ -325,6 +355,16 @@
         }
       }
     },
+    "Click Refresh to ask again, or turn Live mode off." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden sormak için Yenile’ye tıklayın veya Canlı modu kapatın."
+          }
+        }
+      }
+    },
     "Could not turn off launch at login: %@" : {
       "comment" : "Inline error under the Launch at login switch; the argument is the system's reason",
       "localizations" : {
@@ -368,12 +408,22 @@
         }
       }
     },
-    "Data is out of date — run `/usage` in Claude Code, or open it, to refresh" : {
+    "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veriler güncel değil — yenilemek için Claude Code’da `/usage` komutunu çalıştırın veya Claude Code’u açın"
+            "value" : "Veriler güncel değil. Bu değerleri yalnızca `claude` komut satırı aracı günceller (bir oturum veya `/usage`); Claude masaüstü uygulaması güncellemez."
+          }
+        }
+      }
+    },
+    "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not. Live mode can keep numbers fresh for a few hours after you last used the `claude` command." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veriler güncel değil. Bu değerleri yalnızca `claude` komut satırı aracı günceller (bir oturum veya `/usage`); Claude masaüstü uygulaması güncellemez. Canlı mod, `claude` komutunu son kullanımınızdan sonra birkaç saat boyunca değerleri güncel tutabilir."
           }
         }
       }
@@ -469,16 +519,6 @@
         }
       }
     },
-    "For up-to-date limits without opening Claude Code, you can turn on Live mode in Settings." : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude Code’u açmadan güncel limitleri görmek için Ayarlar’dan Canlı modu açabilirsiniz."
-          }
-        }
-      }
-    },
     "General" : {
       "localizations" : {
         "tr" : {
@@ -529,23 +569,32 @@
         }
       }
     },
+    "Keychain access was denied" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri erişimi reddedildi"
+          }
+        }
+      }
+    },
+    "Keychain access was denied — click Refresh to ask again, or turn Live mode off." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri erişimi reddedildi — yeniden sormak için Yenile’ye tıklayın veya Canlı modu kapatın."
+          }
+        }
+      }
+    },
     "Keychain prompt" : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anahtar Zinciri izni"
-          }
-        }
-      }
-    },
-    "Last updated %@." : {
-      "comment" : "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago",
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Son güncelleme: %@."
           }
         }
       }
@@ -567,6 +616,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "kaldı"
+          }
+        }
+      }
+    },
+    "Limits" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limitler"
           }
         }
       }
@@ -618,6 +677,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canlı mod, Anthropic’ten yeni değerleri en fazla bu sıklıkta ister. Bunun iki katından eski değerler için “güncel değil” uyarısı gösterilir. Claude Code önbelleği her 30 saniyede bir kontrol edilir."
+          }
+        }
+      }
+    },
+    "Live mode can keep numbers fresh for a few hours after you last used the `claude` command." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlı mod, `claude` komutunu son kullanımınızdan sonra birkaç saat boyunca değerleri güncel tutabilir."
           }
         }
       }
@@ -935,6 +1004,16 @@
         }
       }
     },
+    "Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu değerleri yalnızca `claude` komut satırı aracı günceller (bir oturum veya `/usage`); Claude masaüstü uygulaması güncellemez."
+          }
+        }
+      }
+    },
     "Only to **api.anthropic.com**: one request to /api/oauth/usage to ask for your current usage. Nothing else is sent anywhere." : {
       "localizations" : {
         "tr" : {
@@ -981,6 +1060,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "İsteğe bağlı — Canlı mod:"
+          }
+        }
+      }
+    },
+    "Other limit" : {
+      "comment" : "Title of a usage limit of a kind QuotaRing does not know",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diğer limit"
+          }
+        }
+      }
+    },
+    "Out of date, last updated %@." : {
+      "comment" : "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güncel değil, son güncelleme: %@."
           }
         }
       }
@@ -1036,12 +1137,12 @@
         }
       }
     },
-    "QuotaRing shows the numbers Claude Code keeps on this Mac. Use Claude Code, or run `/usage` there, and they appear here." : {
+    "QuotaRing shows the numbers the `claude` command-line tool saves on this Mac. Start a session or run `/usage` there, and they appear here. The Claude desktop app does not save them." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "QuotaRing, Claude Code’un bu Mac’te tuttuğu değerleri gösterir. Claude Code’u kullanın veya orada `/usage` komutunu çalıştırın; değerler burada görünür."
+            "value" : "QuotaRing, `claude` komut satırı aracının bu Mac’e kaydettiği değerleri gösterir. Bir oturum başlatın veya orada `/usage` komutunu çalıştırın; değerler burada görünür. Claude masaüstü uygulaması bu değerleri kaydetmez."
           }
         }
       }
@@ -1097,6 +1198,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "QuotaRing: henüz kullanım verisi yok"
+          }
+        }
+      }
+    },
+    "QuotaRing: the 5-hour session has reset, waiting for fresh data." : {
+      "comment" : "VoiceOver label of the menu bar item when the session reset and no newer data arrived",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing: 5 saatlik oturum sıfırlandı, güncel veri bekleniyor."
           }
         }
       }
@@ -1320,6 +1432,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yüzde metnini göster"
+          }
+        }
+      }
+    },
+    "Starts with your next message" : {
+      "comment" : "Session caption: nothing used yet and no reset time, so the 5-hour window has not started",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir sonraki mesajınızla başlar"
           }
         }
       }
