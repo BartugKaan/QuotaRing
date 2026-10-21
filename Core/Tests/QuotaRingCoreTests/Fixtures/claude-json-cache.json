@@ -3,12 +3,6 @@
   "installMethod": "native",
   "theme": "dark",
   "userID": "0000000000000000000000000000000000000000000000000000000000000000",
-  "oauthAccount": {
-    "accountUuid": "00000000-0000-4000-8000-000000000001",
-    "emailAddress": "test@example.invalid",
-    "organizationUuid": "00000000-0000-4000-8000-000000000002",
-    "displayName": "Test User"
-  },
   "mcpServers": {
     "demo": {
       "type": "stdio",
@@ -18,6 +12,12 @@
         "API_KEY": "sk-test-MUST-NOT-LEAK"
       }
     }
+  },
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-000000000001",
+    "emailAddress": "test@example.invalid",
+    "organizationUuid": "00000000-0000-4000-8000-000000000002",
+    "displayName": "Test User"
   },
   "cachedUsageUtilization": {
     "fetchedAtMs": 1792605287037,

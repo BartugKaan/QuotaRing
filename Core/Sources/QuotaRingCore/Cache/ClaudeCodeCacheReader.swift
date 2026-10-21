@@ -66,7 +66,12 @@ public struct ClaudeCodeCacheReader: Sendable {
             if Self.isFileNotFound(error) { return nil }
             throw CacheReadError.unreadable
         }
-        guard let size = Self.fingerprint(from: attributes)?.size else {
+        // Symlinks are already resolved, so anything but a regular file is a directory, FIFO, socket or device. Those
+        // can block a read or report a size of 0 and so slip past the size cap.
+        guard
+            attributes[.type] as? FileAttributeType == .typeRegular,
+            let size = Self.fingerprint(from: attributes)?.size
+        else {
             throw CacheReadError.unreadable
         }
         guard size <= maxFileSize else {

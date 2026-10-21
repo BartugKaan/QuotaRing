@@ -125,10 +125,17 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
     @Test func truncatedFileThrowsMalformed() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }
-        let url = try sandbox.write(fixtureData().prefix(500))
+        let truncated = try fixtureData().prefix(500)
+        // The slice must actually contain the decoy, otherwise the leak assertion below proves nothing.
+        _ = try #require(truncated.range(of: Data(decoy.utf8)))
+        let url = try sandbox.write(truncated)
 
-        #expect(throws: CacheReadError.malformed) {
-            try ClaudeCodeCacheReader(fileURL: url).read()
+        do {
+            _ = try ClaudeCodeCacheReader(fileURL: url).read()
+            Issue.record("expected malformed")
+        } catch {
+            #expect(error as? CacheReadError == .malformed)
+            #expect(!String(reflecting: error).contains(decoy))
         }
     }
 
@@ -189,10 +196,13 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         let link = sandbox.directory.appendingPathComponent("link.json")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
 
+        // The link's own size is its target path length (about 100 bytes); the limit sits above that and below the
+        // fixture's 4662 bytes, so only the size of the resolved target can trip it.
         #expect(throws: CacheReadError.fileTooLarge) {
-            try ClaudeCodeCacheReader(fileURL: link, maxFileSize: 100).read()
+            try ClaudeCodeCacheReader(fileURL: link, maxFileSize: 1000).read()
         }
         #expect(try ClaudeCodeCacheReader(fileURL: link).read() != nil)
+        #expect(ClaudeCodeCacheReader(fileURL: link).fingerprint()?.size == Int64(try fixtureData().count))
     }
 
     @Test func missingFileFingerprintIsNil() throws {
@@ -217,6 +227,29 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         // A directory exists and is small but cannot be read as a file.
         let url = sandbox.directory.appendingPathComponent("folder.json", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+
+        #expect(throws: CacheReadError.unreadable) {
+            try ClaudeCodeCacheReader(fileURL: url).read()
+        }
+    }
+
+    @Test func deviceFileThrowsUnreadable() throws {
+        // A character device has size 0 (so it passes any size cap) and reads as an empty file.
+        #expect(throws: CacheReadError.unreadable) {
+            try ClaudeCodeCacheReader(fileURL: URL(fileURLWithPath: "/dev/null")).read()
+        }
+    }
+
+    @Test func fifoThrowsUnreadableWithoutBlocking() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = sandbox.directory.appendingPathComponent("pipe.json")
+        try #require(mkfifo(url.path, 0o600) == 0)
+        // Keep a writer open so that a reader that wrongly opens the FIFO can proceed, and close it after a moment
+        // so that such a reader sees end-of-file and fails the test instead of hanging the whole run.
+        let writer = open(url.path, O_RDWR | O_NONBLOCK)
+        try #require(writer >= 0)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { close(writer) }
 
         #expect(throws: CacheReadError.unreadable) {
             try ClaudeCodeCacheReader(fileURL: url).read()
