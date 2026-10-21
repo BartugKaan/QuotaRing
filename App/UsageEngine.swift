@@ -10,7 +10,8 @@ import os
 /// - **Cache loop:** every 30 s, compares the fingerprint of Claude Code's `.claude.json` and re-reads it only when it
 ///   changed. A failed read keeps the previous snapshot.
 /// - **Live loop** (only with consent and completed onboarding): asks the endpoint when the freshest snapshot is older
-///   than the refresh interval, with jitter and back-off from ``RefreshPlanner``.
+///   than the refresh interval, with jitter and back-off from ``RefreshPlanner``. After the user refused Keychain
+///   access it asks nothing until the user presses Refresh or turns Live mode off and on.
 /// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open.
 /// - Pauses on system sleep (and Live while offline), resumes on wake and reconnect.
 /// - Persists the last good snapshot (no secrets), bound to the config directory it came from, and loads it at launch.
@@ -25,6 +26,8 @@ final class UsageEngine {
         case refreshing(Bool)
         case coolingDown(Bool)
         case activity([ActivityRange: UsageBreakdown], [DailyTokens])
+        /// Claude Code's cache file exists but cannot be used (see ``CacheReadHealth``); `nil` once it can again.
+        case cacheProblem(CacheReadError?)
     }
 
     var onEvent: (Event) -> Void = { _ in }
@@ -46,11 +49,11 @@ final class UsageEngine {
     private var scanner: TranscriptScanner
     private var cacheFingerprint: FileFingerprint?
     private var hasReadCache = false
+    private var cacheHealth = CacheReadHealth()
+    private var reportedCacheProblem: CacheReadError?
 
     // Candidates for the snapshot on screen.
-    private var persisted: UsageSnapshot?
-    private var cached: UsageSnapshot?
-    private var live: UsageSnapshot?
+    private var candidates = SnapshotCandidates()
     private var selected: UsageSnapshot?
 
     // Live state.
@@ -60,6 +63,10 @@ final class UsageEngine {
     private var lastLiveAttemptAt: Date?
     private var cycleInterval: TimeInterval
     private var isLiveFetchInFlight = false
+    /// The user refused Keychain access: no automatic request until they press Refresh or toggle Live mode.
+    private var isLiveSuspended = false
+    /// No Live request (automatic or manual) before this time, while another system prompt may be on screen.
+    private var liveHoldUntil: Date?
 
     // System state.
     private var isStarted = false
@@ -105,8 +112,8 @@ final class UsageEngine {
         guard !isStarted else { return }
         isStarted = true
 
-        persisted = snapshotStore?.load(configDirectory: paths.configDirectory)
-        if let persisted {
+        candidates = SnapshotCandidates(persisted: snapshotStore?.load(configDirectory: paths.configDirectory))
+        if let persisted = candidates.persisted {
             selected = persisted
             onEvent(.snapshot(persisted, isNew: false))
             engineLog.info("Loaded the last snapshot from disk")
@@ -127,6 +134,11 @@ final class UsageEngine {
         await checkCache(force: true)
 
         if userInitiated, settings.isLiveModeActive {
+            if isLiveSuspended {
+                // Refresh is how the user says "ask again" after refusing Keychain access.
+                isLiveSuspended = false
+                liveLog.info("Keychain refusal lifted by a manual refresh")
+            }
             startCooldown()
             let manualAllowedAt = manualLiveAllowedAt()
             if isOnline,
@@ -158,6 +170,20 @@ final class UsageEngine {
         guard open != isPopoverOpen else { return }
         isPopoverOpen = open
         restartTranscriptLoop()
+    }
+
+    /// Makes Live mode wait until `deadline` before reading the Keychain, because another system prompt (the
+    /// notification permission) may be on screen. ``releaseLiveHold()`` ends the wait early.
+    func holdLiveRequests(until deadline: Date) {
+        liveHoldUntil = max(liveHoldUntil ?? deadline, deadline)
+        engineLog.info("Live requests held while another prompt may be open")
+    }
+
+    /// Ends a wait started with ``holdLiveRequests(until:)``.
+    func releaseLiveHold() {
+        guard liveHoldUntil != nil else { return }
+        liveHoldUntil = nil
+        restartLiveLoop()
     }
 
     // MARK: - Loops
@@ -221,7 +247,8 @@ final class UsageEngine {
                 freshest: selected,
                 now: Date(),
                 refreshInterval: cycleInterval,
-                nextAllowedLiveAt: nextAllowedLiveAt
+                nextAllowedLiveAt: liveNotBefore,
+                isSuspended: isLiveSuspended
             ) {
                 await performLiveFetch()
             }
@@ -230,7 +257,7 @@ final class UsageEngine {
                 freshest: selected,
                 now: Date(),
                 refreshInterval: cycleInterval,
-                nextAllowedLiveAt: nextAllowedLiveAt
+                nextAllowedLiveAt: liveNotBefore
             )
             try? await Task.sleep(for: .seconds(delay))
         }
@@ -270,33 +297,44 @@ final class UsageEngine {
 
         switch outcome {
         case .unchanged:
-            return
+            break
         case .read(let fingerprint, let snapshot):
             cacheFingerprint = fingerprint
             hasReadCache = true
-            guard let snapshot else { return }
-            if let cached, snapshot.fetchedAt < cached.fetchedAt { return }
-            if snapshot != cached {
-                cached = snapshot
+            cacheHealth.recordSuccess()
+            if candidates.recordCacheRead(snapshot) {
                 reselect()
             }
         case .failed(let fingerprint, .accountMismatch):
-            // The cache belongs to an account that is no longer signed in: whatever was read from it, now or in an
-            // earlier run, must not stay on screen.
             cacheFingerprint = fingerprint
             hasReadCache = true
-            cacheLog.notice("Cached usage belongs to another account; dropping it")
-            cached = nil
-            persisted = nil
-            deletePersistedSnapshot()
-            reselect()
+            cacheHealth.recordFailure(.accountMismatch, at: Date())
+            // The cache belongs to an account that is no longer signed in: whatever was read before, from the cache,
+            // from disk or from Live mode with the previous account's login, must not stay on screen or be saved again.
+            if candidates.recordAccountMismatch() {
+                cacheLog.notice("Cached usage belongs to another account; dropping everything read so far")
+                // The previous account's back-off says nothing about the new login.
+                nextAllowedLiveAt = nil
+                consecutiveFailures = 0
+                deletePersistedSnapshot()
+                reselect()
+            }
         case .failed(let fingerprint, let error):
             // Torn reads are expected while Claude Code rewrites the file: keep the previous snapshot and try again
-            // when the file changes next.
+            // when the file changes next. One that lasts is shown (see `CacheReadHealth`).
             cacheFingerprint = fingerprint
             hasReadCache = true
+            cacheHealth.recordFailure(error, at: Date())
             cacheLog.notice("Cache read failed (\(error.logName, privacy: .public)); keeping the previous snapshot")
         }
+        reportCacheProblem()
+    }
+
+    private func reportCacheProblem() {
+        let problem = cacheHealth.problem(at: Date())
+        guard problem != reportedCacheProblem else { return }
+        reportedCacheProblem = problem
+        onEvent(.cacheProblem(problem))
     }
 
     private nonisolated static func readCache(
@@ -326,7 +364,15 @@ final class UsageEngine {
         if case .rateLimited(let until) = liveStatus {
             allowed = max(allowed ?? until, until)
         }
+        if let liveHoldUntil {
+            allowed = max(allowed ?? liveHoldUntil, liveHoldUntil)
+        }
         return allowed
+    }
+
+    /// The earliest time of the next automatic Live request: after the back-off and after any hold.
+    private var liveNotBefore: Date? {
+        [nextAllowedLiveAt, liveHoldUntil].compactMap { $0 }.max()
     }
 
     private func performLiveFetch() async {
@@ -380,8 +426,18 @@ final class UsageEngine {
         nextAllowedLiveAt = now.addingTimeInterval(retry.delay)
         cycleInterval = jitteredInterval()
 
+        let suspends = RefreshPlanner.suspendsAutomaticRequests(after: result)
+        if suspends {
+            if !isLiveSuspended {
+                liveLog.notice("Keychain access was refused; no automatic Live requests until Refresh")
+            }
+            // Nothing was sent, so the one-a-minute spacing does not apply: the user's next Refresh asks at once.
+            lastLiveAttemptAt = nil
+        }
+        isLiveSuspended = suspends
+
         if case .snapshot(let snapshot) = result {
-            live = snapshot
+            candidates.recordLive(snapshot)
             reselect()
         }
         setLiveStatus(RefreshPlanner.liveStatus(for: result, now: now, retryAfterFallback: retry.delay))
@@ -463,9 +519,7 @@ final class UsageEngine {
     // MARK: - Snapshot selection and persistence
 
     private func reselect() {
-        // On a tie the earlier candidate wins (after a live one), so the full cached copy beats the persisted copy,
-        // which has no extra-usage amounts.
-        let freshest = SnapshotSelector.freshest([cached, live, persisted])
+        let freshest = candidates.freshest
         guard freshest != selected else { return }
         selected = freshest
         onEvent(.snapshot(freshest, isNew: true))
@@ -527,7 +581,10 @@ final class UsageEngine {
             appliedLiveActive = settings.isLiveModeActive
             engineLog.info("Live mode \(self.appliedLiveActive ? "enabled" : "disabled", privacy: .public)")
             setLiveStatus(appliedLiveActive ? .ok : .off)
+            // Turning Live mode off and on is the other way to ask for the Keychain again after a refusal.
+            isLiveSuspended = false
             if !appliedLiveActive {
+                liveHoldUntil = nil
                 endCooldown()
                 cancelManualLiveFetch()
             }
@@ -546,9 +603,9 @@ final class UsageEngine {
         scanner = TranscriptScanner(projectsDirectory: paths.projectsDirectory)
         cacheFingerprint = nil
         hasReadCache = false
-        persisted = nil
-        cached = nil
-        live = nil
+        cacheHealth = CacheReadHealth()
+        reportCacheProblem()
+        candidates = SnapshotCandidates()
         selected = nil
         onEvent(.snapshot(nil, isNew: false))
         onEvent(.activity([:], []))
@@ -633,7 +690,8 @@ private struct LiveRequest: Sendable {
             }
         }
         guard !Task.isCancelled, await isStillAllowed() else { return nil }
-        let fetcher = LiveUsageFetcher(client: client, credentials: { try credential.get() })
+        let fetcher = LiveUsageFetcher(
+            client: client, credentials: { () throws(CredentialError) -> OAuthCredential in try credential.get() })
         return await fetcher.fetch()
     }
 }

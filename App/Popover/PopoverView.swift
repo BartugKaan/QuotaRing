@@ -58,9 +58,10 @@ struct PopoverView: View {
         if let snapshot = model.snapshot {
             NoticeStack(
                 notices: PopoverNotice.notices(
-                    liveStatus: liveStatus, isStale: model.isStale(at: now), now: now))
+                    liveStatus: liveStatus, cacheProblem: model.cacheProblem, isStale: model.isStale(at: now),
+                    now: now))
             SessionSection(
-                session: model.session(at: now),
+                session: snapshot.report.session,
                 showsRemaining: model.settings.ringShowsRemaining,
                 isStale: model.isStale(at: now),
                 now: now
@@ -72,6 +73,8 @@ struct PopoverView: View {
             SectionDivider()
             ActivitySection(activity: model.activity, daily: model.daily, now: now)
         } else {
+            // A cache file that exists but cannot be read is the likely reason for having no data at all.
+            NoticeStack(notices: PopoverNotice.cacheNotice(for: model.cacheProblem).map { [$0] } ?? [])
             // Without any snapshot the section itself explains what Live mode is waiting for or needs.
             NoDataSection(
                 isLiveModeActive: model.settings.isLiveModeActive && !model.isDemo,
@@ -303,7 +306,7 @@ struct NoDataSection: View {
         guard isLiveModeActive else { return false }
         switch liveStatus {
         case .off, .ok: return false
-        case .expired, .noCredential, .rateLimited, .error: return true
+        case .expired, .noCredential, .keychainDenied, .rateLimited, .error: return true
         }
     }
 
@@ -317,6 +320,8 @@ struct NoDataSection: View {
                 Text("Live mode is paused")
             case .noCredential:
                 Text("No Claude Code login found")
+            case .keychainDenied:
+                Text("Keychain access was denied")
             case .rateLimited:
                 Text("Live mode is rate limited")
             case .error:
@@ -337,6 +342,8 @@ struct NoDataSection: View {
                 Text("Claude Code's login has expired. Run `claude` once to renew it, and usage will appear here.")
             case .noCredential:
                 Text("Live mode needs a Claude Code login. Run `claude` once to sign in, and usage will appear here.")
+            case .keychainDenied:
+                Text("Click Refresh to ask again, or turn Live mode off.")
             case .rateLimited(let until):
                 let countdown = QuotaFormat.countdown(to: until, from: now, locale: .current)
                 Text("Anthropic asked QuotaRing to slow down. It tries again in \(countdown).")
@@ -345,9 +352,9 @@ struct NoDataSection: View {
             }
         } else {
             Text(
-                "QuotaRing shows the numbers Claude Code keeps on this Mac. Use Claude Code, or run `/usage` there, and they appear here."
+                "QuotaRing shows the numbers the `claude` command-line tool saves on this Mac. Start a session or run `/usage` there, and they appear here. The Claude desktop app does not save them."
             )
-            Text("For up-to-date limits without opening Claude Code, you can turn on Live mode in Settings.")
+            Text("Live mode can keep numbers fresh for a few hours after you last used the `claude` command.")
         }
     }
 }
@@ -357,8 +364,8 @@ struct NoDataSection: View {
     @MainActor
     enum PopoverPreviewSupport {
         static func settings(showsRemaining: Bool = true) -> SettingsStore {
-            let defaults = UserDefaults(suiteName: "io.github.bartugkaan.QuotaRing.preview." + UUID().uuidString)!
-            let settings = SettingsStore(defaults: defaults)
+            let suite = "io.github.bartugkaan.QuotaRing.preview." + UUID().uuidString
+            let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!, persistentDomain: suite)
             if !showsRemaining {
                 settings.ringShowsRemaining = false
             }
@@ -398,6 +405,8 @@ struct NoDataSection: View {
             NoDataSection(
                 isLiveModeActive: true, liveStatus: .rateLimited(until: now.addingTimeInterval(240)), now: now,
                 openSettings: {})
+            Divider()
+            NoDataSection(isLiveModeActive: true, liveStatus: .keychainDenied, now: now, openSettings: {})
         }
         .frame(width: PopoverMetrics.width)
     }

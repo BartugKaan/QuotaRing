@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notifications = notificationService
         let controller = OnboardingWindowController(
             settings: settings,
+            liveGate: model,
             requestNotificationPermission: { await notifications.requestAuthorizationIfNeeded() },
             onClose: { [weak self] in self?.onboardingController = nil }
         )

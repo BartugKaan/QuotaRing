@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The 5-hour session: a large ring with the share left (or used), and when it resets.
 struct SessionSection: View {
-    /// The session as it applies at `now` (already shown as reset once its reset time passed), or `nil` when the
-    /// usage report has no session limit.
+    /// The session limit as reported, or `nil` when the usage report has none. It is shown as it applies at `now`: as
+    /// reset (0 % used) once its reset time has passed.
     let session: UsageLimit?
     /// Whether the ring and its label show the share left (`true`) or the share already used.
     let showsRemaining: Bool
@@ -41,16 +41,21 @@ struct SessionSection: View {
 
     // MARK: - Pieces
 
+    /// The session as it applies now.
+    private var current: UsageLimit? {
+        session?.effective(at: now)
+    }
+
     /// The share the ring shows, `0...1`; `nil` without session data.
     private var shownFraction: Double? {
-        guard let session else { return nil }
-        let shown = showsRemaining ? session.percentRemaining : 100 - session.percentRemaining
+        guard let current else { return nil }
+        let shown = showsRemaining ? current.percentRemaining : 100 - current.percentRemaining
         return min(1, max(0, shown / 100))
     }
 
     private var tint: Color {
-        guard let session else { return UsageTint.normal }
-        return UsageTint.color(percentRemaining: session.percentRemaining)
+        guard let current else { return UsageTint.normal }
+        return UsageTint.color(percentRemaining: current.percentRemaining)
     }
 
     private var ringLabel: some View {
@@ -81,7 +86,8 @@ struct SessionSection: View {
     @ViewBuilder
     private var detail: some View {
         if let session {
-            if let resetsAt = session.resetsAt {
+            switch session.windowState(at: now) {
+            case .resetsAt(let resetsAt):
                 HStack(spacing: 5) {
                     Text("Resets in \(QuotaFormat.countdown(to: resetsAt, from: now, locale: .current))")
                     Text(verbatim: "·")
@@ -89,10 +95,15 @@ struct SessionSection: View {
                     Text(PopoverFormat.clockTime(resetsAt))
                 }
                 .monospacedDigit()
-            } else if session.percentUsed > 0 {
-                Text("Reset time unknown")
-            } else {
+            case .resetPassed:
                 Text("Waiting for fresh data")
+            case .resetTimeUnknown:
+                Text("Reset time unknown")
+            case .notStarted:
+                Text(
+                    "Starts with your next message",
+                    comment: "Session caption: nothing used yet and no reset time, so the 5-hour window has not started"
+                )
             }
         } else {
             Text("The latest usage report has no 5-hour data.")
@@ -113,17 +124,24 @@ struct SessionSection: View {
                 ? String(localized: "\(percent) left", comment: "VoiceOver: share of the limit still available")
                 : String(localized: "\(percent) used", comment: "VoiceOver: share of the limit already used")
         ]
-        if let resetsAt = session.resetsAt {
+        switch session.windowState(at: now) {
+        case .resetsAt(let resetsAt):
             let countdown = QuotaFormat.spokenCountdown(to: resetsAt, from: now)
             let time = PopoverFormat.clockTime(resetsAt)
             parts.append(
                 String(
                     localized: "Resets in \(countdown), at \(time)",
                     comment: "VoiceOver: a duration such as 2 hours, 14 minutes, then a clock time"))
-        } else if session.percentUsed > 0 {
-            parts.append(String(localized: "Reset time unknown"))
-        } else {
+        case .resetPassed:
             parts.append(String(localized: "Waiting for fresh data"))
+        case .resetTimeUnknown:
+            parts.append(String(localized: "Reset time unknown"))
+        case .notStarted:
+            parts.append(
+                String(
+                    localized: "Starts with your next message",
+                    comment: "Session caption: nothing used yet and no reset time, so the 5-hour window has not started"
+                ))
         }
         if isStale {
             parts.append(String(localized: "Data is out of date", comment: "VoiceOver: the shown usage is old"))

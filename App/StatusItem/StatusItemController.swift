@@ -102,7 +102,8 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
 
     // MARK: - Rendering
 
-    /// Re-renders whenever anything the item shows changes; the tick covers the passage of time.
+    /// Re-renders whenever anything the item shows changes; the tick covers the passage of time (and lets the model
+    /// notice a session reset that no new data has reported yet).
     private func observeModel() {
         withObservationTracking {
             render()
@@ -116,6 +117,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.tickInterval)
+                self?.model.timeDidPass()
                 self?.render()
             }
         }
@@ -125,7 +127,14 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         guard let button = statusItem.button else { return }
         let presentation = StatusPresentation(model: model, now: Date())
         button.image = RingImageRenderer.image(fraction: presentation.fraction, style: presentation.style)
-        button.title = presentation.text ?? ""
+        if let text = presentation.text, presentation.isTextDimmed {
+            // Old numbers must not look as current as fresh ones.
+            let font = button.font ?? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            button.attributedTitle = NSAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+        } else {
+            button.title = presentation.text ?? ""
+        }
         button.imagePosition = presentation.text == nil ? .imageOnly : .imageLeading
         button.setAccessibilityLabel(presentation.accessibilityLabel)
         button.toolTip = presentation.accessibilityLabel
@@ -217,10 +226,16 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
 }
 
 /// What the status item shows for a model state at a point in time.
+///
+/// Old data never looks current: when the snapshot is stale, the ring is drawn dashed and the percentage dimmed; when
+/// it is stale and the session window it describes has already reset, there is no number at all ("–" and an empty
+/// dashed ring), because the real usage of the new window is unknown.
 struct StatusPresentation {
     var fraction: Double?
     var style: RingStyle
     var text: String?
+    /// Whether `text` is drawn in the secondary label color (the data is out of date).
+    var isTextDimmed = false
     var accessibilityLabel: String
 
     @MainActor
@@ -229,14 +244,14 @@ struct StatusPresentation {
         var style = RingStyle()
         if settings.isLiveModeActive {
             switch model.liveStatus {
-            case .expired, .noCredential, .error:
+            case .expired, .noCredential, .keychainDenied, .error:
                 style.needsAttention = true
             case .off, .ok, .rateLimited:
                 break
             }
         }
 
-        guard let session = model.session(at: now) else {
+        guard let snapshot = model.snapshot, let session = model.session(at: now) else {
             fraction = nil
             text = nil
             accessibilityLabel = String(
@@ -246,11 +261,26 @@ struct StatusPresentation {
             return
         }
 
+        let isStale = model.isStale(at: now)
+        style.isStale = isStale
+        isTextDimmed = isStale
+
+        if isStale, snapshot.sessionHasReset(at: now) {
+            fraction = nil
+            text = settings.showPercentText ? "–" : nil
+            self.style = style
+            accessibilityLabel =
+                String(
+                    localized: "QuotaRing: the 5-hour session has reset, waiting for fresh data.",
+                    comment: "VoiceOver label of the menu bar item when the session reset and no newer data arrived")
+                + " " + Self.outOfDateNote(snapshot: snapshot, now: now, needsAttention: style.needsAttention)
+            return
+        }
+
         let remaining = session.percentRemaining
         let shown = settings.ringShowsRemaining ? remaining : 100 - remaining
         fraction = shown / 100
         style.tint = RingStyle.tint(forRemaining: remaining)
-        style.isStale = model.isStale(at: now)
         self.style = style
 
         let percent = QuotaFormat.percent(shown)
@@ -279,23 +309,27 @@ struct StatusPresentation {
                 localized: "QuotaRing: \(percent) of 5-hour limit used",
                 comment: "VoiceOver label of the menu bar item; the argument is a percentage")
         }
-        if style.isStale, let snapshot = model.snapshot {
-            let age = QuotaFormat.age(of: snapshot.fetchedAt, now: now)
-            label +=
-                " "
-                + String(
-                    localized: "Last updated \(age).",
-                    comment:
-                        "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago")
-        }
-        if style.needsAttention {
-            label +=
-                " "
-                + String(
-                    localized: "Live mode needs attention.",
-                    comment: "Appended to the menu bar VoiceOver label when Live mode cannot fetch")
+        if isStale {
+            label += " " + Self.outOfDateNote(snapshot: snapshot, now: now, needsAttention: style.needsAttention)
+        } else if style.needsAttention {
+            label += " " + Self.liveNeedsAttention
         }
         accessibilityLabel = label
+    }
+
+    /// "Out of date, last updated 3 h ago.", plus the Live mode note when it applies.
+    private static func outOfDateNote(snapshot: UsageSnapshot, now: Date, needsAttention: Bool) -> String {
+        let age = QuotaFormat.age(of: snapshot.fetchedAt, now: now)
+        let note = String(
+            localized: "Out of date, last updated \(age).",
+            comment: "Appended to the menu bar VoiceOver label when the data is old; the argument is like 3 h ago")
+        return needsAttention ? note + " " + liveNeedsAttention : note
+    }
+
+    private static var liveNeedsAttention: String {
+        String(
+            localized: "Live mode needs attention.",
+            comment: "Appended to the menu bar VoiceOver label when Live mode cannot fetch")
     }
 }
 

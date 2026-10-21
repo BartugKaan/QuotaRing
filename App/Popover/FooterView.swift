@@ -1,10 +1,11 @@
 import QuotaRingCore
 import SwiftUI
 
-/// Something to tell the user about the data: Live mode needs attention, or the numbers are old.
+/// Something to tell the user about the data: Live mode needs attention, Claude Code's cache cannot be read, or the
+/// numbers are old.
 struct PopoverNotice: Identifiable {
     enum Style {
-        /// Something needs the user to act or wait (Live mode cannot fetch).
+        /// Something needs the user to act or wait (Live mode cannot fetch, the cache cannot be read).
         case warning
         /// Informational: the data is merely old.
         case info
@@ -14,10 +15,14 @@ struct PopoverNotice: Identifiable {
     let style: Style
     let message: LocalizedStringKey
 
-    /// The notices for a Live mode status and the age of the data. Empty when everything is fine.
+    /// The notices for a Live mode status, the state of Claude Code's cache and the age of the data. Empty when
+    /// everything is fine.
     ///
-    /// - Parameter liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown.
-    static func notices(liveStatus: LiveStatus, isStale: Bool, now: Date) -> [PopoverNotice] {
+    /// - Parameter liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown
+    ///   and the old-data notice suggests it.
+    static func notices(
+        liveStatus: LiveStatus, cacheProblem: CacheReadError?, isStale: Bool, now: Date
+    ) -> [PopoverNotice] {
         var notices: [PopoverNotice] = []
         switch liveStatus {
         case .off, .ok:
@@ -32,6 +37,11 @@ struct PopoverNotice: Identifiable {
                 PopoverNotice(
                     id: "noCredential", style: .warning,
                     message: "Live mode found no Claude Code login — run `claude` once to sign in"))
+        case .keychainDenied:
+            notices.append(
+                PopoverNotice(
+                    id: "keychainDenied", style: .warning,
+                    message: "Keychain access was denied — click Refresh to ask again, or turn Live mode off."))
         case .rateLimited(let until):
             let countdown = QuotaFormat.countdown(to: until, from: now, locale: .current)
             notices.append(
@@ -44,13 +54,33 @@ struct PopoverNotice: Identifiable {
                     id: "error", style: .warning,
                     message: "Live mode could not reach Anthropic — showing the last known usage"))
         }
+        if let cacheNotice = cacheNotice(for: cacheProblem) {
+            notices.append(cacheNotice)
+        }
         if isStale {
-            notices.append(
-                PopoverNotice(
-                    id: "stale", style: .info,
-                    message: "Data is out of date — run `/usage` in Claude Code, or open it, to refresh"))
+            let message: LocalizedStringKey =
+                liveStatus == .off
+                ? "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not. Live mode can keep numbers fresh for a few hours after you last used the `claude` command."
+                : "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not."
+            notices.append(PopoverNotice(id: "stale", style: .info, message: message))
         }
         return notices
+    }
+
+    /// Why Claude Code's cache file cannot be used, or `nil` when it can.
+    static func cacheNotice(for problem: CacheReadError?) -> PopoverNotice? {
+        let message: LocalizedStringKey
+        switch problem {
+        case nil, .accountMismatch:
+            return nil
+        case .fileTooLarge:
+            message = "Can't read Claude Code's usage cache (the file is larger than 50 MB)"
+        case .unreadable:
+            message = "Can't read Claude Code's usage cache (the file can't be opened)"
+        case .malformed:
+            message = "Can't read Claude Code's usage cache (its contents are not in the expected format)"
+        }
+        return PopoverNotice(id: "cacheProblem", style: .warning, message: message)
     }
 }
 
@@ -245,9 +275,11 @@ private struct FooterIconButtonStyle: ButtonStyle {
     #Preview("Notices") {
         NoticeStack(
             notices:
-                PopoverNotice.notices(liveStatus: .expired, isStale: true, now: .now)
+                PopoverNotice.notices(liveStatus: .keychainDenied, cacheProblem: .malformed, isStale: false, now: .now)
                 + PopoverNotice.notices(
-                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), isStale: false, now: .now)
+                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), cacheProblem: nil, isStale: false,
+                    now: .now)
+                + PopoverNotice.notices(liveStatus: .off, cacheProblem: nil, isStale: true, now: .now)
         )
         .frame(width: PopoverMetrics.width)
     }

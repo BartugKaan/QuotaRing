@@ -12,7 +12,7 @@ struct RingStyle: Equatable {
     }
 
     var tint: Tint = .standard
-    /// The data is old: the arc is drawn faded.
+    /// The data is old: the ring is drawn dashed, so it never looks like a current reading.
     var isStale = false
     /// Something needs the user's attention (for example the Live mode login expired): a small dot at the top right.
     var needsAttention = false
@@ -27,10 +27,18 @@ struct RingStyle: Equatable {
 
 /// Draws the menu bar ring: an 18 × 18 pt image with a 14 pt ring, 2 pt stroke and round caps. A faint full track
 /// sits under an arc that starts at 12 o'clock and runs clockwise.
+///
+/// - Fresh data: a solid arc on the faint track.
+/// - Stale data: a dashed arc on the faint track.
+/// - No (current) data: a dashed track alone.
+///
+/// The standard tint stays a template image, so every variant follows a light or dark menu bar.
 enum RingImageRenderer {
     static let imageSize = NSSize(width: 18, height: 18)
     static let ringDiameter: CGFloat = 14
     static let lineWidth: CGFloat = 2
+    /// Dash and gap lengths of the dashed ring: 24 even segments around the track.
+    private static let dashes: [CGFloat] = [2, 2.4]
 
     /// - Parameter fraction: The arc length in `0...1`, or `nil` when there is no data yet (a dashed track only).
     static func image(fraction: Double?, style: RingStyle) -> NSImage {
@@ -71,12 +79,16 @@ enum RingImageRenderer {
                         clockwise: true)
                 }
                 arc.lineWidth = lineWidth
-                arc.lineCapStyle = .round
-                color.withAlphaComponent(style.isStale ? 0.5 : 1).setStroke()
+                if style.isStale {
+                    // Butt caps keep the short dashes crisp.
+                    arc.setLineDash(dashes, count: dashes.count, phase: 0)
+                } else {
+                    arc.lineCapStyle = .round
+                }
+                color.setStroke()
                 arc.stroke()
             }
         } else {
-            let dashes: [CGFloat] = [2, 2.4]
             track.setLineDash(dashes, count: dashes.count, phase: 0)
             color.withAlphaComponent(0.6).setStroke()
             track.stroke()

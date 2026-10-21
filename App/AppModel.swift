@@ -39,6 +39,8 @@ final class AppModel {
     private(set) var isDemo: Bool
     /// Whether the manual refresh cooldown (Live mode only) is running.
     private(set) var isCoolingDown = false
+    /// Why Claude Code's cache file cannot be used right now, if it exists but cannot be read for a while.
+    private(set) var cacheProblem: CacheReadError?
 
     /// Gets threshold events after each new snapshot.
     @ObservationIgnored var notifier: (any UsageNotifier)?
@@ -100,6 +102,25 @@ final class AppModel {
         engine?.setPopoverOpen(false)
     }
 
+    /// Called as time passes (every 30 s): announces a session reset as soon as its time has come, without waiting
+    /// for new data, which may arrive much later (with the cache alone, not until Claude Code runs again).
+    func timeDidPass(now: Date = Date()) {
+        guard !isDemo, snapshot != nil else { return }
+        var tracker = thresholdTracker
+        let events = tracker.observeWindowEnd(now: now)
+        post(events, tracker: tracker)
+    }
+
+    /// Makes Live mode's first Keychain read wait until `deadline` (or ``releaseLiveRequests()``), so that macOS's
+    /// Keychain prompt does not appear while another system prompt is open.
+    func holdLiveRequests(until deadline: Date) {
+        engine?.holdLiveRequests(until: deadline)
+    }
+
+    func releaseLiveRequests() {
+        engine?.releaseLiveHold()
+    }
+
     // MARK: - Engine events
 
     private func handle(_ event: UsageEngine.Event) {
@@ -118,6 +139,8 @@ final class AppModel {
         case .activity(let newActivity, let newDaily):
             activity = newActivity
             daily = newDaily
+        case .cacheProblem(let problem):
+            cacheProblem = problem
         }
     }
 
@@ -125,20 +148,26 @@ final class AppModel {
         let now = Date()
         guard let session = snapshot.session(at: now) else { return }
         var tracker = thresholdTracker
-        var events = tracker.observe(
+        let events = tracker.observe(
             percentUsed: session.percentUsed,
             resetsAt: session.resetsAt,
             thresholds: settings.notificationThresholds,
             now: now
         )
+        post(events, tracker: tracker)
+    }
+
+    /// Saves `tracker` if it changed and hands the events the user wants to the notifier.
+    private func post(_ events: [ThresholdEvent], tracker: ThresholdTracker) {
         if tracker != thresholdTracker {
             thresholdTracker = tracker
             saveThresholdTracker()
         }
+        var events = events
         if !settings.notifyOnReset {
             events.removeAll { $0 == .reset }
         }
-        if !events.isEmpty {
+        if !events.isEmpty, let snapshot {
             notifier?.post(events, snapshot: snapshot)
         }
     }
@@ -160,6 +189,8 @@ final class AppModel {
     }
 }
 
+extension AppModel: LiveRequestGate {}
+
 extension LiveStatus {
     /// A short, non-sensitive name for logs.
     var logName: String {
@@ -168,6 +199,7 @@ extension LiveStatus {
         case .ok: "ok"
         case .expired: "expired"
         case .noCredential: "noCredential"
+        case .keychainDenied: "keychainDenied"
         case .rateLimited: "rateLimited"
         case .error: "error"
         }

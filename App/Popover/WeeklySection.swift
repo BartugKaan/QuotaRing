@@ -1,39 +1,53 @@
 import QuotaRingCore
 import SwiftUI
 
-/// The weekly limits (all models and any model-scoped ones), the extra usage row when it is enabled, and Anthropic's
-/// own "where it went" breakdown of the week.
+/// The weekly limits (all models and any model-scoped ones), limits of kinds QuotaRing has no name for (shown
+/// generically), the extra usage row when it is enabled, and Anthropic's own "where it went" breakdown of the week.
 struct WeeklySection: View {
     let report: UsageReport
     let now: Date
 
     /// Whether the report has anything to show in this section.
     static func hasContent(_ report: UsageReport) -> Bool {
-        !report.weeklyLimits.isEmpty || report.extraUsage?.isEnabled == true
+        !limits(of: report).isEmpty || report.extraUsage?.hasDisplayableUsage == true
             || !(report.weeklyBreakdown?.rows.isEmpty ?? true)
     }
 
+    /// The rows: the weekly limits, then any limit of a kind the endpoint added later.
+    private static func limits(of report: UsageReport) -> [UsageLimit] {
+        report.weeklyLimits + report.otherLimits
+    }
+
+    private var limits: [UsageLimit] {
+        Self.limits(of: report)
+    }
+
     private var showsExtraUsage: Bool {
-        report.extraUsage?.isEnabled == true
+        report.extraUsage?.hasDisplayableUsage == true
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Weekly limits")
+            if report.otherLimits.isEmpty {
+                SectionHeader("Weekly limits")
+            } else {
+                // Not every row is weekly any more.
+                SectionHeader("Limits")
+            }
 
-            if !report.weeklyLimits.isEmpty || showsExtraUsage {
+            if !limits.isEmpty || showsExtraUsage {
                 VStack(spacing: 12) {
-                    ForEach(report.weeklyLimits) { limit in
-                        WeeklyLimitRow(limit: limit, now: now)
+                    ForEach(limits) { limit in
+                        LimitRow(limit: limit, now: now)
                     }
-                    if let extraUsage = report.extraUsage, extraUsage.isEnabled {
+                    if let extraUsage = report.extraUsage, extraUsage.hasDisplayableUsage {
                         ExtraUsageRow(extraUsage: extraUsage)
                     }
                 }
             }
 
             if let breakdown = report.weeklyBreakdown, !breakdown.rows.isEmpty {
-                if !report.weeklyLimits.isEmpty || showsExtraUsage {
+                if !limits.isEmpty || showsExtraUsage {
                     Divider()
                 }
                 BreakdownView(rows: breakdown.rows)
@@ -53,7 +67,8 @@ struct WeeklySection: View {
 /// translation is never cut off.
 private struct UsageBarRow: View {
     let title: Text
-    let detail: Text
+    /// `nil` for no detail.
+    let detail: Text?
     /// The filled share of the bar, `0...1`.
     let fraction: Double
     /// Decides the color: the normal blue, orange at 20 % or less left, red at 5 % or less.
@@ -65,7 +80,9 @@ private struct UsageBarRow: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     titleLabel.fixedSize()
-                    detailLabel.fixedSize()
+                    if let detail {
+                        detailLabel(detail).fixedSize()
+                    }
                     Spacer(minLength: 8)
                     valueLabel.fixedSize()
                 }
@@ -75,7 +92,9 @@ private struct UsageBarRow: View {
                         Spacer(minLength: 8)
                         valueLabel.fixedSize()
                     }
-                    detailLabel.fixedSize(horizontal: false, vertical: true)
+                    if let detail {
+                        detailLabel(detail).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             ProgressView(value: fraction, total: 1)
@@ -87,7 +106,7 @@ private struct UsageBarRow: View {
         title.font(.callout.weight(.medium))
     }
 
-    private var detailLabel: some View {
+    private func detailLabel(_ detail: Text) -> some View {
         detail
             .font(.subheadline)
             .monospacedDigit()
@@ -126,9 +145,10 @@ private struct UsageBarStyle: ProgressViewStyle {
     }
 }
 
-// MARK: - One weekly limit
+// MARK: - One limit
 
-private struct WeeklyLimitRow: View {
+/// A weekly limit, or one of a kind QuotaRing has no name for, titled from what the endpoint calls it.
+private struct LimitRow: View {
     let limit: UsageLimit
     let now: Date
 
@@ -151,10 +171,10 @@ private struct WeeklyLimitRow: View {
             String(localized: "All models", comment: "Weekly limit that covers every model")
         case .weeklyScoped:
             limit.scopeName ?? String(localized: "One model", comment: "Weekly limit for a model whose name is unknown")
-        case .session:
-            String(localized: "5-hour session")
-        case .other(let raw):
-            raw
+        case .session, .other:
+            // The session has its own section, so only unknown kinds get here.
+            limit.genericTitle
+                ?? String(localized: "Other limit", comment: "Title of a usage limit of a kind QuotaRing does not know")
         }
     }
 
@@ -168,13 +188,14 @@ private struct WeeklyLimitRow: View {
     }
 
     private var resetCaption: Text {
-        guard let resetsAt = limit.resetsAt else {
-            return Text("Reset time unknown")
+        switch limit.windowState(at: now) {
+        case .resetsAt(let resetsAt):
+            Text("Resets \(PopoverFormat.weekdayAndTime(resetsAt))")
+        case .resetPassed:
+            Text("Waiting for fresh data")
+        case .resetTimeUnknown, .notStarted:
+            Text("Reset time unknown")
         }
-        guard resetsAt > now else {
-            return Text("Waiting for fresh data")
-        }
-        return Text("Resets \(PopoverFormat.weekdayAndTime(resetsAt))")
     }
 
     private var accessibilityValue: String {
@@ -187,7 +208,8 @@ private struct WeeklyLimitRow: View {
 
 // MARK: - Extra usage
 
-/// Pay-as-you-go spending beyond the plan, shown only when the account has it enabled.
+/// Pay-as-you-go spending beyond the plan, shown only when the account has it enabled and something about it is
+/// known. The saved snapshot shown at launch keeps no money amounts; then only the percentage is shown.
 private struct ExtraUsageRow: View {
     let extraUsage: ExtraUsage
 
@@ -196,7 +218,7 @@ private struct ExtraUsageRow: View {
             if let fraction {
                 UsageBarRow(
                     title: Text("Extra usage"),
-                    detail: Text(amountDescription),
+                    detail: amountDescription.map { Text($0) },
                     fraction: fraction,
                     percentRemaining: 100 - fraction * 100,
                     valueText: Text("\(QuotaFormat.percent(fraction * 100, locale: .current)) used")
@@ -206,7 +228,7 @@ private struct ExtraUsageRow: View {
                     Text("Extra usage")
                         .font(.callout.weight(.medium))
                     Spacer(minLength: 8)
-                    Text(amountDescription)
+                    Text(amountDescription ?? "")
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -218,28 +240,24 @@ private struct ExtraUsageRow: View {
         .accessibilityValue(Text(accessibilityValue))
     }
 
-    /// The share of the monthly limit spent, `0...1`; `nil` without a limit.
+    /// The share of the monthly limit spent, `0...1`; `nil` when unknown.
     private var fraction: Double? {
-        if let percent = extraUsage.percentUsed {
-            return min(1, max(0, percent / 100))
-        }
-        guard let used = extraUsage.usedCreditsMinor, let limit = extraUsage.monthlyLimitMinor, limit > 0 else {
-            return nil
-        }
-        return min(1, max(0, used / limit))
+        extraUsage.fractionUsed
     }
 
     private var accessibilityValue: String {
-        guard let fraction else { return amountDescription }
-        let used = String(
-            localized: "\(QuotaFormat.percent(fraction * 100, locale: .current)) used",
-            comment: "VoiceOver: share of a limit already used")
-        return amountDescription + ". " + used
+        let used = fraction.map {
+            String(
+                localized: "\(QuotaFormat.percent($0 * 100, locale: .current)) used",
+                comment: "VoiceOver: share of a limit already used")
+        }
+        return [amountDescription, used].compactMap { $0 }.joined(separator: ". ")
     }
 
-    /// "$12.40 of $50.00", or just "$12.40" without a limit.
-    private var amountDescription: String {
-        let used = money(extraUsage.usedCreditsMinor ?? 0)
+    /// "$12.40 of $50.00", or just "$12.40" without a limit; `nil` when the amount spent is not known.
+    private var amountDescription: String? {
+        guard let usedMinor = extraUsage.usedCreditsMinor else { return nil }
+        let used = money(usedMinor)
         guard let limit = extraUsage.monthlyLimitMinor else { return used }
         let cap = money(limit)
         return String(localized: "\(used) of \(cap)", comment: "Extra usage: amount spent of the monthly limit")
@@ -368,6 +386,15 @@ private struct SegmentedBar: View {
 #if DEBUG
     #Preview("Weekly, demo") {
         WeeklySection(report: DemoData.snapshot(now: .now).report, now: .now)
+            .frame(width: PopoverMetrics.width)
+    }
+
+    #Preview("Weekly, saved snapshot and an unknown kind") {
+        var report = DemoData.snapshot(now: .now).report
+        report.extraUsage = ExtraUsage(isEnabled: true, percentUsed: 24.8)
+        report.limits.append(
+            UsageLimit(kind: .other("monthly_pool"), percentUsed: 37, resetsAt: .now.addingTimeInterval(9 * 86_400)))
+        return WeeklySection(report: report, now: .now)
             .frame(width: PopoverMetrics.width)
     }
 

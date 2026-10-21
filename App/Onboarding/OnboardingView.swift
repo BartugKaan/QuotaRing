@@ -1,6 +1,13 @@
 import AppKit
 import Observation
+import QuotaRingCore
 import SwiftUI
+
+/// Holds Live mode's first Keychain read while another system prompt may be open (implemented by ``AppModel``).
+@MainActor protocol LiveRequestGate: AnyObject {
+    func holdLiveRequests(until deadline: Date)
+    func releaseLiveRequests()
+}
 
 /// The state of the first-run window and what finishing it does.
 @MainActor @Observable
@@ -10,53 +17,60 @@ final class OnboardingModel {
     private(set) var isFinished = false
 
     @ObservationIgnored private let settings: SettingsStore
+    @ObservationIgnored private weak var liveGate: (any LiveRequestGate)?
     @ObservationIgnored private let requestNotificationPermission: @MainActor () async -> Void
+    @ObservationIgnored private let now: () -> Date
 
     /// - Parameter requestNotificationPermission: shows the system notification prompt and returns when the user has
     ///   answered it; called only when the user left the notification checkbox on.
-    init(settings: SettingsStore, requestNotificationPermission: @escaping @MainActor () async -> Void) {
+    init(
+        settings: SettingsStore,
+        liveGate: (any LiveRequestGate)?,
+        requestNotificationPermission: @escaping @MainActor () async -> Void,
+        now: @escaping () -> Date = { Date() }
+    ) {
         self.settings = settings
+        self.liveGate = liveGate
         self.requestNotificationPermission = requestNotificationPermission
+        self.now = now
     }
 
-    /// Records the user's choices and completes onboarding. Does nothing after the first call.
+    /// Records the user's choices and completes onboarding, at once. Does nothing after the first call.
     ///
     /// Live mode turns on only here, through the explicit "Enable Live mode" button; every other way of leaving the
-    /// window (the default button, Return, closing the window) leaves it off.
+    /// window (the default button, Return, closing the window) leaves it off. What is recorded is decided by
+    /// ``OnboardingPlan``.
     ///
-    /// Two system prompts must not appear at once. Live mode's first Keychain read can raise macOS's Keychain prompt, so
-    /// when the user wants both, the notification prompt comes first and Live mode starts (consent recorded, onboarding
-    /// completed) only after it was answered. Quitting in between leaves onboarding incomplete, so it simply shows
-    /// again at the next launch.
+    /// Two system prompts must not appear at once. When the user wants both Live mode and notifications, the
+    /// notification prompt comes first and Live mode's first Keychain read (which can raise macOS's Keychain prompt)
+    /// waits until it was answered, or at most ``OnboardingPlan/maxPromptWait``. The consent itself is recorded right
+    /// away, so a prompt that is never answered cannot drop it.
     func finish(enableLiveMode: Bool) {
         guard !isFinished else { return }
         isFinished = true
 
-        guard notifyNearLimit else {
-            settings.notificationThresholds = []
-            complete(enableLiveMode: enableLiveMode)
-            return
-        }
-        if settings.notificationThresholds.isEmpty {
-            settings.notificationThresholds = SettingsStore.defaultNotificationThresholds
-        }
-        // The only place besides Settings that may show the system notification prompt.
-        let request = requestNotificationPermission
-        if enableLiveMode {
-            Task {
-                await request()
-                complete(enableLiveMode: true)
-            }
-        } else {
-            complete(enableLiveMode: false)
-            Task { await request() }
-        }
-    }
+        let plan = OnboardingPlan(
+            enableLiveMode: enableLiveMode,
+            notifyNearLimit: notifyNearLimit,
+            currentThresholds: settings.notificationThresholds,
+            defaultThresholds: SettingsStore.defaultNotificationThresholds)
 
-    private func complete(enableLiveMode: Bool) {
-        settings.liveModeEnabled = enableLiveMode
+        // The hold goes in before the consent, so the engine never sees Live mode on without it.
+        let gate = plan.holdsLiveUntilPromptIsAnswered ? liveGate : nil
+        gate?.holdLiveRequests(until: now().addingTimeInterval(OnboardingPlan.maxPromptWait))
+
+        settings.notificationThresholds = plan.notificationThresholds
+        settings.liveModeEnabled = plan.liveModeEnabled
         // Last, so Live mode (which needs both) never sees a half-finished state.
         settings.hasCompletedOnboarding = true
+
+        guard plan.requestsNotificationPermission else { return }
+        // The only place besides Settings that may show the system notification prompt.
+        let request = requestNotificationPermission
+        Task {
+            await request()
+            gate?.releaseLiveRequests()
+        }
     }
 }
 
@@ -98,6 +112,11 @@ struct OnboardingView: View {
             InfoRow(
                 symbol: "doc.text",
                 text: "It reads the usage numbers Claude Code already saves in its own cache file.")
+            InfoRow(
+                symbol: "info.circle",
+                text:
+                    "Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not."
+            )
             InfoRow(
                 symbol: "text.alignleft",
                 text:

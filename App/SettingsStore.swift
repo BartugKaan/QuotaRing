@@ -49,12 +49,14 @@ final class SettingsStore {
         didSet { defaults.set(notifyOnReset, forKey: Key.notifyOnReset) }
     }
 
-    /// The user's consent to Live mode (Keychain read plus a request to `api.anthropic.com`). Off by default.
+    /// The user's consent to Live mode (Keychain read plus a request to `api.anthropic.com`). Off by default. Read only
+    /// from the app's saved preferences, never from launch arguments.
     var liveModeEnabled: Bool {
         didSet { defaults.set(liveModeEnabled, forKey: Key.liveModeEnabled) }
     }
 
-    /// Whether the first-run onboarding was completed. Live mode never runs before it.
+    /// Whether the first-run onboarding was completed. Live mode never runs before it. Read only from the app's saved
+    /// preferences, never from launch arguments.
     var hasCompletedOnboarding: Bool {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
@@ -85,7 +87,12 @@ final class SettingsStore {
 
     @ObservationIgnored private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    /// - Parameters:
+    ///   - defaults: Where preferences are read and written.
+    ///   - persistentDomain: The name of the domain `defaults` saves to: the bundle identifier for `.standard`, the
+    ///     suite name for a suite. The consent settings are read from this domain only (see below); `nil` leaves them
+    ///     off.
+    init(defaults: UserDefaults = .standard, persistentDomain: String? = Bundle.main.bundleIdentifier) {
         self.defaults = defaults
 
         let storedInterval = defaults.double(forKey: Key.refreshInterval)
@@ -99,8 +106,13 @@ final class SettingsStore {
             notificationThresholds = Self.defaultNotificationThresholds
         }
         notifyOnReset = defaults.object(forKey: Key.notifyOnReset) as? Bool ?? false
-        liveModeEnabled = defaults.object(forKey: Key.liveModeEnabled) as? Bool ?? false
-        hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
+        // Consent is read from what the app itself saved, never from launch arguments: `UserDefaults` also answers from
+        // the argument domain, so `-liveModeEnabled YES -hasCompletedOnboarding YES` on the command line would turn on
+        // Keychain reads without the user ever agreeing. (Display settings and the development-only
+        // `-customConfigDirectory` override may still come from there.)
+        let saved = persistentDomain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
+        liveModeEnabled = saved[Key.liveModeEnabled] as? Bool ?? false
+        hasCompletedOnboarding = saved[Key.hasCompletedOnboarding] as? Bool ?? false
         if let path = defaults.string(forKey: Key.customConfigDirectory), path.hasPrefix("/") {
             customConfigPath = path
         } else {

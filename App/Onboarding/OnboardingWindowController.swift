@@ -10,14 +10,17 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     /// - Parameters:
+    ///   - liveGate: holds Live mode's first Keychain read while the notification prompt is open.
     ///   - requestNotificationPermission: shows the system notification prompt (see ``OnboardingModel``).
     ///   - onClose: called once, after onboarding was completed and the window is gone.
     init(
         settings: SettingsStore,
+        liveGate: any LiveRequestGate,
         requestNotificationPermission: @escaping @MainActor () async -> Void,
         onClose: @escaping () -> Void
     ) {
-        model = OnboardingModel(settings: settings, requestNotificationPermission: requestNotificationPermission)
+        model = OnboardingModel(
+            settings: settings, liveGate: liveGate, requestNotificationPermission: requestNotificationPermission)
         self.onClose = onClose
         super.init()
     }
