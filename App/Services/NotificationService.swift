@@ -20,16 +20,26 @@ enum NotificationPermission: Sendable, Equatable {
 /// `UNUserNotificationCenter`; nothing is sent anywhere. The service never asks for permission by itself while posting.
 /// Only ``requestAuthorizationIfNeeded()`` does, and it is called when the user agrees to notifications (onboarding, or
 /// turning a notification setting on).
+///
+/// ## Isolation
+///
+/// The UserNotifications objects (`UNUserNotificationCenter`, `UNNotificationSettings`, `UNNotificationRequest`, ...)
+/// are not `Sendable` in every SDK the project builds with (Xcode 16.4's, for one), and their async methods run off the
+/// main actor. So none of them is stored in this main-actor class or passed in or out of an `await` here. Each async
+/// call lives in a `nonisolated static` helper that gets `UNUserNotificationCenter.current()` itself, builds what it
+/// needs from `Sendable` inputs (strings, dates, events) and hands back only `Sendable` values (`Bool`,
+/// `UNAuthorizationStatus`). `current()` is the app's one shared center, so every helper talks to the same center.
 @MainActor
 final class NotificationService: NSObject, UsageNotifier {
-    private let center: UNUserNotificationCenter
     /// Whether ``requestAuthorizationIfNeeded()`` may show the system permission prompt. `false` in demo mode, which
     /// never touches real notification permission.
     let allowsPermissionRequests: Bool
 
+    /// - Parameter center: Only used here, to register `self` as its delegate (a synchronous call). Every async call
+    ///   goes through the static helpers below, which use `UNUserNotificationCenter.current()`, so a different
+    ///   `center` would not receive any notifications.
     init(allowsPermissionRequests: Bool = true, center: UNUserNotificationCenter = .current()) {
         self.allowsPermissionRequests = allowsPermissionRequests
-        self.center = center
         super.init()
         // Without a delegate macOS would not show banners while QuotaRing is the active app (its Settings window is).
         center.delegate = self
@@ -38,24 +48,12 @@ final class NotificationService: NSObject, UsageNotifier {
     // MARK: - UsageNotifier
 
     func post(_ events: [ThresholdEvent], snapshot: UsageSnapshot) {
+        guard !events.isEmpty else { return }
         let now = Date()
         let session = snapshot.session(at: now)
-        let requests = events.map { Self.request(for: $0, session: session, now: now) }
-        guard !requests.isEmpty else { return }
-        let center = center
+        // Only Sendable values go into the task; the notification objects are created and used inside `deliver`.
         Task {
-            // Not authorized (or not asked yet): drop silently. Asking is the job of onboarding and Settings.
-            guard Self.permission(of: await Self.currentAuthorizationStatus()) == .allowed else {
-                return
-            }
-            for request in requests {
-                do {
-                    try await center.add(request)
-                } catch {
-                    notificationLog.error(
-                        "Could not post a notification: \(error.localizedDescription, privacy: .public)")
-                }
-            }
+            await Self.deliver(events, session: session, now: now)
         }
     }
 
@@ -73,7 +71,7 @@ final class NotificationService: NSObject, UsageNotifier {
         let current = await permission()
         guard current == .notDetermined, allowsPermissionRequests else { return current }
         do {
-            _ = try await center.requestAuthorization(options: [.alert])
+            _ = try await Self.requestAuthorization()
         } catch {
             notificationLog.error("Notification authorization failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -88,7 +86,7 @@ final class NotificationService: NSObject, UsageNotifier {
         NSWorkspace.shared.open(url)
     }
 
-    private static func permission(of status: UNAuthorizationStatus) -> NotificationPermission {
+    private nonisolated static func permission(of status: UNAuthorizationStatus) -> NotificationPermission {
         switch status {
         case .notDetermined: .notDetermined
         case .authorized, .provisional: .allowed
@@ -97,16 +95,42 @@ final class NotificationService: NSObject, UsageNotifier {
         }
     }
 
+    // MARK: - UserNotifications calls
+    //
+    // Nonisolated on purpose, see "Isolation" above: the center and every other non-Sendable object stay inside one
+    // function, and only Sendable values cross the boundary to the main actor.
+
     /// Reads only the status. `UNNotificationSettings` is not `Sendable` in the Xcode 16 SDK, so it must not leave
     /// this nonisolated context.
     private nonisolated static func currentAuthorizationStatus() async -> UNAuthorizationStatus {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
+    /// Shows the system permission prompt. Returns whether the user allowed notifications.
+    private nonisolated static func requestAuthorization() async throws -> Bool {
+        try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+    }
+
+    /// Posts one notification per event, unless macOS has not authorized notifications (then it drops them silently:
+    /// asking is the job of onboarding and Settings).
+    private nonisolated static func deliver(_ events: [ThresholdEvent], session: UsageLimit?, now: Date) async {
+        guard permission(of: await currentAuthorizationStatus()) == .allowed else { return }
+        let center = UNUserNotificationCenter.current()
+        for event in events {
+            do {
+                try await center.add(request(for: event, session: session, now: now))
+            } catch {
+                notificationLog.error("Could not post a notification: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     // MARK: - Content
 
     /// The notification for one event. `session` supplies the remaining share and the reset time.
-    static func request(for event: ThresholdEvent, session: UsageLimit?, now: Date) -> UNNotificationRequest {
+    nonisolated static func request(
+        for event: ThresholdEvent, session: UsageLimit?, now: Date
+    ) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         // One thread, so macOS stacks QuotaRing's notifications together.
         content.threadIdentifier = "session"
@@ -144,6 +168,9 @@ final class NotificationService: NSObject, UsageNotifier {
 
 extension NotificationService: UNUserNotificationCenterDelegate {
     /// Show the banner even when QuotaRing is the frontmost app.
+    ///
+    /// `nonisolated`: macOS calls the delegate on its own queue, and the body touches no main-actor state, so the
+    /// non-`Sendable` `center` and `notification` arguments are never used here (or sent anywhere).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
