@@ -12,7 +12,10 @@ let package = Package(
         .library(name: "QuotaRingCore", targets: ["QuotaRingCore"])
     ],
     targets: [
-        .target(name: "QuotaRingCore"),
+        .target(
+            name: "QuotaRingCore",
+            resources: [.process("Resources")]
+        ),
         .testTarget(
             name: "QuotaRingCoreTests",
             dependencies: ["QuotaRingCore"],
