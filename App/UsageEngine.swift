@@ -655,7 +655,8 @@ final class UsageEngine {
 
     private func startPathMonitor() {
         let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
+        // Called on the monitor's own queue, so explicitly not main-actor isolated, whatever the SDK says about it.
+        monitor.pathUpdateHandler = { @Sendable [weak self] path in
             let online = path.status == .satisfied
             guard let self else { return }
             Task { @MainActor in self.setOnline(online) }
