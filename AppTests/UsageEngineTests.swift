@@ -1,5 +1,6 @@
 import Foundation
 import QuotaRingCore
+import Security
 import Testing
 
 /// Tests of ``UsageEngine``'s cache and transcript handling.
@@ -17,19 +18,37 @@ private final class EngineRig {
     let configDirectory: URL
     let store: LastSnapshotStore
     let engine: UsageEngine
+    /// The fakes behind Live mode and auto-refresh. The engine reaches nothing real through them.
+    let credentials = FakeCredentialReader()
+    let transport = FakeTransport()
+    let cli = FakeCLIRunner()
     private(set) var events: [UsageEngine.Event] = []
 
     var cacheFile: URL { configDirectory.appendingPathComponent(".claude.json") }
 
-    init() throws {
+    /// - Parameters:
+    ///   - live: Turns Live mode on, the way the welcome window does. Its credential read, request and the rest go to
+    ///     the fakes above: no Keychain, no network.
+    ///   - autoRefresh: Turns auto-refresh on. Its runs go to the fake runner: no Claude Code is started.
+    init(live: Bool = false, autoRefresh: Bool = false) throws {
         sandbox = try TestSandbox()
         configDirectory = try sandbox.claudeConfigDirectory()
         settings = sandbox.makeSettings()
         settings.customConfigDirectory = configDirectory
-        // Nothing may run or reach out: consent is off.
+        // Nothing may run or reach out unless the test asks for it, and then only the fakes can be reached.
         try #require(!settings.isLiveModeActive && !settings.isCLIRefreshActive)
+        if live {
+            settings.liveModeEnabled = true
+            settings.hasCompletedOnboarding = true
+        }
+        if autoRefresh {
+            settings.cliRefreshEnabled = true
+            settings.hasCompletedOnboarding = true
+        }
         store = LastSnapshotStore(fileURL: sandbox.directory.appendingPathComponent("store/last-snapshot.json"))
-        engine = UsageEngine(settings: settings, snapshotStore: store)
+        engine = UsageEngine(
+            settings: settings, snapshotStore: store, transport: transport, liveCredentials: credentials.reader,
+            cliRefresher: cli)
         engine.onEvent = { [weak self] event in self?.events.append(event) }
     }
 
@@ -39,6 +58,13 @@ private final class EngineRig {
     var snapshots: [UsageSnapshot?] {
         events.compactMap { event in
             if case .snapshot(let snapshot, _) = event { return .some(snapshot) }
+            return nil
+        }
+    }
+
+    var liveStatuses: [LiveStatus] {
+        events.compactMap { event in
+            if case .liveStatus(let status) = event { return status }
             return nil
         }
     }
@@ -488,7 +514,7 @@ private final class EngineRig {
         await rig.finish()
     }
 
-    @Test func theCacheIsStillReadWhileNobodyIsLooking() async throws {
+    @Test func aRefreshReadsTheCacheEvenWhileNobodyIsLooking() async throws {
         let rig = try EngineRig()
         rig.engine.presenceDidChange(.screenLocked)
         try rig.writeCache(
@@ -499,5 +525,183 @@ private final class EngineRig {
         let announced = try #require(rig.snapshots.first ?? nil)
         #expect(announced.report.session?.percentUsed == 47)
         await rig.finish()
+    }
+}
+
+/// The engine's loops while it runs (started without listening to the system), with Live mode and auto-refresh behind
+/// fakes: nothing here reads the Keychain, reaches the network or starts Claude Code.
+@MainActor
+@Suite struct UsageEngineLoopTests {
+    private func stop(_ rig: EngineRig) async {
+        rig.engine.shutDown()
+        await rig.finish()
+    }
+
+    // MARK: Presence
+
+    @Test func theLoopsDoNotStartWhileNobodyIsLookingAndStartWhenSomebodyIsBack() async throws {
+        let rig = try EngineRig(live: true, autoRefresh: true)
+        rig.engine.presenceDidChange(.screenLocked)
+
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isCacheLoopRunning })
+        // The loops that ask Anthropic or run Claude Code stay off, and nothing is asked or run.
+        #expect(!rig.engine.isLiveLoopRunning)
+        #expect(!rig.engine.isCLILoopRunning)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(rig.credentials.reads == 0)
+        #expect(rig.cli.runs == 0)
+
+        rig.engine.presenceDidChange(.screenUnlocked)
+
+        // Back: they start, and each looks at once at what is due (no snapshot, so both are).
+        #expect(await eventually { rig.engine.isLiveLoopRunning && rig.engine.isCLILoopRunning })
+        #expect(await eventually { rig.credentials.reads == 1 && rig.cli.runs == 1 })
+        await stop(rig)
+    }
+
+    @Test func goingAwayStopsTheLoopsThatAskAndLeavesTheCacheCheckRunning() async throws {
+        let rig = try EngineRig(live: true, autoRefresh: true)
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isLiveLoopRunning && rig.engine.isCLILoopRunning })
+        let starts = rig.engine.loopStarts
+
+        rig.engine.presenceDidChange(.displaysSlept)
+
+        #expect(!rig.engine.isLiveLoopRunning)
+        #expect(!rig.engine.isCLILoopRunning)
+        #expect(rig.engine.isCacheLoopRunning)
+        #expect(rig.engine.loopStarts == starts)
+        await stop(rig)
+    }
+
+    @Test func comingBackStartsTheLoopsAgain() async throws {
+        let rig = try EngineRig(live: true, autoRefresh: true)
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isLiveLoopRunning && rig.engine.isCLILoopRunning })
+        rig.engine.presenceDidChange(.sessionResigned)
+        try #require(!rig.engine.isLiveLoopRunning)
+        let before = rig.engine.loopStarts
+
+        rig.engine.presenceDidChange(.sessionBecameActive)
+
+        #expect(await eventually { rig.engine.loopStarts.live == before.live + 1 })
+        #expect(rig.engine.loopStarts.cli == before.cli + 1)
+        #expect(rig.engine.isLiveLoopRunning && rig.engine.isCLILoopRunning)
+        await stop(rig)
+    }
+
+    // MARK: A Keychain refusal
+
+    @Test func aRefusalGivenAfterTheLoopWasCancelledStillSuspendsLive() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(with: .failure(.keychain(errSecUserCanceled)))
+        rig.credentials.holdNextRead()
+        rig.engine.start(observingSystem: false)
+        // The loop asks for the credential and the Keychain prompt stays open.
+        try #require(await eventually { rig.credentials.reads == 1 })
+
+        // The screen locks, so the loop and with it the request waiting for the prompt are cancelled; the user comes
+        // back, and only then clicks "Deny".
+        rig.engine.presenceDidChange(.screenLocked)
+        rig.engine.presenceDidChange(.screenUnlocked)
+        try #require(await eventually { rig.engine.isLiveLoopRunning })
+        #expect(!rig.engine.isLiveRequestsSuspended)
+        rig.credentials.releaseHeldRead()
+
+        #expect(await eventually { rig.engine.isLiveRequestsSuspended })
+        #expect(rig.liveStatuses.last == .keychainDenied)
+        // Nothing was sent, and the new loop does not show the prompt again.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(rig.transport.requests == 0)
+        #expect(rig.credentials.reads == 1)
+        await stop(rig)
+    }
+
+    @Test func aRefusalIsNotAppliedWhenLiveModeWasTurnedOffMeanwhile() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(with: .failure(.keychain(errSecUserCanceled)))
+        rig.credentials.holdNextRead()
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.credentials.reads == 1 })
+
+        rig.settings.liveModeEnabled = false
+        rig.engine.presenceDidChange(.screenLocked)
+        rig.credentials.releaseHeldRead()
+
+        // The answer was to a request that no longer applies.
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(!rig.engine.isLiveRequestsSuspended)
+        #expect(!rig.liveStatuses.contains(.keychainDenied))
+        await stop(rig)
+    }
+
+    @Test func aCredentialGrantedAfterTheLoopWasCancelledSendsNothing() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(
+            with: .success(OAuthCredential(accessToken: Secret("not-a-real-token"), expiresAt: nil)))
+        rig.credentials.holdNextRead()
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.credentials.reads == 1 })
+
+        rig.engine.presenceDidChange(.screenLocked)
+        rig.credentials.releaseHeldRead()
+
+        // "Allow" came too late: the request was cancelled, so it is not sent.
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(rig.transport.requests == 0)
+        #expect(!rig.engine.isLiveRequestsSuspended)
+        await stop(rig)
+    }
+
+    @Test func aSuspendedLiveLoopStartsAgainWhenRefreshLiftsTheSuspension() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(with: .failure(.keychain(errSecUserCanceled)))
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isLiveRequestsSuspended })
+        #expect(rig.engine.loopStarts.live == 1)
+        // The loop sleeps for the longest wait; nothing but the user wakes it.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(rig.credentials.reads == 1)
+
+        // The user presses Refresh, and this time the read fails for another reason (no credential at all).
+        rig.credentials.answer(with: .failure(.notFound))
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.credentials.reads == 2)
+        #expect(!rig.engine.isLiveRequestsSuspended)
+        #expect(rig.liveStatuses.last == .noCredential)
+        #expect(rig.engine.loopStarts.live == 2)
+        #expect(rig.engine.isLiveLoopRunning)
+        await stop(rig)
+    }
+
+    @Test func aRefreshThatLiftsNothingLeavesTheLiveLoopAlone() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(with: .failure(.notFound))
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.credentials.reads == 1 })
+        try #require(await eventually { rig.liveStatuses.last == .noCredential })
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.engine.loopStarts.live == 1)
+        await stop(rig)
+    }
+
+    @Test func aRefusedRefreshSuspendsLiveAgainAndKeepsTheLoopAsleep() async throws {
+        let rig = try EngineRig(live: true)
+        rig.credentials.answer(with: .failure(.keychain(errSecAuthFailed)))
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isLiveRequestsSuspended })
+
+        await rig.engine.refresh(userInitiated: true)
+
+        // The user refused again: suspended, and the restarted loop does not ask a third time.
+        #expect(rig.engine.isLiveRequestsSuspended)
+        #expect(rig.engine.loopStarts.live == 2)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(rig.credentials.reads == 2)
+        await stop(rig)
     }
 }

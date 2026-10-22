@@ -2,6 +2,17 @@ import Foundation
 import QuotaRingCore
 import os
 
+/// What the engine needs from the auto-refresh runner. ``CLIRefresher`` is the real one; tests stand in for it, because
+/// a loop test must not start Claude Code.
+protocol CLIRefreshing: Sendable {
+    /// Where the tool is, from file metadata only.
+    func locate(_ settings: CLIRefresher.Settings) async -> CLIBinaryState
+    /// One refresh. Cancelling the calling task stops it.
+    func run(_ settings: CLIRefresher.Settings) async -> CLIRunReport
+}
+
+extension CLIRefresher: CLIRefreshing {}
+
 /// Runs Claude Code's own `/usage` so that it refreshes its usage cache, which QuotaRing then reads as usual
 /// ("auto-refresh", spec §13). QuotaRing never sees a credential: Claude Code uses and renews its own login.
 ///

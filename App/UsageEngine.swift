@@ -51,7 +51,9 @@ final class UsageEngine {
     private let settings: SettingsStore
     private let snapshotStore: LastSnapshotStore?
     private let userAgent: String
-    private lazy var transport = URLSessionTransport()
+    private let injectedTransport: (any HTTPTransport)?
+    private lazy var transport: any HTTPTransport = injectedTransport ?? URLSessionTransport()
+    private let liveCredentials: LiveCredentialReader
 
     // Sources, rebuilt when the config directory changes.
     private var paths: ClaudePaths
@@ -83,7 +85,7 @@ final class UsageEngine {
     private var accountGeneration = 0
 
     // Auto-refresh state.
-    private let cliRefresher = CLIRefresher()
+    private let cliRefresher: any CLIRefreshing
     private var cliStatus: CLIRefreshStatus = .off
     private var cliConsecutiveFailures = 0
     private var cliNextAllowedAt: Date?
@@ -127,9 +129,26 @@ final class UsageEngine {
     private var workspaceObservers: [any NSObjectProtocol] = []
     private var screenLockObserver: ScreenLockObserver?
 
-    init(settings: SettingsStore, snapshotStore: LastSnapshotStore? = .standard()) {
+    /// - Parameters:
+    ///   - snapshotStore: Where the last good snapshot is saved; tests pass a temporary one.
+    ///   - transport: Sends Live requests; `nil` for the real one.
+    ///   - liveCredentials: Reads the Claude Code credential for a Live request; the default reads the Keychain.
+    ///   - cliRefresher: Runs Claude Code's `/usage`; the default starts the real tool.
+    ///
+    /// The last three are seams for tests: without them a loop test would read the Keychain, reach the network and
+    /// start Claude Code.
+    init(
+        settings: SettingsStore,
+        snapshotStore: LastSnapshotStore? = .standard(),
+        transport: (any HTTPTransport)? = nil,
+        liveCredentials: @escaping LiveCredentialReader = UsageEngine.readCredentialFromKeychain,
+        cliRefresher: any CLIRefreshing = CLIRefresher()
+    ) {
         self.settings = settings
         self.snapshotStore = snapshotStore
+        injectedTransport = transport
+        self.liveCredentials = liveCredentials
+        self.cliRefresher = cliRefresher
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         userAgent = UsageAPI.userAgent(version: version)
 
@@ -148,7 +167,10 @@ final class UsageEngine {
 
     // MARK: - Control
 
-    func start() {
+    /// - Parameter observingSystem: `false` starts the loops without looking for Claude Code's tool and without
+    ///   listening to the system (settings changes, sleep and wake, presence, reachability). For tests, which must
+    ///   neither touch the real Claude files nor depend on the machine's state.
+    func start(observingSystem: Bool = true) {
         guard !isStarted else { return }
         isStarted = true
 
@@ -162,11 +184,12 @@ final class UsageEngine {
         cliCycleInterval = jitteredInterval()
         setLiveStatus(settings.isLiveModeActive ? .ok : .off)
         setCLIStatus(idleCLIStatus)
-        inspectCLI()
-
-        observeSettings()
-        observeWorkspace()
-        startPathMonitor()
+        if observingSystem {
+            inspectCLI()
+            observeSettings()
+            observeWorkspace()
+            startPathMonitor()
+        }
         resume()
     }
 
@@ -261,7 +284,8 @@ final class UsageEngine {
         isPopoverOpen = open
         if open {
             presenceDidChange(.userInteracted)
-        } else {
+        }
+        if !open {
             // Nobody sees the numbers of a scan that is still reading, and a scan carries on from where it stopped.
             cancelTranscriptScan()
         }
@@ -339,6 +363,26 @@ final class UsageEngine {
         presence.isAway
     }
 
+    // What tests need to see of the loops. Reading only.
+
+    /// How many times each loop has been started: a restart shows as a higher number.
+    struct LoopStarts: Equatable {
+        var cache = 0
+        var live = 0
+        var cli = 0
+        var transcripts = 0
+    }
+
+    private(set) var loopStarts = LoopStarts()
+    var isCacheLoopRunning: Bool { cacheTask != nil }
+    var isLiveLoopRunning: Bool { liveTask != nil }
+    var isCLILoopRunning: Bool { cliTask != nil }
+    var isTranscriptLoopRunning: Bool { transcriptTask != nil }
+    /// Whether a transcript scan is under way.
+    var isScanningTranscripts: Bool { scanWork != nil }
+    /// Whether automatic Live requests are suspended because the user refused Keychain access.
+    var isLiveRequestsSuspended: Bool { isLiveSuspended }
+
     private func cancelManualLiveFetch() {
         manualLiveTask?.cancel()
         manualLiveTask = nil
@@ -353,6 +397,7 @@ final class UsageEngine {
         cacheTask?.cancel()
         cacheTask = nil
         guard !isAsleep else { return }
+        loopStarts.cache += 1
         cacheTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.cacheCheckInterval)
@@ -371,6 +416,7 @@ final class UsageEngine {
         liveTask?.cancel()
         liveTask = nil
         guard settings.isLiveModeActive, mayRunAutomaticRequests else { return }
+        loopStarts.live += 1
         liveTask = Task { [weak self] in
             await self?.runLiveLoop()
         }
@@ -406,6 +452,7 @@ final class UsageEngine {
         cliTask?.cancel()
         cliTask = nil
         guard settings.isCLIRefreshActive, mayRunAutomaticRequests else { return }
+        loopStarts.cli += 1
         cliTask = Task { [weak self] in
             await self?.runCLILoop()
         }
@@ -439,6 +486,7 @@ final class UsageEngine {
         transcriptTask?.cancel()
         transcriptTask = nil
         guard isPopoverOpen, !isAsleep else { return }
+        loopStarts.transcripts += 1
         transcriptTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -587,6 +635,7 @@ final class UsageEngine {
         let request = LiveRequest(
             client: UsageAPIClient(transport: transport, userAgent: userAgent),
             paths: requestPaths,
+            readCredential: liveCredentials,
             isStillAllowed: { [weak self] in
                 self?.isLiveAllowed(for: requestPaths, generation: generation) ?? false
             }
@@ -600,7 +649,9 @@ final class UsageEngine {
 
         // Abandoned before anything was sent (cancelled, consent withdrawn, asleep or another directory).
         guard let result = outcome else { return }
-        // A request cut off by sleep or by Live mode being turned off says nothing about the server.
+        // A request cut off by sleep or by Live mode being turned off says nothing about the server. (A Keychain
+        // refusal is the user's answer, not a verdict on the server, and is applied even when this task was cancelled,
+        // for instance because the screen locked while the prompt stayed open.)
         if case .failed(.network) = result, Task.isCancelled { return }
         // Results for a withdrawn consent, a config directory that is no longer selected or an account that is no
         // longer signed in do not apply: they are neither shown nor saved.
@@ -1039,6 +1090,22 @@ final class UsageEngine {
 
 // MARK: - Live request
 
+/// Reads Claude Code's credential for a config directory, on a dedicated queue (a Keychain read can block on an access
+/// prompt). The app's reads go to the Keychain and the credentials file; tests hand in a fake.
+typealias LiveCredentialReader = @Sendable (ClaudePaths) -> Result<OAuthCredential, CredentialError>
+
+extension UsageEngine {
+    /// The real credential read.
+    nonisolated static func readCredentialFromKeychain(_ paths: ClaudePaths) -> Result<OAuthCredential, CredentialError>
+    {
+        do throws(CredentialError) {
+            return .success(try CredentialResolver.standard(paths: paths).resolve())
+        } catch {
+            return .failure(error)
+        }
+    }
+}
+
 /// One Live request, run off the main actor.
 ///
 /// The credential is read on a dedicated serial queue because a Keychain read can block its thread on an access
@@ -1047,6 +1114,7 @@ final class UsageEngine {
 private struct LiveRequest: Sendable {
     let client: UsageAPIClient
     let paths: ClaudePaths
+    let readCredential: LiveCredentialReader
     /// Asked on the main actor right before the request is sent: consent, sleep and the selected config directory may
     /// all have changed while a Keychain prompt was open.
     let isStillAllowed: @MainActor @Sendable () -> Bool
@@ -1058,14 +1126,18 @@ private struct LiveRequest: Sendable {
     func run() async -> LiveFetchResult? {
         guard !Task.isCancelled else { return nil }
         let paths = self.paths
+        let readCredential = self.readCredential
         let credential: Result<OAuthCredential, CredentialError> = await withCheckedContinuation { continuation in
             Self.credentialQueue.async {
-                do throws(CredentialError) {
-                    continuation.resume(returning: .success(try CredentialResolver.standard(paths: paths).resolve()))
-                } catch {
-                    continuation.resume(returning: .failure(error))
-                }
+                continuation.resume(returning: readCredential(paths))
             }
+        }
+        // A refusal is the user's answer to the Keychain prompt, and nothing is sent for it, so it counts also when the
+        // request was cancelled while the prompt was open (the screen locked, say, and the user came back and clicked
+        // Deny). Dropping it would lose the answer and show the same prompt again a minute later. Whether it still
+        // applies (consent, directory, sleep) is decided by the caller.
+        if case .failure(let error) = credential, error.isKeychainAccessDenied {
+            return .skippedNoCredential(error)
         }
         guard !Task.isCancelled, await isStillAllowed() else { return nil }
         let fetcher = LiveUsageFetcher(

@@ -74,3 +74,83 @@ final class RecordingNotifier: UsageNotifier {
         posts.append(events)
     }
 }
+
+/// Stands in for the Keychain behind a Live request: answers every read with the answer it was given, counts the reads,
+/// and can hold the next read until the test releases it, like a Keychain prompt that stays open.
+final class FakeCredentialReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: Result<OAuthCredential, CredentialError> = .failure(.notFound)
+    private var gate: DispatchSemaphore?
+    private var count = 0
+
+    /// How many reads have started.
+    var reads: Int { lock.withLock { count } }
+
+    /// What the following reads answer.
+    func answer(with result: Result<OAuthCredential, CredentialError>) {
+        lock.withLock { current = result }
+    }
+
+    /// The reads that start from now on wait until ``releaseHeldRead()``, and answer what is set by then.
+    func holdNextRead() {
+        lock.withLock { gate = DispatchSemaphore(value: 0) }
+    }
+
+    /// Lets the held read go on, as if the user had answered the prompt, and holds no further read.
+    func releaseHeldRead() {
+        let held = lock.withLock { () -> DispatchSemaphore? in
+            let held = gate
+            gate = nil
+            return held
+        }
+        held?.signal()
+    }
+
+    /// The closure handed to the engine.
+    var reader: LiveCredentialReader {
+        { [self] _ in
+            let (held, answer) = lock.withLock { () -> (DispatchSemaphore?, Result<OAuthCredential, CredentialError>) in
+                count += 1
+                return (gate, current)
+            }
+            held?.wait()
+            return lock.withLock { held == nil ? answer : current }
+        }
+    }
+}
+
+/// A transport that sends nothing and counts the attempts: a test that reaches it has found a Live request that goes out.
+final class FakeTransport: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var requests: Int { lock.withLock { count } }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        lock.withLock { count += 1 }
+        throw URLError(.notConnectedToInternet)
+    }
+}
+
+/// Stands in for the program that runs Claude Code's `/usage`: counts the runs and fails each of them at once, without
+/// starting anything.
+final class FakeCLIRunner: CLIRefreshing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    /// How many runs have been asked for.
+    var runs: Int { lock.withLock { count } }
+
+    private var binary: CLIBinaryState {
+        CLIBinaryState(location: CLILocation(executable: nil, customPathProblem: .missing), versionCheck: nil)
+    }
+
+    func locate(_ settings: CLIRefresher.Settings) async -> CLIBinaryState {
+        binary
+    }
+
+    func run(_ settings: CLIRefresher.Settings) async -> CLIRunReport {
+        lock.withLock { count += 1 }
+        return CLIRunReport(outcome: .failed(.launchFailed), binary: binary)
+    }
+}
