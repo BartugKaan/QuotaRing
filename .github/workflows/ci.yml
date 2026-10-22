@@ -72,6 +72,10 @@ jobs:
       - name: Generate the project and build without signing
         run: make build XCODEBUILD_FLAGS="CODE_SIGNING_ALLOWED=NO"
 
+      # A hostless bundle: the app itself is not started, so no Claude file, preference or Keychain item is read.
+      - name: Run the app's unit tests
+        run: make test-app
+
   # The README and CONTRIBUTING promise "Xcode 16.4 or later". The jobs above use
   # the newest Xcode on the runner, so this one checks the promised floor itself.
   # It fails (instead of quietly using another version) when the runner image no
@@ -102,3 +106,6 @@ jobs:
 
       - name: Generate the project and build without signing
         run: make build XCODEBUILD_FLAGS="CODE_SIGNING_ALLOWED=NO"
+
+      - name: Run the app's unit tests
+        run: make test-app
