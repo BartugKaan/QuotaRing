@@ -234,3 +234,7 @@ README.md  CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md  LICENSE  CHANGELOG.
 - [ ] **Step 2:** Whole-branch code review (`code-review` skill); fix findings; `make test lint build` green.
 - [ ] **Step 3:** Live verification on the owner's Mac: default mode ring matches `/usage`; enable Live mode → Keychain prompt behavior observed and documented; expired-token path shows the hint and makes no request.
 - [ ] **Step 4:** With the owner's go-ahead in chat: `gh repo create BartugKaan/QuotaRing --private`, push `main` and `feat/quotaring-v1`, open PR to `main` with summary and test notes.
+
+### Task 15: Auto-refresh via Claude Code (added 2026-10-22)
+
+Implements spec §13. **Files:** Core `Cli/ClaudeCLILocator.swift` (candidates + validation), `Cli/CLIRefreshCommand.swift` (exact arguments + minimal environment), `Cli/CLIRefreshResult.swift` (JSON result → success / modelCallDetected / notLoggedIn / failed), RefreshPlanner additions (when to run; ≥ 120 s spacing; back-off via PollingPolicy) with Swift Testing tests; App `Services/CLIRefresher.swift` (Process runner: timeout, cwd, stdin null, output cap, kill), UsageEngine CLI loop + manual trigger + immediate cache re-read, SettingsStore key `cliRefreshEnabled` (consent key: persistent domain only) + `customCLIPath`, Data tab section with consent sheet and path/version status, onboarding checkbox, popover notice action, catalog strings (en + tr), README/SECURITY/ARCHITECTURE/CHANGELOG. Verify: `make test lint build`, then controller runs it on the owner's Mac.

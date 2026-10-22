@@ -406,3 +406,45 @@ enable live limits.
 - Whether to keep the statusLine bridge for v1.1 (token-free, official
   `rate_limits` from Claude Code's status line JSON; requires chaining the
   user's existing status line command).
+
+## 13. Auto-refresh via Claude Code (added 2026-10-22, owner decision)
+
+**Why:** the Claude desktop app never refreshes Claude Code's usage cache, so
+desktop-only users saw out-of-date numbers until they ran `/usage` in a
+terminal. The owner chose to automate that.
+
+**Verified on the owner's Mac (Claude Code 2.1.287):**
+`claude -p "/usage" --safe-mode --no-session-persistence --output-format json`
+exits 0 in ~2 s, refreshes `cachedUsageUtilization` in `~/.claude.json`,
+reports `num_turns: 0` and `total_cost_usd: 0` (no model request, no usage
+spent), writes no session transcript, and `--safe-mode` starts no plugins,
+hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
+
+**Behavior:**
+- Opt-in "Refresh with Claude Code" (Settings → Data; offered in onboarding as
+  recommended for Claude desktop app users). QuotaRing never reads credentials
+  for this: Claude Code uses and renews its own login.
+- Runs only when the cached snapshot is older than the refresh interval, never
+  more often than every 120 s, paused while asleep or offline, with the same
+  back-off as Live mode on failures; the Refresh button also triggers it
+  (60 s cooldown). After a run, the cache loop re-reads immediately.
+- Executes exactly the command above with a fixed argument array (no shell),
+  `stdin` from `/dev/null`, a minimal environment (`HOME`, `USER`, `LOGNAME`,
+  `LANG`, `PATH` = the binary's folder + `/usr/local/bin:/opt/homebrew/bin:
+  /usr/bin:/bin`, and `CLAUDE_CONFIG_DIR` when a custom config dir is set),
+  working directory `~/Library/Application Support/QuotaRing/cli` (0700),
+  30 s timeout (process killed), output capped at 256 KB and never logged.
+- Binary discovery (GUI apps don't see the shell `PATH`): the user-chosen path,
+  else the first valid of `~/.local/bin/claude`, `~/.claude/local/claude`,
+  `~/.npm-global/bin/claude`, `/opt/homebrew/bin/claude`,
+  `/usr/local/bin/claude`. Valid = resolves (symlinks followed) to a regular,
+  executable file owned by the user or root and not group/world-writable, and
+  `--version` output contains "(Claude Code)". Settings shows the resolved
+  path and version.
+- Safety net: the JSON result must be `type: result`, `is_error: false`,
+  `num_turns: 0`, `total_cost_usd: 0`. If a future Claude Code sends `/usage`
+  to the model instead (turns or cost > 0), the feature turns itself off and
+  says why. Not logged in / not found / timeout / error → a clear status and
+  back-off.
+- Supersedes the §3 non-goal "Launching the `claude` CLI": the side effects
+  that ruled it out do not occur with this invocation.
