@@ -186,12 +186,11 @@ final class SettingsStore {
         cliRefreshEnabled = saved[Key.cliRefreshEnabled] as? Bool ?? false
         if let stop = (saved[Key.cliRefreshSafetyStop] as? String).flatMap(CLISafetyStop.init(rawValue:)) {
             cliSafetyStopValue = stop.rawValue
-        } else if saved[Key.legacyCLIRefreshDisabledForSafety] as? Bool == true {
-            // Development builds before the reason was kept only knew one: a model request.
-            cliSafetyStopValue = CLISafetyStop.modelCall.rawValue
         } else {
             cliSafetyStopValue = ""
         }
+        // A key of unreleased development builds, superseded by `cliRefreshSafetyStop`: removed, never read.
+        defaults.removeObject(forKey: Key.obsoleteCLIRefreshDisabledForSafety)
         if let path = saved[Key.customCLIPath] as? String, path.hasPrefix("/") {
             customCLIPathValue = path
         } else {
@@ -221,7 +220,7 @@ final class SettingsStore {
         static let customConfigDirectory = "customConfigDirectory"
         static let cliRefreshEnabled = "cliRefreshEnabled"
         static let cliRefreshSafetyStop = "cliRefreshSafetyStop"
-        static let legacyCLIRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
+        static let obsoleteCLIRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
         static let customCLIPath = "customCLIPath"
     }
 }
