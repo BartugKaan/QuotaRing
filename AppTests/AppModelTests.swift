@@ -330,6 +330,20 @@ final class ModelRig {
         #expect(!told.daily)
         #expect(rig.model.activity == [.today: more])
     }
+
+    @Test func theChosenActivityRangeSurvivesThePopoverClosing() throws {
+        let rig = try ModelRig()
+        defer { rig.sandbox.remove() }
+        #expect(rig.model.activityRange == .session)
+
+        rig.model.activityRange = .week
+        rig.model.popoverDidOpen()
+        rig.model.popoverDidClose()
+        rig.model.popoverDidOpen()
+        rig.model.popoverDidClose()
+
+        #expect(rig.model.activityRange == .week)
+    }
 }
 
 @MainActor

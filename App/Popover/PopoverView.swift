@@ -81,7 +81,7 @@ struct PopoverView: View {
                 WeeklySection(report: snapshot.report, now: now)
             }
             SectionDivider()
-            ActivitySection(activity: model.activity, daily: model.daily, now: now)
+            activitySection(now: now)
         } else {
             // A cache file that exists but cannot be read is the likely reason for having no data at all. Auto-refresh's
             // problems are listed here too, unless the section below is about auto-refresh and says it itself. Why it
@@ -107,9 +107,15 @@ struct PopoverView: View {
             // Local transcripts need no consent, so their activity can be shown even before any limit is known.
             if model.activity.values.contains(where: { $0.total.total > 0 }) {
                 SectionDivider()
-                ActivitySection(activity: model.activity, daily: model.daily, now: now)
+                activitySection(now: now)
             }
         }
+    }
+
+    private func activitySection(now: Date) -> some View {
+        ActivitySection(
+            activity: model.activity, daily: model.daily, now: now,
+            range: Binding(get: { model.activityRange }, set: { model.activityRange = $0 }))
     }
 
     private func footer(now: Date) -> some View {

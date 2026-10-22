@@ -35,6 +35,9 @@ final class AppModel {
     private(set) var activity: [ActivityRange: UsageBreakdown] = [:]
     /// Token totals for the last 7 local days, oldest first.
     private(set) var daily: [DailyTokens] = []
+    /// The range the popover's Activity section shows. Kept here because the popover's views are discarded when it
+    /// closes and made anew when it opens, and the choice should survive that.
+    var activityRange: ActivityRange = .session
     /// Whether the app runs on built-in fixture data (`--demo`): no Keychain, no network, no file access.
     private(set) var isDemo: Bool
     /// Whether the manual refresh cooldown (Live mode and auto-refresh only) is running.

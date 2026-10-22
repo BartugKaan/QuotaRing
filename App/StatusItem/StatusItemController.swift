@@ -60,9 +60,18 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
+        // No content yet: the SwiftUI hierarchy is made when the popover opens and dropped when it has closed (see
+        // `makePopoverContent()`).
+    }
+
+    /// The popover's content, made anew each time it opens. While it exists, SwiftUI keeps the whole view tree alive
+    /// and its `TimelineView` keeps refreshing it every 30 s, closed or not: after the first opening that cost 18 MiB
+    /// and about three times the idle CPU for as long as the app ran. Whatever must survive the next opening (the
+    /// Activity range) lives in ``AppModel``.
+    private func makePopoverContent() -> NSViewController {
         let hosting = NSHostingController(rootView: PopoverView(model: model))
         hosting.sizingOptions = .preferredContentSize
-        popover.contentViewController = hosting
+        return hosting
     }
 
     private func configureMenu() {
@@ -178,6 +187,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
             return
         }
         NSApp.activate()
+        popover.contentViewController = makePopoverContent()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
@@ -208,6 +218,11 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        // Drops the SwiftUI hierarchy and everything that keeps it running (see `makePopoverContent()`), unless the
+        // popover has been opened again already.
+        if !popover.isShown {
+            popover.contentViewController = nil
+        }
         model.popoverDidClose()
     }
 
