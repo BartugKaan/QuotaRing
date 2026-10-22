@@ -176,7 +176,9 @@ Settings at any time.
 Your consent is recorded the moment you click "Enable Live mode", in the first-run window or in Settings. In the
 first-run window, when you also left notifications on, only the first Keychain read is delayed, until the notification
 prompt has settled (at most 15 seconds), so macOS does not put two prompts on screen at once. The consent settings are
-read from QuotaRing's saved preferences only: command-line launch arguments cannot switch Live mode on.
+read from QuotaRing's saved preferences only: command-line launch arguments cannot switch Live mode on. The consent is
+saved with a version of what Live mode does: if a later QuotaRing changes the endpoint, the request or what it reads,
+Live mode stays off until you turn it on and agree again. Turning Live mode off clears the consent.
 
 When enabled:
 
@@ -208,7 +210,9 @@ The Claude desktop app never refreshes the cache that QuotaRing reads, but Claud
 Auto-refresh runs that command for you. It is **off until you allow it**: the first-run window offers it with a
 checkbox (pre-checked, recommended if you use the desktop app) that counts only when you press one of the window's two
 buttons; closing the window turns nothing on. Settings → Data asks for confirmation with a sheet
-that shows the exact command before it turns on. Turning it off takes effect at once.
+that shows the exact command before it turns on. Turning it off takes effect at once. As with Live mode, the consent is
+saved with a version of the command and its environment: if a later QuotaRing changes them, auto-refresh stays off
+until you agree again.
 
 What runs, exactly:
 
@@ -376,6 +380,13 @@ Running `claude` once renews the Keychain token, and Live mode picks up from the
 QuotaRing does not ask again until you press Refresh, turn Live mode off and on, or relaunch QuotaRing; until then it
 shows a message. Press Refresh in the popover, or switch Live mode off and on again in Settings, and it asks once
 more. Choose "Always Allow" to avoid repeated prompts.
+
+**How do I take back "Always Allow"?**
+"Always Allow" adds QuotaRing to the access list of Claude Code's Keychain item. Turning Live mode off in QuotaRing does
+not remove it, and any later QuotaRing signed by the same developer can then read the item without asking. To take it
+back, open Keychain Access, find the "Claude Code-credentials" item (with a custom config directory, the variant named
+after it) and open it. Under Access Control, select QuotaRing in the list, remove it with the minus button, and choose
+Save Changes. macOS asks again the next time Live mode reads the item.
 
 **I run Claude Code with `CLAUDE_CONFIG_DIR`. Does QuotaRing follow it?**
 Set the same folder in Settings → Data. Apps started from Finder or at login do not see the environment variables of

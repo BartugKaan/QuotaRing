@@ -16,6 +16,14 @@ import Foundation
 /// does **not** set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: verified on the owner's Mac, with it `/usage` answers
 /// from the stale cache without asking Anthropic, which defeats the purpose.
 public enum CLIRefreshCommand {
+    /// The version of what the user agrees to when turning on auto-refresh. The app records it with the consent, and a
+    /// consent recorded for another version does not count, so the user is asked again.
+    ///
+    /// Bump it whenever what auto-refresh runs changes in a way the user agreed to: the command (``arguments``, or the
+    /// arguments of the checks), the environment (``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``,
+    /// including ``standardPath`` and ``switchedOffFeatures``), which programs may be run, or the data it reads.
+    public static let consentVersion = 1
+
     /// The arguments, exactly. `-p "/usage"` runs the slash command in print mode; `--safe-mode` starts no plugins,
     /// hooks or MCP servers; `--no-session-persistence` saves no transcript; `--output-format json` prints one result
     /// object that ``CLIRefreshResult/parse(stdout:exitCode:)`` checks.

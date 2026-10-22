@@ -295,7 +295,9 @@ approximate in the UI.
   minute, because the reported value jitters by sub-seconds between fetches.
 - **`SettingsStore`** is UserDefaults-backed and holds non-sensitive values only. The consent settings (Live mode,
   auto-refresh, onboarding completed), the chosen `claude` path and the Claude config directory ignore command-line
-  launch arguments.
+  launch arguments. Each consent is saved with the version of its feature (`UsageAPI.consentVersion`,
+  `CLIRefreshCommand.consentVersion`) and counts only for that version, so a release that raises it asks again;
+  turning a feature off clears both.
 - **Demo mode** (`--demo`) swaps in fixture data and never touches the Keychain, the network or Claude files.
 
 ## Concurrency and logging
