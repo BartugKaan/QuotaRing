@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import QuotaRingCore
 import Testing
 
@@ -271,6 +272,63 @@ final class ModelRig {
 
         #expect(rig.model.snapshot == nil)
         #expect(rig.model.session(at: now) == nil)
+    }
+
+    // MARK: Activity
+
+    /// Set by an observation callback, which the compiler cannot tell runs on this thread.
+    private final class Flag: @unchecked Sendable {
+        var isSet = false
+    }
+
+    /// Whether reading `activity` and `daily`, the way the popover does, is told about a change made by `change`.
+    private func observers(areToldBy change: () -> Void, on model: AppModel) -> (activity: Bool, daily: Bool) {
+        let activityChanged = Flag()
+        let dailyChanged = Flag()
+        withObservationTracking {
+            _ = model.activity
+        } onChange: {
+            activityChanged.isSet = true
+        }
+        withObservationTracking {
+            _ = model.daily
+        } onChange: {
+            dailyChanged.isSet = true
+        }
+        change()
+        return (activityChanged.isSet, dailyChanged.isSet)
+    }
+
+    @Test func aScanThatFindsTheSameNumbersDoesNotRedrawTheActivity() throws {
+        let rig = try ModelRig()
+        defer { rig.sandbox.remove() }
+        let breakdown = UsageBreakdown(total: TokenCounts(input: 5), byModel: [], byProject: [])
+        let day = DailyTokens(day: now, tokens: TokenCounts(output: 3))
+        rig.model.handle(.activity([.today: breakdown], [day]))
+
+        let told = observers(
+            areToldBy: { rig.model.handle(.activity([.today: breakdown], [day])) }, on: rig.model)
+
+        #expect(!told.activity)
+        #expect(!told.daily)
+        #expect(rig.model.activity == [.today: breakdown])
+        #expect(rig.model.daily == [day])
+    }
+
+    @Test func aScanThatFindsOtherNumbersRedrawsOnlyWhatChanged() throws {
+        let rig = try ModelRig()
+        defer { rig.sandbox.remove() }
+        let breakdown = UsageBreakdown(total: TokenCounts(input: 5), byModel: [], byProject: [])
+        let more = UsageBreakdown(total: TokenCounts(input: 6), byModel: [], byProject: [])
+        let day = DailyTokens(day: now, tokens: TokenCounts(output: 3))
+        rig.model.handle(.activity([.today: breakdown], [day]))
+
+        let told = observers(
+            areToldBy: { rig.model.handle(.activity([.today: more], [day])) }, on: rig.model)
+
+        #expect(told.activity)
+        #expect(!told.daily)
+        #expect(rig.model.activity == [.today: more])
     }
 }
 

@@ -161,8 +161,14 @@ final class AppModel {
         case .coolingDown(let coolingDown):
             isCoolingDown = coolingDown
         case .activity(let newActivity, let newDaily):
-            activity = newActivity
-            daily = newDaily
+            // The scan repeats every minute while the popover is open and mostly finds the same numbers. Assigning them
+            // again would still redraw the popover (an observed property notifies on every assignment).
+            if activity != newActivity {
+                activity = newActivity
+            }
+            if daily != newDaily {
+                daily = newDaily
+            }
         case .cacheProblem(let problem):
             cacheProblem = problem
         case .cliStatus(let status):
