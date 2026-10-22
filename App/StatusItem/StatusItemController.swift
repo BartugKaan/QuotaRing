@@ -19,6 +19,8 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private var openSettingsAction: OpenSettingsAction?
     /// `systemUptime` when the popover last started closing.
     private var popoverCloseStartedAt: TimeInterval?
+    /// What the button shows, so that `render()` touches it only for what changed.
+    private var buttonState = StatusButtonState()
 
     init(model: AppModel) {
         self.model = model
@@ -123,21 +125,31 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
     }
 
+    /// Brings the button up to date with the model, touching only what changed (see ``StatusButtonState``).
     private func render() {
         guard let button = statusItem.button else { return }
         let presentation = StatusPresentation(model: model, now: Date())
-        button.image = RingImageRenderer.image(fraction: presentation.fraction, style: presentation.style)
-        if let text = presentation.text, presentation.isTextDimmed {
-            // Old numbers must not look as current as fresh ones.
-            let font = button.font ?? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            button.attributedTitle = NSAttributedString(
-                string: text, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
-        } else {
-            button.title = presentation.text ?? ""
+
+        let changes = buttonState.update(to: presentation)
+        if changes.contains(.image) {
+            button.image = RingImageRenderer.image(fraction: presentation.fraction, style: presentation.style)
         }
-        button.imagePosition = presentation.text == nil ? .imageOnly : .imageLeading
-        button.setAccessibilityLabel(presentation.accessibilityLabel)
-        button.toolTip = presentation.accessibilityLabel
+        if changes.contains(.title) {
+            if let text = presentation.text, presentation.isTextDimmed {
+                // Old numbers must not look as current as fresh ones.
+                let font =
+                    button.font ?? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+                button.attributedTitle = NSAttributedString(
+                    string: text, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+            } else {
+                button.title = presentation.text ?? ""
+            }
+            button.imagePosition = presentation.text == nil ? .imageOnly : .imageLeading
+        }
+        if changes.contains(.accessibility) {
+            button.setAccessibilityLabel(presentation.accessibilityLabel)
+            button.toolTip = presentation.accessibilityLabel
+        }
     }
 
     // MARK: - Clicks
@@ -237,6 +249,14 @@ struct StatusPresentation {
     /// Whether `text` is drawn in the secondary label color (the data is out of date).
     var isTextDimmed = false
     var accessibilityLabel: String
+
+    init(fraction: Double?, style: RingStyle, text: String?, isTextDimmed: Bool = false, accessibilityLabel: String) {
+        self.fraction = fraction
+        self.style = style
+        self.text = text
+        self.isTextDimmed = isTextDimmed
+        self.accessibilityLabel = accessibilityLabel
+    }
 
     @MainActor
     init(model: AppModel, now: Date) {
