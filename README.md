@@ -73,18 +73,25 @@ Optional, recommended if you want to be sure what you run. Each release publishe
 ```sh
 VERSION=0.1.0   # the version you downloaded
 
-# Compare the file with the published checksums (use .zip instead of .dmg for the zip)
-grep "QuotaRing-$VERSION\.dmg\$" SHA256SUMS | shasum -a 256 -c
+# Compare the files you downloaded with the published checksums (files you did not download are skipped)
+shasum -a 256 -c --ignore-missing SHA256SUMS
 
-# Verify GitHub's build provenance attestation (needs the GitHub CLI)
-gh attestation verify "QuotaRing-$VERSION.dmg" --repo BartugKaan/QuotaRing
+# Verify GitHub's build provenance attestation (needs the GitHub CLI); use .zip instead of .dmg for the zip
+gh attestation verify "QuotaRing-$VERSION.dmg" --repo BartugKaan/QuotaRing \
+  --signer-workflow BartugKaan/QuotaRing/.github/workflows/release.yml
 
 # Check the installed app's signature and notarization
 codesign --verify --deep --strict --verbose=2 /Applications/QuotaRing.app
 spctl --assess --type execute --verbose=2 /Applications/QuotaRing.app
+
+# Show who signed it: note the TeamIdentifier line
+codesign -dv --verbose=2 /Applications/QuotaRing.app 2>&1 | grep TeamIdentifier
 ```
 
-The attestation ties the file to the exact commit and workflow run in this repository that built it.
+The attestation ties the file to the exact commit in this repository and to its release workflow
+(`--signer-workflow`), not just to any workflow in the repository. `spctl` accepts any notarized Developer ID app, so a
+copy re-signed by someone else would pass it too. The `TeamIdentifier` tells them apart: it must be the same for every
+QuotaRing release, so note it the first time and compare it on every update.
 
 ### Build from source
 

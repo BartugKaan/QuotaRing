@@ -243,9 +243,13 @@ jobs:
             echo "Signed with a Developer ID Application certificate, notarized by Apple and stapled."
             echo
             echo '```sh'
-            echo 'shasum -a 256 -c SHA256SUMS'
-            printf 'gh attestation verify QuotaRing-%s.dmg --repo %s\n' "$VERSION" "$GITHUB_REPOSITORY"
+            echo 'shasum -a 256 -c --ignore-missing SHA256SUMS'
+            printf 'gh attestation verify QuotaRing-%s.dmg --repo %s \\\n  --signer-workflow %s/.github/workflows/release.yml\n' \
+              "$VERSION" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY"
+            echo 'codesign -dv --verbose=2 /Applications/QuotaRing.app 2>&1 | grep TeamIdentifier'
             echo '```'
+            echo
+            echo 'The TeamIdentifier must be the same for every QuotaRing release. The README explains each check under "Verify your download".'
           } > "$notes"
 
           gh release create "$TAG" \

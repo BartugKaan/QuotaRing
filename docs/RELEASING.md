@@ -200,12 +200,24 @@ cannot start a signed release by itself.
 Download the three files from the draft and, in that folder, run:
 
 ```sh
-shasum -a 256 -c SHA256SUMS
-gh attestation verify QuotaRing-0.1.0.dmg --repo BartugKaan/QuotaRing
-gh attestation verify QuotaRing-0.1.0.zip --repo BartugKaan/QuotaRing
+shasum -a 256 -c --ignore-missing SHA256SUMS
+gh attestation verify QuotaRing-0.1.0.dmg --repo BartugKaan/QuotaRing \
+  --signer-workflow BartugKaan/QuotaRing/.github/workflows/release.yml
+gh attestation verify QuotaRing-0.1.0.zip --repo BartugKaan/QuotaRing \
+  --signer-workflow BartugKaan/QuotaRing/.github/workflows/release.yml
 xcrun stapler validate QuotaRing-0.1.0.dmg
 spctl --assess --type open --context context:primary-signature -v QuotaRing-0.1.0.dmg
 ```
+
+After installing the app from the DMG, check who signed it:
+
+```sh
+codesign -dv --verbose=2 /Applications/QuotaRing.app 2>&1 | grep TeamIdentifier
+```
+
+The `TeamIdentifier` must be your team, and the same on every release; the README
+asks users to compare it between releases, because `spctl` alone accepts any
+notarized Developer ID.
 
 Then do the real-world test on a Mac that has never seen the app, or at least
 with a freshly downloaded copy (so it carries the quarantine flag): open the DMG,
