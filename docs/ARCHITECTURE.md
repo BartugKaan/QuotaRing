@@ -279,15 +279,22 @@ does not ask again until the user presses Refresh, turns Live mode off and on, o
 
 `TranscriptScanner` is an actor that scans `projects/**/*.jsonl` incrementally:
 
-- Lists the tree once per scan (`opendir`/`readdir`, one `fstatat` with `AT_SYMLINK_NOFOLLOW` per `.jsonl`;
-  subdirectories are opened relative to their parent with `O_NOFOLLOW`; links are never followed) and opens a file
+- Lists the tree once per scan (`readdir`, one `fstatat` with `AT_SYMLINK_NOFOLLOW` per `.jsonl`) and opens a file
   only when needed: a file whose device, inode, size and modification time are what the last pass left is not opened
   at all, so a rescan of an unchanged tree opens nothing.
+- Never follows a link below the projects directory, also not one that appears after the listing. The projects
+  directory itself may be a link: it is resolved and opened once per scan, and that descriptor is the anchor of
+  everything else. Subdirectories are opened with `openat` relative to their parent's descriptor, and each file is
+  opened later by walking its path from the anchor one component at a time, with `openat` and `O_NOFOLLOW` at every
+  step (never by a full path, which would let a directory swapped for a link after the listing be followed). Entries
+  that are links, pipes, sockets or devices are not listed, and a component that has become a link fails to open and
+  is skipped. Hard links are ordinary files and are read.
 - Never opens a file last modified before `now − 8 days` and forgets its state: a log is append-only, so none of its
   lines can be newer than its modification time. Most of a long history is skipped this way.
 - Keeps `(device, inode, size, mtime, byteOffset)` per file and parses only appended bytes; a shrunken, replaced or
   restored file (smaller size, other inode, older modification time) is re-read from the start.
-- Opens files with `O_NOFOLLOW` and reads their identity with `fstat` on the open descriptor; only regular files.
+- Reads a file's identity with `fstat` on the open descriptor, so it describes the bytes that are read; only regular
+  files are read.
 - Reads in 1 MiB chunks, each inside an `autoreleasepool`, so memory follows the chunk size, not the bytes read.
 - Ignores an incomplete trailing line until it is completed. Skips lines over 10 MB.
 - Stops at the next directory, file or chunk when its task is cancelled (the popover closing), keeps what it read, and

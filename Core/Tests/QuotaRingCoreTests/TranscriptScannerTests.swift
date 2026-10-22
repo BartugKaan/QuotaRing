@@ -54,6 +54,30 @@ private final class ScratchDirectory {
     }
 }
 
+/// Stands in for `Task.isCancelled` and never cancels, but does something at an exact point of the scan: the
+/// `atCheck`-th question runs `action`, from inside the scan, and is answered with `false`. That is how a test changes
+/// the file system after the scan has listed it and before it opens the files.
+private final class DoAtCheck: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private let atCheck: Int
+    private let action: @Sendable () -> Void
+
+    init(atCheck: Int, action: @escaping @Sendable () -> Void) {
+        self.atCheck = atCheck
+        self.action = action
+    }
+
+    func check() -> Bool {
+        lock.lock()
+        count += 1
+        let isTheOne = count == atCheck
+        lock.unlock()
+        if isTheOne { action() }
+        return false
+    }
+}
+
 /// Stands in for `Task.isCancelled`: answers `false` for the first `allowedChecks` questions and `true` after that, so
 /// that a test can cancel a scan at an exact point. The scan asks once per directory it lists, once per file and
 /// once before every chunk it reads.
@@ -606,6 +630,36 @@ private let scanNow = Date(timeIntervalSince1970: 1_792_584_000)
         try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
 
         #expect(await scanner.scan(now: scanNow).isEmpty)
+    }
+
+    @Test(arguments: ["-p", "-p/s", "-p/s/a.jsonl"])
+    func somethingSwappedForALinkAfterTheListingIsNotFollowed(swapped: String) async throws {
+        let outside = try ScratchDirectory()
+        defer { outside.remove() }
+        // Whichever folder is swapped, the path the scan opens leads to a transcript outside the projects folder.
+        try outside.write("a.jsonl", lines: [assistantLine(id: "msg_01TESTOUTSIDE4")])
+        try outside.write("s/a.jsonl", lines: [assistantLine(id: "msg_01TESTOUTSIDE5")])
+        try scratch.write("-p/s/a.jsonl", lines: [assistantLine(id: "msg_01TESTINSIDE04")])
+        let target = scratch.file(swapped)
+        let destination = swapped.hasSuffix(".jsonl") ? outside.file("a.jsonl") : outside.url
+        // The checks: three folders (the projects folder, "-p" and "s"), then one before the file, which comes after
+        // the listing is complete and before anything is opened.
+        let swap = DoAtCheck(atCheck: 4) {
+            try? FileManager.default.removeItem(at: target)
+            try? FileManager.default.createSymbolicLink(at: target, withDestinationURL: destination)
+        }
+        let scanner = TranscriptScanner(
+            projectsDirectory: scratch.url, maxLineBytes: 10_485_760, readChunkSize: 1 << 20,
+            isCancelled: { swap.check() })
+
+        let entries = await scanner.scan(now: scanNow)
+
+        // Opened relative to the folders it was listed in, with no link followed on the way, the file is unreachable.
+        #expect(entries.isEmpty)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+        #expect(
+            (try? FileManager.default.destinationOfSymbolicLink(atPath: target.path)) != nil,
+            "the swap did not happen")
     }
 
     @Test func theConfiguredDirectoryItselfMayBeASymlink() async throws {

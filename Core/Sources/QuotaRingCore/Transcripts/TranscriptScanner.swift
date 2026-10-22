@@ -90,21 +90,22 @@ public actor TranscriptScanner {
         guard let listing = Self.listTranscripts(under: projectsDirectory, isCancelled: isCancelled) else {
             return mergedEntries ?? mergeFiles(inOrder: files.keys.sorted())
         }
+        defer { listing.close() }
 
-        let present = Set(listing.map(\.path))
+        let present = Set(listing.files.map(\.path))
         for path in Array(files.keys) where !present.contains(path) {
             files[path] = nil
             mergedEntries = nil
         }
-        for file in listing {
-            guard !isCancelled(), refresh(file, cutoff: cutoff) else { break }
+        for file in listing.files {
+            guard !isCancelled(), refresh(file, below: listing.root, cutoff: cutoff) else { break }
         }
         dropEntries(before: cutoff)
 
         // Also after a cancellation: this is the merge of what `files` holds, and whatever a later scan reads changes
         // that and clears it.
         if let mergedEntries { return mergedEntries }
-        let merged = mergeFiles(inOrder: listing.map(\.path))
+        let merged = mergeFiles(inOrder: listing.files.map(\.path))
         mergedEntries = merged
         return merged
     }
@@ -167,12 +168,27 @@ public actor TranscriptScanner {
 
     /// A transcript found by the directory walk.
     private struct ListedFile {
+        /// The absolute path: the key of the file's state. Files are not opened by it (see ``relativePath``).
         var path: String
+        /// The path below the projects directory, such as `-Users-me-project/session.jsonl`.
+        var relativePath: String
         var identity: FileIdentity
     }
 
+    /// What the directory walk found, and the open projects directory the files are reached from.
+    private struct Listing {
+        var files: [ListedFile]
+        /// A descriptor of the projects directory, or -1 when it could not be opened. Files are opened relative to it,
+        /// one component at a time without following links.
+        var root: Int32
+
+        func close() {
+            if root >= 0 { Darwin.close(root) }
+        }
+    }
+
     /// Brings one listed file up to date. Returns `false` when it stopped early because the scan was cancelled.
-    private func refresh(_ file: ListedFile, cutoff: Date) -> Bool {
+    private func refresh(_ file: ListedFile, below root: Int32, cutoff: Date) -> Bool {
         // A log is append-only, so none of its lines is newer than its modification time: a file untouched since
         // before the cutoff holds nothing that is still wanted, and is not even opened.
         if file.identity.modificationDate < cutoff {
@@ -184,7 +200,7 @@ public actor TranscriptScanner {
             return true
         }
 
-        guard let (handle, identity) = Self.openRegularFile(atPath: file.path) else { return true }
+        guard let (handle, identity) = Self.openRegularFile(file.relativePath, below: root) else { return true }
         defer { try? handle.close() }
         filesOpenedByLastScan += 1
 
@@ -273,22 +289,34 @@ public actor TranscriptScanner {
 
     /// All `*.jsonl` regular files below `directory` with what `fstatat` says about each, sorted by path, or `nil` when
     /// `isCancelled` stopped the walk. Symbolic links are skipped, both to files and to directories; only `directory`
-    /// itself may be a link.
+    /// itself may be a link. The caller closes the listing.
     ///
-    /// One pass: every directory is read once and every transcript statted once, without Foundation objects. A
-    /// subdirectory is opened relative to its parent's descriptor with `O_NOFOLLOW`, so a directory that was swapped
-    /// for a link after it was read is not followed either.
-    private static func listTranscripts(under directory: URL, isCancelled: () -> Bool) -> [ListedFile]? {
+    /// One pass: every directory is read once and every transcript statted once, without Foundation objects. This is
+    /// the only place a link is followed: `directory` is resolved and opened once, and that descriptor is the anchor
+    /// of everything else. Each subdirectory is opened relative to its parent's descriptor with `O_NOFOLLOW`, and so is
+    /// each file later (see ``openRegularFile(_:below:)``), so nothing below the anchor is reached through a link, also
+    /// when a directory or file is swapped for one after it was listed.
+    private static func listTranscripts(under directory: URL, isCancelled: () -> Bool) -> Listing? {
         let root = directory.resolvingSymlinksInPath().path
         let descriptor = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        guard descriptor >= 0 else { return [] }
+        guard descriptor >= 0 else { return Listing(files: [], root: -1) }
+        // The walk closes the descriptor it is given; the scan keeps another one for opening the files.
+        let anchor = fcntl(descriptor, F_DUPFD_CLOEXEC, 0)
+        guard anchor >= 0 else {
+            close(descriptor)
+            return Listing(files: [], root: -1)
+        }
 
         var found: [ListedFile] = []
-        guard collect(from: descriptor, path: root, depth: 0, into: &found, isCancelled: isCancelled) else {
+        guard
+            collect(
+                from: descriptor, path: root, relativePath: "", depth: 0, into: &found, isCancelled: isCancelled)
+        else {
+            close(anchor)
             return nil
         }
         found.sort { $0.path < $1.path }
-        return found
+        return Listing(files: found, root: anchor)
     }
 
     /// Adds the transcripts of one directory, then those of its subdirectories, to `found`. Takes over `descriptor`,
@@ -296,6 +324,7 @@ public actor TranscriptScanner {
     private static func collect(
         from descriptor: Int32,
         path: String,
+        relativePath: String,
         depth: Int,
         into found: inout [ListedFile],
         isCancelled: () -> Bool
@@ -340,7 +369,10 @@ public actor TranscriptScanner {
                     guard fstatat(directoryDescriptor, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { continue }
                 }
                 guard (info.st_mode & S_IFMT) == S_IFREG else { continue }
-                found.append(ListedFile(path: join(path, name), identity: FileIdentity(info)))
+                found.append(
+                    ListedFile(
+                        path: join(path, name), relativePath: join(relative: relativePath, name),
+                        identity: FileIdentity(info)))
             default:
                 // Links (also to files and directories), pipes, sockets and devices are never followed or opened.
                 continue
@@ -351,7 +383,8 @@ public actor TranscriptScanner {
             let child = openat(directoryDescriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard child >= 0 else { continue }
             let completed = collect(
-                from: child, path: join(path, name), depth: depth + 1, into: &found, isCancelled: isCancelled)
+                from: child, path: join(path, name), relativePath: join(relative: relativePath, name),
+                depth: depth + 1, into: &found, isCancelled: isCancelled)
             if !completed { return false }
         }
         return true
@@ -365,10 +398,34 @@ public actor TranscriptScanner {
         directory.hasSuffix("/") ? directory + name : directory + "/" + name
     }
 
-    /// Opens `path` read-only without following a symbolic link in its last component, and only if it is a regular
-    /// file. The identity is taken from the open descriptor so that it describes the bytes that will be read.
-    private static func openRegularFile(atPath path: String) -> (FileHandle, FileIdentity)? {
-        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+    private static func join(relative directory: String, _ name: String) -> String {
+        directory.isEmpty ? name : directory + "/" + name
+    }
+
+    /// Opens the file at `relativePath` below the directory `root` read-only, and only if it is a regular file. Every
+    /// component is opened relative to the descriptor of the one before it with `O_NOFOLLOW`, so a directory, or the
+    /// file itself, that has been replaced by a symbolic link since it was listed makes the open fail instead of
+    /// leading somewhere else. The identity is taken from the open descriptor so that it describes the bytes that will
+    /// be read.
+    private static func openRegularFile(_ relativePath: String, below root: Int32) -> (FileHandle, FileIdentity)? {
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let name = components.last else { return nil }
+
+        var directory = root
+        var ownsDirectory = false
+        defer { if ownsDirectory { close(directory) } }
+        for component in components.dropLast() {
+            let next = openat(directory, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            if ownsDirectory { close(directory) }
+            guard next >= 0 else {
+                ownsDirectory = false
+                return nil
+            }
+            directory = next
+            ownsDirectory = true
+        }
+
+        let descriptor = openat(directory, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard descriptor >= 0 else { return nil }
         var info = stat()
         guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
