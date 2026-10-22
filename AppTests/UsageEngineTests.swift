@@ -597,6 +597,8 @@ private final class EngineRig {
         let rig = try EngineRig(live: true)
         rig.credentials.answer(with: .failure(.keychain(errSecUserCanceled)))
         rig.credentials.holdNextRead()
+        // A failing check must not leave the shared credential queue blocked for the tests after this one.
+        defer { rig.credentials.releaseHeldRead() }
         rig.engine.start(observingSystem: false)
         // The loop asks for the credential and the Keychain prompt stays open.
         try #require(await eventually { rig.credentials.reads == 1 })
@@ -622,6 +624,8 @@ private final class EngineRig {
         let rig = try EngineRig(live: true)
         rig.credentials.answer(with: .failure(.keychain(errSecUserCanceled)))
         rig.credentials.holdNextRead()
+        // A failing check must not leave the shared credential queue blocked for the tests after this one.
+        defer { rig.credentials.releaseHeldRead() }
         rig.engine.start(observingSystem: false)
         try #require(await eventually { rig.credentials.reads == 1 })
 
@@ -641,6 +645,8 @@ private final class EngineRig {
         rig.credentials.answer(
             with: .success(OAuthCredential(accessToken: Secret("not-a-real-token"), expiresAt: nil)))
         rig.credentials.holdNextRead()
+        // A failing check must not leave the shared credential queue blocked for the tests after this one.
+        defer { rig.credentials.releaseHeldRead() }
         rig.engine.start(observingSystem: false)
         try #require(await eventually { rig.credentials.reads == 1 })
 
