@@ -424,6 +424,10 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
 - Opt-in "Refresh with Claude Code" (Settings → Data; offered in onboarding as
   recommended for Claude desktop app users). QuotaRing never reads credentials
   for this: Claude Code uses and renews its own login.
+- Onboarding checkbox (owner decision, 2026-10-22): pre-checked, with its plain
+  explanation on the same screen. Only a press of one of the two buttons
+  records it; closing the window with its close button records auto-refresh
+  (and Live mode) off. In Settings, turning it on goes through the consent sheet.
 - Runs only when the cached snapshot is older than the refresh interval, never
   more often than every 120 s, paused while asleep or offline, with the same
   back-off as Live mode on failures; the Refresh button also triggers it
