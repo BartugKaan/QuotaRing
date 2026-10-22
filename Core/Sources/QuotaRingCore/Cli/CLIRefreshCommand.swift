@@ -10,9 +10,9 @@ import Foundation
 ///
 /// Everything is fixed: the arguments are a constant array passed without a shell, and the environment is built from
 /// scratch instead of inheriting QuotaRing's. It turns off Claude Code's auto-updater (`DISABLE_AUTOUPDATER=1`): a
-/// background run must never update Claude Code, which once left an npm install broken mid-update. It also turns off
-/// Claude Code's telemetry and error reporting (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`; verified with
-/// 2.1.308: the cache still refreshes, with no turns and no cost). It deliberately
+/// background run must never update Claude Code, which once left an npm install broken mid-update. It also asks Claude
+/// Code not to send telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`; whether it does is
+/// up to Claude Code. Verified with 2.1.308: the cache still refreshes, with no turns and no cost). It deliberately
 /// does **not** set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: verified on the owner's Mac, with it `/usage` answers
 /// from the stale cache without asking Anthropic, which defeats the purpose.
 public enum CLIRefreshCommand {
@@ -38,8 +38,8 @@ public enum CLIRefreshCommand {
     /// for Claude Code to find system tools such as `security`.
     public static let standardPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
 
-    /// The variables that switch off Claude Code's auto-updater, telemetry and error reporting, in the order shown to
-    /// the user. Part of every ``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``.
+    /// The variables that turn Claude Code's auto-updater off and ask it not to send telemetry or error reports, in the
+    /// order shown to the user. Part of every ``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``.
     public static let switchedOffFeatures: [(name: String, value: String)] = [
         ("DISABLE_AUTOUPDATER", "1"), ("DISABLE_TELEMETRY", "1"), ("DISABLE_ERROR_REPORTING", "1"),
     ]

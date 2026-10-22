@@ -421,13 +421,13 @@
         }
       }
     },
-    "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater, telemetry and error reporting: `%@`." : {
+    "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `%@`." : {
       "comment" : "Auto-refresh consent sheet; the argument is the environment variables set, such as DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bundan önce, Claude Code olduğundan ve bu seçenekleri bildiğinden emin olmak için bulunan her `claude` programına `--version` ve `--help` sorulabilir (yani birden fazlası bir kez çalışabilir). Her çalıştırma ve kontrolde Claude Code’un otomatik güncelleyicisi, telemetrisi ve hata raporlaması kapatılır: `%@`."
+            "value" : "Bundan önce, Claude Code olduğundan ve bu seçenekleri bildiğinden emin olmak için bulunan her `claude` programına `--version` ve `--help` sorulabilir (yani birden fazlası bir kez çalışabilir). Her çalıştırma ve kontrolde Claude Code’un otomatik güncelleyicisi kapatılır ve telemetri ya da hata raporu göndermemesi istenir: `%@`."
           }
         }
       }

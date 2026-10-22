@@ -31,7 +31,7 @@ struct CLIRefreshDisclosure: View {
             CLICommandLine(toolPath: toolPath)
                 .padding(.leading, 32)
             Text(
-                "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater, telemetry and error reporting: `\(CLICommandLine.switchedOffFeatures)`."
+                "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `\(CLICommandLine.switchedOffFeatures)`."
             )
             .font(.callout)
             .foregroundStyle(.secondary)

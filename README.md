@@ -217,8 +217,8 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
 
 Before the first run, each `claude` QuotaRing tries is also asked `claude --version` and `claude --help` once (so with
 several candidates, more than one program may run once), to make sure it is Claude Code and knows these options. Every
-run and check has Claude Code's auto-updater, telemetry and error reporting turned off (`DISABLE_AUTOUPDATER=1`,
-`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
+run and check turns Claude Code's auto-updater off (`DISABLE_AUTOUPDATER=1`) and asks Claude Code not to send
+telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
 
 - `-p "/usage"` runs the `/usage` slash command without a terminal. Verified with Claude Code 2.1.287: it makes **no
   model request** (`num_turns: 0`, `total_cost_usd: 0`, zero tokens), so it spends none of your usage, and it rewrites
@@ -233,8 +233,9 @@ run and check has Claude Code's auto-updater, telemetry and error reporting turn
   scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then
   `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
   `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. So a background run
-  **never updates Claude Code** (an update started by Claude Code itself once left an npm install broken) and sends no
-  telemetry or error reports. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is
+  **never updates Claude Code** (an update started by Claude Code itself once left an npm install broken), and Claude
+  Code is asked not to send telemetry or error reports (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); whether it
+  honors that is up to Claude Code. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is
   deliberately not set: with it, `/usage` answers from the old cached numbers without asking Anthropic. It
   runs in an empty folder of QuotaRing's own, `~/Library/Application Support/QuotaRing/cli` (mode 700), so no project's
   settings apply. A run that takes longer than 30 seconds or prints more than 256 KB is stopped (`SIGTERM`, then
@@ -267,8 +268,8 @@ sends nothing.
 
 - Write, modify or delete anything in `~/.claude.json`, `~/.claude/` or the Keychain. (With auto-refresh on, Claude
   Code itself rewrites its cache, as it does whenever it runs `/usage`.)
-- Launch the `claude` command-line tool, except the one fixed auto-refresh command above, and only after you allowed it.
-  It never starts an interactive session and never sends a prompt.
+- Launch the `claude` command-line tool, except the one fixed auto-refresh command above and its `--version` and
+  `--help` checks, and only after you allowed it. It never starts an interactive session and never sends a prompt.
 - Contact any host other than `api.anthropic.com`.
 - Include telemetry, analytics, crash reporting or update checks. Check the Releases page for new versions yourself.
 - Use third-party libraries at runtime. The only dependencies are Apple's SDKs.
