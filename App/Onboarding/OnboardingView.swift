@@ -14,6 +14,9 @@ import SwiftUI
 final class OnboardingModel {
     /// The "Notify me when I'm close to my limit" checkbox.
     var notifyNearLimit = true
+    /// The "Keep numbers fresh with Claude Code" checkbox: on by default, as recommended for the Claude desktop app,
+    /// whose usage Claude Code's cache otherwise never sees refreshed.
+    var refreshWithClaudeCode = true
     private(set) var isFinished = false
 
     @ObservationIgnored private let settings: SettingsStore
@@ -38,8 +41,8 @@ final class OnboardingModel {
     /// Records the user's choices and completes onboarding, at once. Does nothing after the first call.
     ///
     /// Live mode turns on only here, through the explicit "Enable Live mode" button; every other way of leaving the
-    /// window (the default button, Return, closing the window) leaves it off. What is recorded is decided by
-    /// ``OnboardingPlan``.
+    /// window (the default button, Return, closing the window) leaves it off. The two checkboxes are recorded as they
+    /// are, whichever way the window is left. What is recorded is decided by ``OnboardingPlan``.
     ///
     /// Two system prompts must not appear at once. When the user wants both Live mode and notifications, the
     /// notification prompt comes first and Live mode's first Keychain read (which can raise macOS's Keychain prompt)
@@ -52,6 +55,7 @@ final class OnboardingModel {
         let plan = OnboardingPlan(
             enableLiveMode: enableLiveMode,
             notifyNearLimit: notifyNearLimit,
+            refreshWithClaudeCode: refreshWithClaudeCode,
             currentThresholds: settings.notificationThresholds,
             defaultThresholds: SettingsStore.defaultNotificationThresholds)
 
@@ -61,7 +65,8 @@ final class OnboardingModel {
 
         settings.notificationThresholds = plan.notificationThresholds
         settings.liveModeEnabled = plan.liveModeEnabled
-        // Last, so Live mode (which needs both) never sees a half-finished state.
+        settings.cliRefreshEnabled = plan.cliRefreshEnabled
+        // Last, so Live mode and auto-refresh (which need both) never see a half-finished state.
         settings.hasCompletedOnboarding = true
 
         guard plan.requestsNotificationPermission else { return }
@@ -89,9 +94,23 @@ struct OnboardingView: View {
                 defaultModeCard
                 liveModeCard
             }
-            .scrollsBeyond(VisibleScreen.contentHeight(reserving: 260))
+            .scrollsBeyond(VisibleScreen.contentHeight(reserving: 330))
 
-            Toggle("Notify me when I'm close to my limit", isOn: $model.notifyNearLimit)
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(
+                        "Keep numbers fresh with Claude Code (recommended if you use the Claude desktop app)",
+                        isOn: $model.refreshWithClaudeCode)
+                    Text(
+                        "Runs Claude Code's own `/usage` in the background now and then: no AI request, no usage spent, and QuotaRing never sees your login."
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 20)
+                }
+                Toggle("Notify me when I'm close to my limit", isOn: $model.notifyNearLimit)
+            }
 
             HStack {
                 Spacer()
@@ -138,7 +157,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             LiveModeDisclosure(compact: true)
-            Text("You can turn Live mode on or off at any time in Settings → Data.")
+            Text("You can turn Live mode and auto-refresh on or off at any time in Settings → Data.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

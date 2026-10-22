@@ -12,8 +12,12 @@ import os
 /// - **Live loop** (only with consent and completed onboarding): asks the endpoint when the freshest snapshot is older
 ///   than the refresh interval, with jitter and back-off from ``RefreshPlanner``. After the user refused Keychain
 ///   access it asks nothing until the user presses Refresh or turns Live mode off and on.
+/// - **Auto-refresh loop** (only with consent and completed onboarding): runs Claude Code's own `/usage` through
+///   ``CLIRefresher`` when the freshest snapshot is older than the refresh interval, at most every 120 s, with the
+///   same back-off as Live mode, then re-reads the cache at once. If Claude Code ever answers with a model request, it
+///   turns the feature off.
 /// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open.
-/// - Pauses on system sleep (and Live while offline), resumes on wake and reconnect.
+/// - Pauses on system sleep (and Live and auto-refresh while offline), resumes on wake and reconnect.
 /// - Persists the last good snapshot (no secrets), bound to the config directory it came from, and loads it at launch.
 ///
 /// All state lives on the main actor; file, Keychain and network work runs in detached tasks or on dedicated queues.
@@ -28,6 +32,9 @@ final class UsageEngine {
         case activity([ActivityRange: UsageBreakdown], [DailyTokens])
         /// Claude Code's cache file exists but cannot be used (see ``CacheReadHealth``); `nil` once it can again.
         case cacheProblem(CacheReadError?)
+        case cliStatus(CLIRefreshStatus)
+        /// Where Claude Code's command-line tool is and what it is, for Settings.
+        case cliBinary(CLIBinaryState)
     }
 
     var onEvent: (Event) -> Void = { _ in }
@@ -72,6 +79,17 @@ final class UsageEngine {
     /// read may belong to the previous account, so the request is not sent or its result is dropped.
     private var accountGeneration = 0
 
+    // Auto-refresh state.
+    private let cliRefresher = CLIRefresher()
+    private var cliStatus: CLIRefreshStatus = .off
+    private var cliConsecutiveFailures = 0
+    private var cliNextAllowedAt: Date?
+    /// When the last run started, successful or not: runs are spaced by this.
+    private var lastCLIRunAt: Date?
+    private var lastCLISuccessAt: Date?
+    private var cliCycleInterval: TimeInterval
+    private var isCLIRunInFlight = false
+
     // System state.
     private var isStarted = false
     private var isAsleep = false
@@ -81,6 +99,8 @@ final class UsageEngine {
 
     // Settings as last applied, to tell which change happened.
     private var appliedLiveActive: Bool
+    private var appliedCLIActive: Bool
+    private var appliedCLIPath: URL?
     private var appliedRefreshInterval: TimeInterval
     private var appliedConfigDirectory: URL?
 
@@ -91,6 +111,9 @@ final class UsageEngine {
     private var cooldownTask: Task<Void, Never>?
     /// The Live request of a manual refresh, so it can be cancelled like the loop's.
     private var manualLiveTask: Task<Void, Never>?
+    private var cliTask: Task<Void, Never>?
+    /// The auto-refresh run of a manual refresh, so it can be cancelled like the loop's.
+    private var manualCLITask: Task<CLIRefreshOutcome?, Never>?
     private var pathMonitor: NWPathMonitor?
     private var workspaceObservers: [any NSObjectProtocol] = []
 
@@ -104,8 +127,11 @@ final class UsageEngine {
         cacheReader = ClaudeCodeCacheReader(fileURL: paths.globalConfigFile)
         scanner = TranscriptScanner(projectsDirectory: paths.projectsDirectory)
         cycleInterval = settings.refreshInterval
+        cliCycleInterval = settings.refreshInterval
 
         appliedLiveActive = settings.isLiveModeActive
+        appliedCLIActive = settings.isCLIRefreshActive
+        appliedCLIPath = settings.customCLIPath
         appliedRefreshInterval = settings.refreshInterval
         appliedConfigDirectory = settings.customConfigDirectory
     }
@@ -123,7 +149,10 @@ final class UsageEngine {
             engineLog.info("Loaded the last snapshot from disk")
         }
         cycleInterval = jitteredInterval()
+        cliCycleInterval = jitteredInterval()
         setLiveStatus(settings.isLiveModeActive ? .ok : .off)
+        setCLIStatus(idleCLIStatus)
+        inspectCLI()
 
         observeSettings()
         observeWorkspace()
@@ -137,15 +166,38 @@ final class UsageEngine {
 
         await checkCache(force: true)
 
+        if userInitiated, settings.isLiveModeActive || settings.isCLIRefreshActive {
+            startCooldown()
+        }
+
+        // Auto-refresh first: it needs no token and, when it works, makes the Live request unnecessary.
+        var refreshedThroughCLI = false
+        if userInitiated, settings.isCLIRefreshActive, isOnline, !isAsleep,
+            RefreshPlanner.manualCLIRefreshAllowed(lastRunAt: lastCLIRunAt, now: Date())
+        {
+            let task = Task { [weak self] () -> CLIRefreshOutcome? in
+                await self?.performCLIRefresh()
+            }
+            manualCLITask = task
+            let outcome = await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            if manualCLITask == task {
+                manualCLITask = nil
+            }
+            refreshedThroughCLI = outcome == .success
+        }
+
         if userInitiated, settings.isLiveModeActive {
             if isLiveSuspended {
                 // Refresh is how the user says "ask again" after refusing Keychain access.
                 isLiveSuspended = false
                 liveLog.info("Keychain refusal lifted by a manual refresh")
             }
-            startCooldown()
             let manualAllowedAt = manualLiveAllowedAt()
-            if isOnline,
+            if !refreshedThroughCLI, isOnline,
                 RefreshPlanner.shouldFetchLive(
                     liveEnabled: true, freshest: nil, now: Date(), refreshInterval: 0,
                     nextAllowedLiveAt: manualAllowedAt)
@@ -201,6 +253,7 @@ final class UsageEngine {
             guard !Task.isCancelled, !self.isAsleep else { return }
             self.restartCacheLoop()
             self.restartLiveLoop()
+            self.restartCLILoop()
             self.restartTranscriptLoop()
         }
     }
@@ -210,16 +263,24 @@ final class UsageEngine {
         cacheTask?.cancel()
         liveTask?.cancel()
         transcriptTask?.cancel()
+        cliTask?.cancel()
         resumeTask = nil
         cacheTask = nil
         liveTask = nil
         transcriptTask = nil
+        cliTask = nil
         cancelManualLiveFetch()
+        cancelManualCLIRefresh()
     }
 
     private func cancelManualLiveFetch() {
         manualLiveTask?.cancel()
         manualLiveTask = nil
+    }
+
+    private func cancelManualCLIRefresh() {
+        manualCLITask?.cancel()
+        manualCLITask = nil
     }
 
     private func restartCacheLoop() {
@@ -267,6 +328,39 @@ final class UsageEngine {
         }
     }
 
+    private func restartCLILoop() {
+        cliTask?.cancel()
+        cliTask = nil
+        guard settings.isCLIRefreshActive, !isAsleep, isOnline else { return }
+        cliTask = Task { [weak self] in
+            await self?.runCLILoop()
+        }
+    }
+
+    private func runCLILoop() async {
+        while !Task.isCancelled {
+            if RefreshPlanner.shouldRunCLIRefresh(
+                enabled: settings.isCLIRefreshActive,
+                freshest: selected,
+                now: Date(),
+                refreshInterval: cliCycleInterval,
+                lastRunAt: lastCLIRunAt,
+                nextAllowedAt: cliNextAllowedAt
+            ) {
+                await performCLIRefresh()
+            }
+            guard !Task.isCancelled else { return }
+            let delay = RefreshPlanner.nextCLICheckDelay(
+                freshest: selected,
+                now: Date(),
+                refreshInterval: cliCycleInterval,
+                lastRunAt: lastCLIRunAt,
+                nextAllowedAt: cliNextAllowedAt
+            )
+            try? await Task.sleep(for: .seconds(delay))
+        }
+    }
+
     private func restartTranscriptLoop() {
         transcriptTask?.cancel()
         transcriptTask = nil
@@ -288,7 +382,10 @@ final class UsageEngine {
         case failed(FileFingerprint?, CacheReadError)
     }
 
-    private func checkCache(force: Bool) async {
+    /// Reads Claude Code's cache (only when it changed, unless `force`). Returns whether the file was read and parsed
+    /// (with or without a usage entry).
+    @discardableResult
+    private func checkCache(force: Bool) async -> Bool {
         let reader = cacheReader
         let previous = cacheFingerprint
         let compare = hasReadCache && !force
@@ -297,12 +394,14 @@ final class UsageEngine {
         }.value
 
         // The config directory may have changed while the read was running.
-        guard reader.fileURL == cacheReader.fileURL else { return }
+        guard reader.fileURL == cacheReader.fileURL else { return false }
 
+        var didRead = false
         switch outcome {
         case .unchanged:
             break
         case .read(let fingerprint, let snapshot):
+            didRead = true
             cacheFingerprint = fingerprint
             hasReadCache = true
             cacheHealth.recordSuccess()
@@ -335,6 +434,7 @@ final class UsageEngine {
             cacheLog.notice("Cache read failed (\(error.logName, privacy: .public)); keeping the previous snapshot")
         }
         reportCacheProblem()
+        return didRead
     }
 
     private func reportCacheProblem() {
@@ -483,6 +583,105 @@ final class UsageEngine {
         onEvent(.coolingDown(false))
     }
 
+    // MARK: - Auto-refresh through Claude Code
+
+    /// The status while no run has told anything new: ok when on, otherwise off, or why it was turned off.
+    private var idleCLIStatus: CLIRefreshStatus {
+        if settings.isCLIRefreshActive {
+            return .ok(lastRun: lastCLISuccessAt)
+        }
+        return settings.cliRefreshDisabledForSafety ? .disabledForSafety : .off
+    }
+
+    private var cliSettings: CLIRefresher.Settings {
+        CLIRefresher.Settings(
+            customCLIPath: settings.customCLIPath, customConfigDirectory: settings.customConfigDirectory)
+    }
+
+    /// Looks up where Claude Code's tool is (file metadata only, nothing is executed) and reports it for Settings.
+    func inspectCLI() {
+        let request = cliSettings
+        let refresher = cliRefresher
+        Task { [weak self] in
+            let state = await refresher.locate(request)
+            guard let self, request == self.cliSettings else { return }
+            self.onEvent(.cliBinary(state))
+        }
+    }
+
+    /// One run of Claude Code's `/usage`, then an immediate cache read. Returns the outcome, or `nil` when nothing ran
+    /// or the run was abandoned (cancelled, turned off, asleep, or the settings it ran with changed).
+    @discardableResult
+    private func performCLIRefresh() async -> CLIRefreshOutcome? {
+        guard settings.isCLIRefreshActive, !isCLIRunInFlight, !isAsleep, isOnline else { return nil }
+        isCLIRunInFlight = true
+        defer { isCLIRunInFlight = false }
+
+        let started = Date()
+        lastCLIRunAt = started
+        let statusBefore = cliStatus
+        setCLIStatus(.running)
+
+        let requestPaths = paths
+        let request = cliSettings
+        let report = await cliRefresher.run(request)
+
+        guard !Task.isCancelled, report.outcome != .failed(.cancelled), settings.isCLIRefreshActive, !isAsleep,
+            requestPaths == paths, request == cliSettings
+        else {
+            // Abandoned: the result says nothing about Claude Code.
+            if cliStatus == .running {
+                setCLIStatus(settings.isCLIRefreshActive ? statusBefore : idleCLIStatus)
+            }
+            return nil
+        }
+        onEvent(.cliBinary(report.binary))
+
+        var outcome = report.outcome
+        if outcome == .success {
+            // Do not wait for the cache loop's next look: the file was just rewritten.
+            let didRead = await checkCache(force: true)
+            if didRead,
+                !RefreshPlanner.cliRunRefreshedCache(
+                    cachedFetchedAt: candidates.cached?.fetchedAt, runStartedAt: started)
+            {
+                outcome = .failed(.cacheNotUpdated)
+            }
+        }
+        applyCLI(outcome, ranAt: started)
+        return outcome
+    }
+
+    private func applyCLI(_ outcome: CLIRefreshOutcome, ranAt: Date) {
+        let policy = PollingPolicy(baseInterval: settings.refreshInterval)
+        let retry = RefreshPlanner.cliRetry(
+            after: outcome, consecutiveFailures: cliConsecutiveFailures, policy: policy, random: .random(in: 0...1))
+        cliConsecutiveFailures = retry.consecutiveFailures
+        cliNextAllowedAt = Date().addingTimeInterval(retry.delay)
+        cliCycleInterval = jitteredInterval()
+        if outcome == .success {
+            lastCLISuccessAt = ranAt
+        }
+        if outcome == .modelCallDetected {
+            autoRefreshLog.error("Claude Code answered /usage with a model request; auto-refresh turned itself off")
+            settings.disableCLIRefreshForSafety()
+        }
+        setCLIStatus(RefreshPlanner.cliStatus(after: outcome, ranAt: ranAt))
+    }
+
+    private func setCLIStatus(_ status: CLIRefreshStatus) {
+        guard status != cliStatus else { return }
+        cliStatus = status
+        autoRefreshLog.info("Auto-refresh status: \(status.logName, privacy: .public)")
+        onEvent(.cliStatus(status))
+    }
+
+    /// Forgets failures and back-off: the tool, the consent or the account changed, so earlier failures say nothing.
+    private func resetCLIBackoff() {
+        cliConsecutiveFailures = 0
+        cliNextAllowedAt = nil
+    }
+
     // MARK: - Transcripts
 
     private func scanTranscripts() async {
@@ -568,6 +767,8 @@ final class UsageEngine {
     private func observeSettings() {
         withObservationTracking {
             _ = settings.isLiveModeActive
+            _ = settings.isCLIRefreshActive
+            _ = settings.customCLIPath
             _ = settings.refreshInterval
             _ = settings.customConfigDirectory
         } onChange: { [weak self] in
@@ -587,7 +788,28 @@ final class UsageEngine {
         if settings.refreshInterval != appliedRefreshInterval {
             appliedRefreshInterval = settings.refreshInterval
             cycleInterval = jitteredInterval()
+            cliCycleInterval = jitteredInterval()
             restartLiveLoop()
+            restartCLILoop()
+        }
+        if settings.customCLIPath != appliedCLIPath {
+            appliedCLIPath = settings.customCLIPath
+            engineLog.info("Claude Code tool changed in Settings")
+            cancelManualCLIRefresh()
+            resetCLIBackoff()
+            inspectCLI()
+            restartCLILoop()
+        }
+        if settings.isCLIRefreshActive != appliedCLIActive {
+            appliedCLIActive = settings.isCLIRefreshActive
+            engineLog.info("Auto-refresh \(self.appliedCLIActive ? "enabled" : "disabled", privacy: .public)")
+            resetCLIBackoff()
+            if !appliedCLIActive {
+                cancelManualCLIRefresh()
+            }
+            setCLIStatus(idleCLIStatus)
+            inspectCLI()
+            restartCLILoop()
         }
         if settings.isLiveModeActive != appliedLiveActive {
             appliedLiveActive = settings.isLiveModeActive
@@ -609,6 +831,8 @@ final class UsageEngine {
     private func switchConfigDirectory() {
         engineLog.info("Claude config directory changed")
         cancelManualLiveFetch()
+        cancelManualCLIRefresh()
+        resetCLIBackoff()
         deletePersistedSnapshot()
         accountGeneration += 1
         paths = ClaudePaths(customConfigDirectory: settings.customConfigDirectory)
@@ -670,6 +894,7 @@ final class UsageEngine {
         isOnline = online
         engineLog.info("Network \(online ? "available" : "unavailable", privacy: .public)")
         restartLiveLoop()
+        restartCLILoop()
     }
 }
 
@@ -716,6 +941,7 @@ private let engineLog = Logger(subsystem: "io.github.bartugkaan.QuotaRing", cate
 private let cacheLog = Logger(subsystem: "io.github.bartugkaan.QuotaRing", category: "cache")
 private let liveLog = Logger(subsystem: "io.github.bartugkaan.QuotaRing", category: "live")
 private let persistenceLog = Logger(subsystem: "io.github.bartugkaan.QuotaRing", category: "persistence")
+private let autoRefreshLog = Logger(subsystem: "io.github.bartugkaan.QuotaRing", category: "cli")
 
 extension CacheReadError {
     fileprivate var logName: String {

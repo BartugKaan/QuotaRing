@@ -1,8 +1,8 @@
 import QuotaRingCore
 import SwiftUI
 
-/// Something to tell the user about the data: Live mode needs attention, Claude Code's cache cannot be read, or the
-/// numbers are old.
+/// Something to tell the user about the data: Live mode or auto-refresh needs attention, Claude Code's cache cannot be
+/// read, or the numbers are old.
 struct PopoverNotice: Identifiable {
     enum Style {
         /// Something needs the user to act or wait (Live mode cannot fetch, the cache cannot be read).
@@ -11,17 +11,29 @@ struct PopoverNotice: Identifiable {
         case info
     }
 
+    /// A button under the message. Both open Settings → Data; nothing is ever switched on from the popover.
+    enum Action {
+        /// "Turn on auto-refresh…": where auto-refresh is explained and can be turned on.
+        case turnOnAutoRefresh
+        /// "Open Data settings…": where auto-refresh's tool and status are shown.
+        case openDataSettings
+    }
+
     let id: String
     let style: Style
     let message: LocalizedStringKey
+    var action: Action?
 
-    /// The notices for a Live mode status, the state of Claude Code's cache and the age of the data. Empty when
-    /// everything is fine.
+    /// The notices for a Live mode status, auto-refresh's status, the state of Claude Code's cache and the age of the
+    /// data. Empty when everything is fine.
     ///
-    /// - Parameter liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown
-    ///   and the old-data notice suggests it.
+    /// - Parameters:
+    ///   - liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown.
+    ///   - cliStatus: Auto-refresh's status; pass ``CLIRefreshStatus/off`` in demo mode.
+    ///   - isCLIRefreshActive: Whether auto-refresh is on. When it is off, the old-data notice offers to turn it on.
     static func notices(
-        liveStatus: LiveStatus, cacheProblem: CacheReadError?, isStale: Bool, now: Date
+        liveStatus: LiveStatus, cliStatus: CLIRefreshStatus, isCLIRefreshActive: Bool, cacheProblem: CacheReadError?,
+        isStale: Bool, now: Date
     ) -> [PopoverNotice] {
         var notices: [PopoverNotice] = []
         switch liveStatus {
@@ -54,17 +66,52 @@ struct PopoverNotice: Identifiable {
                     id: "error", style: .warning,
                     message: "Live mode could not reach Anthropic — showing the last known usage"))
         }
+        if let cliNotice = cliNotice(for: cliStatus, isActive: isCLIRefreshActive, now: now) {
+            notices.append(cliNotice)
+        }
         if let cacheNotice = cacheNotice(for: cacheProblem) {
             notices.append(cacheNotice)
         }
         if isStale {
-            let message: LocalizedStringKey =
-                liveStatus == .off
-                ? "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not. Live mode can keep numbers fresh for a few hours after you last used the `claude` command."
-                : "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not."
-            notices.append(PopoverNotice(id: "stale", style: .info, message: message))
+            if isCLIRefreshActive {
+                notices.append(
+                    PopoverNotice(
+                        id: "stale", style: .info,
+                        message: "Data is out of date. Auto-refresh updates it the next time it can run Claude Code."))
+            } else if cliStatus == .disabledForSafety {
+                notices.append(
+                    PopoverNotice(
+                        id: "stale", style: .info,
+                        message:
+                            "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not."
+                    ))
+            } else {
+                // Never switched on from here: the button opens Settings, where it is explained first.
+                notices.append(
+                    PopoverNotice(
+                        id: "stale", style: .info,
+                        message:
+                            "Data is out of date. Only the `claude` command-line tool updates these numbers; the Claude desktop app does not. QuotaRing can run it for you in the background.",
+                        action: .turnOnAutoRefresh))
+            }
         }
         return notices
+    }
+
+    /// What auto-refresh needs the user to know: why it turned itself off, or why it is failing while on. `nil` when it
+    /// is off, waiting, running or fine.
+    static func cliNotice(for status: CLIRefreshStatus, isActive: Bool, now: Date) -> PopoverNotice? {
+        switch status {
+        case .disabledForSafety:
+            break
+        case .notFound, .notLoggedIn, .failed:
+            guard isActive else { return nil }
+        case .off, .ok, .running:
+            return nil
+        }
+        guard let message = CLIRefreshText.statusMessage(status, now: now) else { return nil }
+        let action: Action? = status == .notFound || status == .disabledForSafety ? .openDataSettings : nil
+        return PopoverNotice(id: "autoRefresh", style: .warning, message: message, action: action)
     }
 
     /// Why Claude Code's cache file cannot be used, or `nil` when it can.
@@ -87,12 +134,14 @@ struct PopoverNotice: Identifiable {
 /// The hints at the top of the scrollable content: one row per notice, nothing when there are none.
 struct NoticeStack: View {
     let notices: [PopoverNotice]
+    /// What a notice's button does.
+    var onAction: (PopoverNotice.Action) -> Void = { _ in }
 
     var body: some View {
         if !notices.isEmpty {
             VStack(spacing: 8) {
                 ForEach(notices) { notice in
-                    NoticeRow(notice: notice)
+                    NoticeRow(notice: notice, onAction: onAction)
                 }
             }
             .padding(.horizontal, PopoverMetrics.inset)
@@ -158,7 +207,7 @@ struct FooterView: View {
         if isRefreshing {
             "Refreshing…"
         } else if isCoolingDown {
-            "Just refreshed. Live requests are limited to one a minute."
+            "Just refreshed. You can refresh again in a minute."
         } else {
             "Refresh now"
         }
@@ -187,25 +236,40 @@ struct FooterView: View {
 
 // MARK: - Pieces
 
-/// One hint line with an icon, in a faint tinted box.
+/// One hint line with an icon, in a faint tinted box, with its button if it has one.
 private struct NoticeRow: View {
     let notice: PopoverNotice
+    let onAction: (PopoverNotice.Action) -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: symbol)
                 .foregroundStyle(color)
                 .accessibilityHidden(true)
-            Text(notice.message)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(notice.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let action = notice.action {
+                    Button(actionTitle(action)) { onAction(action) }
+                        .buttonStyle(.link)
+                }
+            }
             Spacer(minLength: 0)
         }
         .font(.subheadline)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .accessibilityElement(children: .combine)
+        // The message is read as one element; the button stays a separate, reachable control.
+        .accessibilityElement(children: notice.action == nil ? .combine : .contain)
+    }
+
+    private func actionTitle(_ action: PopoverNotice.Action) -> LocalizedStringKey {
+        switch action {
+        case .turnOnAutoRefresh: "Turn on auto-refresh…"
+        case .openDataSettings: "Open Data settings…"
+        }
     }
 
     private var symbol: String {
@@ -275,11 +339,15 @@ private struct FooterIconButtonStyle: ButtonStyle {
     #Preview("Notices") {
         NoticeStack(
             notices:
-                PopoverNotice.notices(liveStatus: .keychainDenied, cacheProblem: .malformed, isStale: false, now: .now)
+                PopoverNotice.notices(
+                    liveStatus: .keychainDenied, cliStatus: .notLoggedIn, isCLIRefreshActive: true,
+                    cacheProblem: .malformed, isStale: false, now: .now)
                 + PopoverNotice.notices(
-                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), cacheProblem: nil, isStale: false,
+                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), cliStatus: .disabledForSafety,
+                    isCLIRefreshActive: false, cacheProblem: nil, isStale: false, now: .now)
+                + PopoverNotice.notices(
+                    liveStatus: .off, cliStatus: .off, isCLIRefreshActive: false, cacheProblem: nil, isStale: true,
                     now: .now)
-                + PopoverNotice.notices(liveStatus: .off, cacheProblem: nil, isStale: true, now: .now)
         )
         .frame(width: PopoverMetrics.width)
     }

@@ -32,8 +32,8 @@ struct GeneralSettingsView: View {
             } footer: {
                 Text(
                     """
-                    Live mode asks Anthropic for new numbers at most this often. Numbers older than twice this are \
-                    shown as out of date. The Claude Code cache is checked every 30 s.
+                    Auto-refresh and Live mode get new numbers once the ones shown are this old. Numbers older than \
+                    twice this are shown as out of date. The Claude Code cache is checked every 30 s.
                     """)
             }
 
@@ -97,7 +97,7 @@ struct GeneralSettingsView: View {
     // MARK: - Refresh interval
 
     /// For example "5 minutes".
-    private static func intervalLabel(_ seconds: TimeInterval) -> String {
+    static func intervalLabel(_ seconds: TimeInterval) -> String {
         Measurement(value: seconds / 60, unit: UnitDuration.minutes)
             .formatted(
                 .measurement(width: .wide, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0)))

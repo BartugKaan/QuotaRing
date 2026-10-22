@@ -37,10 +37,16 @@ final class AppModel {
     private(set) var daily: [DailyTokens] = []
     /// Whether the app runs on built-in fixture data (`--demo`): no Keychain, no network, no file access.
     private(set) var isDemo: Bool
-    /// Whether the manual refresh cooldown (Live mode only) is running.
+    /// Whether the manual refresh cooldown (Live mode and auto-refresh only) is running.
     private(set) var isCoolingDown = false
     /// Why Claude Code's cache file cannot be used right now, if it exists but cannot be read for a while.
     private(set) var cacheProblem: CacheReadError?
+    /// What auto-refresh (running Claude Code's `/usage`) is doing.
+    private(set) var cliStatus: CLIRefreshStatus = .off
+    /// Where Claude Code's command-line tool was found and what it is; `nil` until looked up (and in demo mode).
+    private(set) var cliBinary: CLIBinaryState?
+    /// The tab the Settings window shows, so the popover can open it on the Data tab.
+    var settingsTab: SettingsTab = .general
 
     /// Gets threshold events after each new snapshot.
     @ObservationIgnored var notifier: (any UsageNotifier)?
@@ -88,10 +94,15 @@ final class AppModel {
         return snapshot.isStale(at: now, maxAge: 2 * settings.refreshInterval)
     }
 
-    /// Re-reads Claude Code's cache; with `userInitiated` in Live mode, also asks the endpoint (at most once a
-    /// minute, never with an expired token).
+    /// Re-reads Claude Code's cache; with `userInitiated`, also runs Claude Code's `/usage` when auto-refresh is on and
+    /// asks the endpoint in Live mode (each at most once a minute; Live never with an expired token).
     func refresh(userInitiated: Bool) async {
         await engine?.refresh(userInitiated: userInitiated)
+    }
+
+    /// Looks up Claude Code's command-line tool again (file metadata only; nothing is executed), for Settings.
+    func inspectCLI() {
+        engine?.inspectCLI()
     }
 
     func popoverDidOpen() {
@@ -141,6 +152,10 @@ final class AppModel {
             daily = newDaily
         case .cacheProblem(let problem):
             cacheProblem = problem
+        case .cliStatus(let status):
+            cliStatus = status
+        case .cliBinary(let binary):
+            cliBinary = binary
         }
     }
 

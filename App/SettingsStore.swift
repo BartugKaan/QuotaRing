@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import QuotaRingCore
 
 /// The user's preferences, backed by `UserDefaults`.
 ///
@@ -61,6 +62,50 @@ final class SettingsStore {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
 
+    /// The user's consent to refresh through Claude Code ("auto-refresh"): running `claude -p "/usage" …` in the
+    /// background (see ``CLIRefreshCommand``). Off unless chosen in onboarding or Settings. Read only from the app's
+    /// saved preferences, never from launch arguments. Turning it on clears ``cliRefreshDisabledForSafety``.
+    var cliRefreshEnabled: Bool {
+        didSet {
+            defaults.set(cliRefreshEnabled, forKey: Key.cliRefreshEnabled)
+            if cliRefreshEnabled, cliRefreshDisabledForSafety {
+                cliRefreshDisabledForSafety = false
+            }
+        }
+    }
+
+    /// Whether auto-refresh turned itself off because Claude Code answered `/usage` with a model request, so the app
+    /// can say why it is off, also after a relaunch.
+    private(set) var cliRefreshDisabledForSafety: Bool {
+        didSet { defaults.set(cliRefreshDisabledForSafety, forKey: Key.cliRefreshDisabledForSafety) }
+    }
+
+    /// The `claude` tool chosen in Settings, or `nil` to look in the standard places. Only a file that passes
+    /// ``ClaudeCLILocator/validate(_:)`` is accepted; anything else leaves the value unchanged. Read only from the app's
+    /// saved preferences, never from launch arguments, because it decides which program QuotaRing runs.
+    var customCLIPath: URL? {
+        get { customCLIPathValue.isEmpty ? nil : URL(fileURLWithPath: customCLIPathValue, isDirectory: false) }
+        set {
+            guard let newValue else {
+                customCLIPathValue = ""
+                return
+            }
+            guard newValue.isFileURL, case .success = ClaudeCLILocator.validate(newValue) else { return }
+            customCLIPathValue = newValue.path
+        }
+    }
+
+    /// Backing store of ``customCLIPath``; empty for none. Not optional, for the same reason as `customConfigPath`.
+    private var customCLIPathValue: String {
+        didSet {
+            if customCLIPathValue.isEmpty {
+                defaults.removeObject(forKey: Key.customCLIPath)
+            } else {
+                defaults.set(customCLIPathValue, forKey: Key.customCLIPath)
+            }
+        }
+    }
+
     /// A Claude config directory chosen in Settings, or `nil` for the default `~/.claude`.
     var customConfigDirectory: URL? {
         get { customConfigPath.isEmpty ? nil : URL(fileURLWithPath: customConfigPath, isDirectory: true) }
@@ -83,6 +128,17 @@ final class SettingsStore {
     /// Whether Live requests may be made: consent was given and onboarding is done.
     var isLiveModeActive: Bool {
         liveModeEnabled && hasCompletedOnboarding
+    }
+
+    /// Whether Claude Code may be run to refresh its cache: consent was given and onboarding is done.
+    var isCLIRefreshActive: Bool {
+        cliRefreshEnabled && hasCompletedOnboarding
+    }
+
+    /// Turns auto-refresh off after Claude Code answered `/usage` with a model request, and remembers why.
+    func disableCLIRefreshForSafety() {
+        cliRefreshEnabled = false
+        cliRefreshDisabledForSafety = true
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -113,6 +169,14 @@ final class SettingsStore {
         let saved = persistentDomain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
         liveModeEnabled = saved[Key.liveModeEnabled] as? Bool ?? false
         hasCompletedOnboarding = saved[Key.hasCompletedOnboarding] as? Bool ?? false
+        // Running a program is consent too, and which program runs must not come from the command line either.
+        cliRefreshEnabled = saved[Key.cliRefreshEnabled] as? Bool ?? false
+        cliRefreshDisabledForSafety = saved[Key.cliRefreshDisabledForSafety] as? Bool ?? false
+        if let path = saved[Key.customCLIPath] as? String, path.hasPrefix("/") {
+            customCLIPathValue = path
+        } else {
+            customCLIPathValue = ""
+        }
         if let path = defaults.string(forKey: Key.customConfigDirectory), path.hasPrefix("/") {
             customConfigPath = path
         } else {
@@ -133,5 +197,8 @@ final class SettingsStore {
         static let liveModeEnabled = "liveModeEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let customConfigDirectory = "customConfigDirectory"
+        static let cliRefreshEnabled = "cliRefreshEnabled"
+        static let cliRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
+        static let customCLIPath = "customCLIPath"
     }
 }
