@@ -18,7 +18,9 @@ import os
 ///   turns the feature off.
 /// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open. A scan under way stops when
 ///   the popover closes and carries on from there the next time.
-/// - Pauses on system sleep (and Live and auto-refresh while offline), resumes on wake and reconnect.
+/// - Pauses everything on system sleep, and Live and auto-refresh while offline or while nobody can look at the numbers
+///   (all displays asleep, the user's session in the background, the screen locked; see ``UserPresence``). The cache
+///   check goes on, it costs a `stat`. Resumes on wake, reconnect and return, with an immediate check of what is due.
 /// - Persists the last good snapshot (no secrets), bound to the config directory it came from, and loads it at launch.
 ///
 /// All state lives on the main actor; file, Keychain and network work runs in detached tasks or on dedicated queues.
@@ -98,6 +100,8 @@ final class UsageEngine {
     private var isShutDown = false
     private var isAsleep = false
     private var isOnline = true
+    /// Whether anybody can look at the numbers; Live and auto-refresh are paused while not.
+    private var presence = UserPresence()
     private var isPopoverOpen = false
 
     // Settings as last applied, to tell which change happened.
@@ -121,6 +125,7 @@ final class UsageEngine {
     private var manualCLITask: Task<CLIRefreshOutcome?, Never>?
     private var pathMonitor: NWPathMonitor?
     private var workspaceObservers: [any NSObjectProtocol] = []
+    private var screenLockObserver: ScreenLockObserver?
 
     init(settings: SettingsStore, snapshotStore: LastSnapshotStore? = .standard()) {
         self.settings = settings
@@ -181,6 +186,10 @@ final class UsageEngine {
         onEvent(.refreshing(true))
         defer { onEvent(.refreshing(false)) }
 
+        // Somebody pressed Refresh, so somebody is there, whatever a missed notification says.
+        if userInitiated {
+            presenceDidChange(.userInteracted)
+        }
         await checkCache(force: true)
 
         if userInitiated, settings.isLiveModeActive || settings.isCLIRefreshActive {
@@ -250,7 +259,9 @@ final class UsageEngine {
     func setPopoverOpen(_ open: Bool) {
         guard open != isPopoverOpen else { return }
         isPopoverOpen = open
-        if !open {
+        if open {
+            presenceDidChange(.userInteracted)
+        } else {
             // Nobody sees the numbers of a scan that is still reading, and a scan carries on from where it stopped.
             cancelTranscriptScan()
         }
@@ -302,6 +313,32 @@ final class UsageEngine {
         cancelManualCLIRefresh()
     }
 
+    /// Applies a change of whether anybody can look at the numbers. Not private so that tests can feed it.
+    func presenceDidChange(_ signal: UserPresence.Signal) {
+        switch presence.apply(signal) {
+        case .none:
+            break
+        case .wentAway:
+            engineLog.info(
+                "Nobody is looking (\(self.presence.logName, privacy: .public)); pausing Live and auto-refresh")
+            // Not the manual tasks: a refresh the user asked for finishes. The cache check and the status item go on.
+            liveTask?.cancel()
+            liveTask = nil
+            cliTask?.cancel()
+            cliTask = nil
+        case .cameBack:
+            // Nothing to resume before the start, after shutting down, or while asleep: the wake from sleep resumes.
+            guard isStarted, !isShutDown, !isAsleep else { return }
+            engineLog.info("Somebody is back; resuming")
+            resume()
+        }
+    }
+
+    /// Whether Live and auto-refresh are paused because nobody can look at the numbers.
+    var isUserAway: Bool {
+        presence.isAway
+    }
+
     private func cancelManualLiveFetch() {
         manualLiveTask?.cancel()
         manualLiveTask = nil
@@ -325,10 +362,15 @@ final class UsageEngine {
         }
     }
 
+    /// Whether the Live and auto-refresh loops may run now: awake, online and somebody can look at the numbers.
+    private var mayRunAutomaticRequests: Bool {
+        RefreshPlanner.automaticRequestsMayRun(isAsleep: isAsleep, isOnline: isOnline, presence: presence)
+    }
+
     private func restartLiveLoop() {
         liveTask?.cancel()
         liveTask = nil
-        guard settings.isLiveModeActive, !isAsleep, isOnline else { return }
+        guard settings.isLiveModeActive, mayRunAutomaticRequests else { return }
         liveTask = Task { [weak self] in
             await self?.runLiveLoop()
         }
@@ -363,7 +405,7 @@ final class UsageEngine {
     private func restartCLILoop() {
         cliTask?.cancel()
         cliTask = nil
-        guard settings.isCLIRefreshActive, !isAsleep, isOnline else { return }
+        guard settings.isCLIRefreshActive, mayRunAutomaticRequests else { return }
         cliTask = Task { [weak self] in
             await self?.runCLILoop()
         }
@@ -937,7 +979,27 @@ final class UsageEngine {
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.systemDidWake() }
             },
+            // Whether anybody can look at the numbers: the displays, the user's session and the lock screen.
+            center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.presenceDidChange(.displaysSlept) }
+            },
+            center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.presenceDidChange(.displaysWoke) }
+            },
+            center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.presenceDidChange(.sessionResigned) }
+            },
+            center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.presenceDidChange(.sessionBecameActive) }
+            },
         ]
+        screenLockObserver = ScreenLockObserver { [weak self] signal in
+            self?.presenceDidChange(signal)
+        }
     }
 
     private func systemWillSleep() {

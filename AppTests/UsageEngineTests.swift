@@ -419,3 +419,85 @@ private final class EngineRig {
         await rig.finish()
     }
 }
+
+/// Whether the engine knows that nobody can look at the numbers. What it does about it (pausing the Live and
+/// auto-refresh loops, starting them again with a check of what is due) has no seam without a real Keychain and a real
+/// program, so these tests cover the state: what sends the user away, what brings them back, and that the local cache
+/// check does not depend on it.
+@MainActor
+@Suite struct UsageEnginePresenceTests {
+    private let now = Date()
+
+    @Test func theUserIsPresentAtTheStart() throws {
+        let rig = try EngineRig()
+        #expect(!rig.engine.isUserAway)
+        rig.sandbox.remove()
+    }
+
+    @Test(arguments: [
+        UserPresence.Signal.displaysSlept, .sessionResigned, .screenLocked,
+    ])
+    func eachWayOfBeingAwayIsNoticed(signal: UserPresence.Signal) throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(signal)
+        #expect(rig.engine.isUserAway)
+        rig.sandbox.remove()
+    }
+
+    @Test func theUserIsBackWhenEveryConditionHasEnded() throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(.screenLocked)
+        rig.engine.presenceDidChange(.displaysSlept)
+        rig.engine.presenceDidChange(.displaysWoke)
+        #expect(rig.engine.isUserAway)
+
+        rig.engine.presenceDidChange(.screenUnlocked)
+
+        #expect(!rig.engine.isUserAway)
+        rig.sandbox.remove()
+    }
+
+    @Test func openingThePopoverMeansTheUserIsThere() throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(.screenLocked)
+
+        rig.engine.setPopoverOpen(true)
+        rig.engine.setPopoverOpen(false)
+
+        #expect(!rig.engine.isUserAway)
+        rig.sandbox.remove()
+    }
+
+    @Test func pressingRefreshMeansTheUserIsThere() async throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(.displaysSlept)
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(!rig.engine.isUserAway)
+        await rig.finish()
+    }
+
+    @Test func aRefreshNobodyAskedForDoesNotMeanTheUserIsThere() async throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(.displaysSlept)
+
+        await rig.engine.refresh(userInitiated: false)
+
+        #expect(rig.engine.isUserAway)
+        await rig.finish()
+    }
+
+    @Test func theCacheIsStillReadWhileNobodyIsLooking() async throws {
+        let rig = try EngineRig()
+        rig.engine.presenceDidChange(.screenLocked)
+        try rig.writeCache(
+            fetchedAt: now.addingTimeInterval(-20), sessionUsed: 47, resetsAt: now.addingTimeInterval(3_600))
+
+        await rig.engine.refresh(userInitiated: false)
+
+        let announced = try #require(rig.snapshots.first ?? nil)
+        #expect(announced.report.session?.percentUsed == 47)
+        await rig.finish()
+    }
+}

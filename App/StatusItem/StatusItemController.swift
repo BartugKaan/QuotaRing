@@ -21,6 +21,9 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private var popoverCloseStartedAt: TimeInterval?
     /// What the button shows, so that `render()` touches it only for what changed.
     private var buttonState = StatusButtonState()
+    /// Whether all displays are asleep: nobody can see the item, so it is not redrawn until they wake.
+    private var screensAreAsleep = false
+    private var screenObservers: [any NSObjectProtocol] = []
 
     init(model: AppModel) {
         self.model = model
@@ -30,6 +33,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         configureButton()
         configurePopover()
         configureMenu()
+        observeScreens()
         observeModel()
         startTicking()
     }
@@ -128,16 +132,45 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.tickInterval)
+                // The model still notices a session reset while the displays sleep; only the drawing waits.
                 self?.model.timeDidPass()
-                self?.render()
+                self?.renderUnlessScreensSleep()
             }
         }
     }
 
+    /// The displays going to sleep and waking up: nothing is drawn for an item nobody can see, and the first thing
+    /// after waking is one render, which brings it up to date.
+    private func observeScreens() {
+        let center = NSWorkspace.shared.notificationCenter
+        screenObservers = [
+            center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.screensAreAsleep = true }
+            },
+            center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.screensAreAsleep = false
+                    self?.render()
+                }
+            },
+        ]
+    }
+
+    private func renderUnlessScreensSleep() {
+        guard !screensAreAsleep else { return }
+        render()
+    }
+
     /// Brings the button up to date with the model, touching only what changed (see ``StatusButtonState``).
+    ///
+    /// The presentation is always computed, also while the displays sleep: reading the model is what makes
+    /// ``observeModel()`` notice the next change, and it costs microseconds.
     private func render() {
         guard let button = statusItem.button else { return }
         let presentation = StatusPresentation(model: model, now: Date())
+        guard !screensAreAsleep else { return }
 
         let changes = buttonState.update(to: presentation)
         if changes.contains(.image) {
