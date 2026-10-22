@@ -247,7 +247,42 @@ final class RedirectingURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// Answers with a response that is not an HTTP one (what a non-HTTP scheme or a broken proxy would produce).
+final class PlainResponseURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let response = URLResponse(url: url, mimeType: "text/plain", expectedContentLength: 2, textEncodingName: nil)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("ok".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @Suite struct URLSessionTransportTests {
+    @Test func aResponseThatIsNotHTTPIsABadServerResponse() async {
+        let configuration = URLSessionTransport.makeConfiguration()
+        configuration.protocolClasses = [PlainResponseURLProtocol.self]
+        let transport = URLSessionTransport(configuration: configuration)
+
+        await #expect(throws: URLError.self) {
+            _ = try await transport.send(URLRequest(url: UsageAPI.endpoint))
+        }
+        do {
+            _ = try await transport.send(URLRequest(url: UsageAPI.endpoint))
+            Issue.record("a non-HTTP response was accepted")
+        } catch let error as URLError {
+            #expect(error.code == .badServerResponse)
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
     @Test func configurationKeepsNoStateAndHasATimeout() {
         let configuration = URLSessionTransport.makeConfiguration()
 

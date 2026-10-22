@@ -50,6 +50,35 @@ private func permissions(of url: URL) throws -> Int {
 }
 
 @Suite struct LastSnapshotStoreTests {
+    @Test func theStandardLocationIsQuotaRingsFolderInApplicationSupport() throws {
+        let store = try #require(LastSnapshotStore.standard())
+        let support = try #require(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+
+        #expect(store.fileURL.lastPathComponent == "last-snapshot.json")
+        #expect(
+            store.fileURL.deletingLastPathComponent() == support.appendingPathComponent("QuotaRing", isDirectory: true))
+    }
+
+    @Test func aSaveThatCannotReplaceTheFileThrowsAndLeavesNoTemporaryFileBehind() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let store = scratch.store
+        // Something that is not a file sits where the snapshot belongs, so the final rename fails.
+        try FileManager.default.createDirectory(
+            at: store.fileURL.appendingPathComponent("occupied", isDirectory: true), withIntermediateDirectories: true)
+
+        #expect(throws: (any Error).self) {
+            try store.save(snapshot(), configDirectory: configA)
+        }
+
+        let leftovers = try FileManager.default.contentsOfDirectory(
+            atPath: store.fileURL.deletingLastPathComponent().path)
+        #expect(leftovers == ["last-snapshot.json"])
+        // And nothing usable is loaded from it.
+        #expect(store.load(configDirectory: configA) == nil)
+    }
+
     @Test func roundTripsForTheSameConfigDirectory() throws {
         let scratch = try Scratch()
         defer { scratch.remove() }

@@ -72,6 +72,22 @@ private func editedSuccess(_ edit: (inout [String: Any]) -> Void) throws -> Data
         }
     }
 
+    @Test func aCountInsideAListIsDetected() throws {
+        let edits: [(inout [String: Any]) -> Void] = [
+            { $0["usage"] = ["iterations": [["input_tokens": 0], ["input_tokens": 9]]] },
+            { $0["usage"] = ["output_tokens": [0, 4]] },
+            { $0["modelUsage"] = ["claude-haiku-4-5": ["perRequest": [["costUSD": 0.002]]]] },
+        ]
+        for edit in edits {
+            #expect(CLIRefreshResult.parse(stdout: try editedSuccess(edit), exitCode: 0) == .modelCallDetected)
+        }
+        // A list of zeros, or of limits, is still nothing used.
+        let quiet = try editedSuccess {
+            $0["usage"] = ["iterations": [["input_tokens": 0], ["maxOutputTokens": 32_000]]]
+        }
+        #expect(CLIRefreshResult.parse(stdout: quiet, exitCode: 0) == .success)
+    }
+
     @Test func booleansAreNotCounts() throws {
         let data = try editedSuccess { $0["usage"] = ["input_tokens": true] }
         #expect(CLIRefreshResult.parse(stdout: data, exitCode: 0) == .success)

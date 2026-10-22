@@ -522,6 +522,25 @@ private let scanNow = Date(timeIntervalSince1970: 1_792_584_000)
         #expect(await TranscriptScanner(projectsDirectory: file).scan(now: scanNow).isEmpty)
     }
 
+    @Test func aPipeNamedLikeATranscriptIsNeverOpened() async throws {
+        try scratch.write("-p/real.jsonl", lines: [assistantLine(id: "msg_01TESTREAL001")])
+        let pipe = scratch.file("-p/pipe.jsonl")
+        try #require(mkfifo(pipe.path, 0o600) == 0)
+        // A reader that wrongly opens the pipe would wait for a writer. Keep one open, and let it go after a moment,
+        // so that such a reader fails the test instead of hanging the whole run.
+        let writer = open(pipe.path, O_RDWR | O_NONBLOCK)
+        try #require(writer >= 0)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { close(writer) }
+        // A folder with a transcript's name is walked into, not read as a file.
+        try FileManager.default.createDirectory(
+            at: scratch.file("-p/folder.jsonl"), withIntermediateDirectories: true)
+
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
+
+        #expect(entries.count == 1)
+        #expect(entries.first?.dedupeKey.hasPrefix("msg_01TESTREAL001") == true)
+    }
+
     @Test func symlinksAreNeverFollowed() async throws {
         let outside = try ScratchDirectory()
         defer { outside.remove() }

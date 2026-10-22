@@ -85,6 +85,33 @@ struct CLIScratchDirectory {
         #expect(ClaudeCLILocator.validate(tool) == .success(tool))
     }
 
+    @Test func standardizedPathResolvesDotsAndSlashesWithoutTouchingTheFileSystem() {
+        #expect(ClaudeCLILocator.standardizedPath("/a/./b//c/") == "/a/b/c")
+        #expect(ClaudeCLILocator.standardizedPath("/a/b/../c") == "/a/c")
+        #expect(ClaudeCLILocator.standardizedPath("/a/b/../../..") == "/")
+        // `..` cannot climb above the root.
+        #expect(ClaudeCLILocator.standardizedPath("/../../etc") == "/etc")
+        #expect(ClaudeCLILocator.standardizedPath("/") == "/")
+        // `/private` is part of a path's identity and is kept (`URL.standardizedFileURL` would drop it).
+        #expect(ClaudeCLILocator.standardizedPath("/private/tmp/./claude") == "/private/tmp/claude")
+    }
+
+    @Test func aChosenPathIsCheckedWhereItsDotDotComponentsLead() throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        let tool = try scratch.file("bin/claude", mode: 0o755)
+        let detour = URL(fileURLWithPath: scratch.url.path + "/other/../bin/./claude")
+
+        // The component `other` does not exist, yet the path is judged lexically, as the file it names.
+        let inspected = try ClaudeCLILocator.inspect(detour).get()
+        #expect(inspected.path == tool)
+        #expect(inspected.executable == tool)
+
+        // A `..` that leads to a file that is not there is still a missing file.
+        let missing = URL(fileURLWithPath: scratch.url.path + "/bin/../nothing/claude")
+        #expect(ClaudeCLILocator.validate(missing) == .failure(.missing))
+    }
+
     @Test func acceptsAFileOwnedByRoot() {
         // A system tool: owned by root, 0755. Only inspected, never run.
         #expect(ClaudeCLILocator.validate(URL(fileURLWithPath: "/bin/sh")) == .success(URL(fileURLWithPath: "/bin/sh")))

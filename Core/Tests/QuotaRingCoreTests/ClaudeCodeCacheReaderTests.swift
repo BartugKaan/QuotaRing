@@ -251,6 +251,37 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         }
     }
 
+    @Test func aFileTheUserCannotReadThrowsUnreadable() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = try sandbox.write(fixtureData())
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+
+        // Its size and date can still be seen, so the fingerprint works; reading the bytes is what is refused.
+        let reader = ClaudeCodeCacheReader(fileURL: url)
+        #expect(reader.fingerprint() != nil)
+        #expect(throws: CacheReadError.unreadable) {
+            try reader.read()
+        }
+    }
+
+    @Test func aPathBelowARegularFileIsNoCacheAndNeverASnapshot() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let file = try sandbox.write(Data("{}".utf8), named: "not-a-folder")
+        let url = file.appendingPathComponent(".claude.json")
+
+        // Whatever the system calls it, it must come back as "no cache" or "unreadable", never a crash or a snapshot.
+        let reader = ClaudeCodeCacheReader(fileURL: url)
+        #expect(reader.fingerprint() == nil)
+        do {
+            #expect(try reader.read() == nil)
+        } catch {
+            #expect(error as? CacheReadError == .unreadable)
+        }
+    }
+
     @Test func deviceFileThrowsUnreadable() throws {
         // A character device has size 0 (so it passes any size cap) and reads as an empty file.
         #expect(throws: CacheReadError.unreadable) {
