@@ -29,10 +29,13 @@ open-source app whose behavior you can read in an afternoon. Everything it reads
   window. An optional notice when the session resets (off by default).
 - **Auto-refresh with Claude Code (opt-in).** If you use the Claude desktop app, QuotaRing can run Claude Code's own
   `/usage` in the background so the numbers stay fresh. It makes no AI request, spends no usage, and QuotaRing never
-  touches your login. See [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
+  touches your login. The welcome window shown on first run offers it with the checkbox already checked; it turns on
+  when you press one of that window's buttons with the box left checked. See
+  [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
 - **Settings.** Launch at login, refresh interval (3, 5, 10 or 15 minutes), ring shows remaining or used, percentage
   text on or off, notification thresholds, Claude config directory, the auto-refresh switch and the Live mode switch.
-- **Token-free by default.** The default mode needs no credentials and makes no network connections.
+- **Token-free by default.** The default mode needs no credentials, and QuotaRing itself makes no network connections
+  by default. (With auto-refresh on, the `claude` process it starts asks Anthropic for your usage.)
 - **Native and small.** Swift 6, AppKit and SwiftUI, universal binary, no third-party runtime dependencies.
 - **Light and dark mode, VoiceOver labels, Reduce Motion.** English and Turkish.
 
@@ -192,10 +195,11 @@ When enabled:
 - The token is **re-read on every poll** and held in memory only for the length of one request. It is never cached
   between polls, written to disk, put in preferences, logged or copied to the pasteboard.
 - It makes a single HTTPS `GET` to `https://api.anthropic.com/api/oauth/usage`. The URL is a compile-time constant and
-  is not configurable. The request carries four headers: `Authorization: Bearer <token>`,
+  is not configurable. QuotaRing sets four headers: `Authorization: Bearer <token>`,
   `anthropic-beta: oauth-2025-04-20`, `Accept: application/json` and
-  `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. No body, no cookies. QuotaRing
-  identifies itself honestly and does not pretend to be Claude Code.
+  `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. macOS's networking adds standard
+  headers of its own, such as `Accept-Encoding` and `Accept-Language`. No body, no cookies. QuotaRing identifies itself
+  honestly and does not pretend to be Claude Code.
 - The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials.
 - Automatic polls are sent only when Live mode is on, the cached snapshot is older than your refresh interval, and
   the token has not expired. Pressing Refresh in the popover while Live mode is on also makes one request, at most
