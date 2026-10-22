@@ -13,6 +13,9 @@ struct DataSettingsView: View {
     /// Why the file just chosen as Claude Code's tool was refused.
     @State private var cliChoiceProblem: CLIValidationError?
 
+    /// The tallest the tab's content gets before it scrolls.
+    private static let maxContentHeight: CGFloat = 520
+
     /// Demo mode runs on fixture data: the sources, auto-refresh and Live mode cannot be changed.
     private var isDemo: Bool { model.isDemo }
 
@@ -29,9 +32,10 @@ struct DataSettingsView: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
-        // The Settings window is as tall as this content, so on a short screen (or with longer translations) it
-        // scrolls instead of growing past the visible screen. Chrome: the window's title bar and toolbar.
-        .scrollsBeyond(VisibleScreen.contentHeight(reserving: 88))
+        // The Settings window is as tall as this content and grows downward from wherever it opened (about a third down
+        // the screen, or where it was left), so content as tall as the screen would push its bottom off the screen.
+        // Above a comfortable height it scrolls, and on a short screen earlier. Chrome: the title bar and toolbar.
+        .scrollsBeyond(min(Self.maxContentHeight, VisibleScreen.contentHeight(reserving: 88)))
         .sheet(isPresented: $showsLiveModeConsent) {
             LiveModeConsentSheet(
                 onEnable: {

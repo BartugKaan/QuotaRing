@@ -28,6 +28,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func show() {
         let window = makeWindow()
         self.window = window
+        // The hosting view sizes the window only in its first layout pass. Centering the still-empty window and letting
+        // it grow afterwards pushes its top above the screen; AppKit then keeps constraining that frame while SwiftUI
+        // keeps resizing it, until AppKit gives up with an exception. So lay out first and center the final size.
+        if let content = window.contentViewController?.view {
+            content.layoutSubtreeIfNeeded()
+            window.setContentSize(content.fittingSize)
+        }
         window.center()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)

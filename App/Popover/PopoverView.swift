@@ -413,7 +413,12 @@ struct NoDataSection: View {
     @MainActor
     enum PopoverPreviewSupport {
         static func settings(showsRemaining: Bool = true) -> SettingsStore {
-            let suite = "io.github.bartugkaan.QuotaRing.preview." + UUID().uuidString
+            // A suite named by a path is saved to that file. A plain name would leave a new plist in
+            // ~/Library/Preferences for every preview render; the temporary directory is cleaned up by the system.
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "QuotaRingPreviews", isDirectory: true)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let suite = folder.appendingPathComponent(UUID().uuidString).path
             let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!, persistentDomain: suite)
             if !showsRemaining {
                 settings.ringShowsRemaining = false
