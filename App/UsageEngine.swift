@@ -285,10 +285,8 @@ final class UsageEngine {
         if open {
             presenceDidChange(.userInteracted)
         }
-        if !open {
-            // Nobody sees the numbers of a scan that is still reading, and a scan carries on from where it stopped.
-            cancelTranscriptScan()
-        }
+        // Closing stops a scan that is still reading (nobody sees its numbers, and the next scan carries on from where
+        // it stopped); opening starts the loop, with a scan at once.
         restartTranscriptLoop()
     }
 
@@ -318,7 +316,11 @@ final class UsageEngine {
             self.restartCacheLoop()
             self.restartLiveLoop()
             self.restartCLILoop()
-            self.restartTranscriptLoop()
+            // The transcript loop is paused by sleep (which clears it) but not by presence, and a scan under way in a
+            // loop that is running is not to be thrown away. A new directory restarts it where it is chosen.
+            if self.transcriptTask == nil {
+                self.restartTranscriptLoop()
+            }
         }
     }
 
@@ -482,9 +484,13 @@ final class UsageEngine {
         }
     }
 
-    private func restartTranscriptLoop() {
+    /// Not private so that tests can restart the loop.
+    func restartTranscriptLoop() {
         transcriptTask?.cancel()
         transcriptTask = nil
+        // A scan the old loop left running would turn the new loop's first scan away ("one at a time") and then have
+        // its own result dropped as cancelled; nothing would be scanned for a whole interval.
+        cancelTranscriptScan()
         guard isPopoverOpen, !isAsleep else { return }
         loopStarts.transcripts += 1
         transcriptTask = Task { [weak self] in
@@ -1017,6 +1023,8 @@ final class UsageEngine {
         onEvent(.snapshot(nil, isNew: false))
         onEvent(.activity([:], []))
         if !isAsleep {
+            // The activity was just cleared: an open popover gets the new directory's at once, not after the interval.
+            restartTranscriptLoop()
             resume()
         }
     }

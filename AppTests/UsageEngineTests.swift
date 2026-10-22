@@ -705,3 +705,97 @@ private final class EngineRig {
         await stop(rig)
     }
 }
+
+/// The transcript scan and its loop. The scan is slow enough to catch under way because the fixture holds several
+/// megabytes of transcript lines.
+@MainActor
+@Suite struct UsageEngineScanTests {
+    private let now = Date()
+
+    /// Writes a transcript of `lines` distinct responses from the last minute, about 400 bytes each.
+    private func writeBigTranscript(into rig: EngineRig, lines: Int) throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let stamp = formatter.string(from: now.addingTimeInterval(-30))
+        var text = ""
+        text.reserveCapacity(lines * 420)
+        for index in 0..<lines {
+            text +=
+                "{\"type\":\"assistant\",\"timestamp\":\"\(stamp)\",\"cwd\":\"/Users/test/dev/alpha\","
+                + "\"requestId\":\"req_BIG\(index)\",\"message\":{\"id\":\"msg_BIG\(index)\",\"role\":\"assistant\","
+                + "\"model\":\"claude-opus-4-8\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],"
+                + "\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_creation_input_tokens\":0,"
+                + "\"cache_read_input_tokens\":0}}}\n"
+        }
+        try rig.sandbox.write("claude-config/projects/-p/big.jsonl", text)
+    }
+
+    @Test func closingThePopoverCancelsTheScanUnderWayAndDropsItsResult() async throws {
+        let rig = try EngineRig()
+        try writeBigTranscript(into: rig, lines: 30_000)
+
+        rig.engine.setPopoverOpen(true)
+        try #require(await eventually { rig.engine.isScanningTranscripts })
+        rig.engine.setPopoverOpen(false)
+
+        #expect(!rig.engine.isScanningTranscripts)
+        // The scan would have finished long before this; it was stopped, and what it had found was not announced.
+        try await Task.sleep(for: .seconds(2))
+        #expect(rig.activities.isEmpty)
+        await rig.finish()
+    }
+
+    @Test func aScanThatWasStoppedIsContinuedByTheNextOneAndFindsEverything() async throws {
+        let rig = try EngineRig()
+        try writeBigTranscript(into: rig, lines: 30_000)
+        rig.engine.setPopoverOpen(true)
+        try #require(await eventually { rig.engine.isScanningTranscripts })
+        rig.engine.setPopoverOpen(false)
+
+        rig.engine.setPopoverOpen(true)
+        defer { rig.engine.setPopoverOpen(false) }
+
+        #expect(await eventually { !rig.activities.isEmpty })
+        #expect(rig.activities.last?[.week]?.total.input == 30_000)
+        await rig.finish()
+    }
+
+    @Test func restartingTheLoopDuringAScanDoesNotLoseTheScan() async throws {
+        let rig = try EngineRig()
+        try writeBigTranscript(into: rig, lines: 30_000)
+        rig.engine.setPopoverOpen(true)
+        defer { rig.engine.setPopoverOpen(false) }
+        try #require(await eventually { rig.engine.isScanningTranscripts })
+
+        // What a new config directory or a wake does while the popover stays open.
+        rig.engine.restartTranscriptLoop()
+
+        // The new loop scans at once; it is not turned away by the old scan, whose result is dropped.
+        #expect(await eventually { !rig.activities.isEmpty })
+        #expect(rig.activities.last?[.week]?.total.input == 30_000)
+        #expect(rig.engine.loopStarts.transcripts == 2)
+        await rig.finish()
+    }
+
+    @Test func comingBackLeavesARunningTranscriptLoopAndItsScanAlone() async throws {
+        let rig = try EngineRig(live: true)
+        try writeBigTranscript(into: rig, lines: 30_000)
+        rig.engine.start(observingSystem: false)
+        try #require(await eventually { rig.engine.isLiveLoopRunning })
+        rig.engine.setPopoverOpen(true)
+        try #require(await eventually { rig.engine.isScanningTranscripts })
+        let before = rig.engine.loopStarts
+
+        // Presence never pauses the transcript loop, so returning must not restart it (which would cancel the scan).
+        rig.engine.presenceDidChange(.screenLocked)
+        rig.engine.presenceDidChange(.screenUnlocked)
+        try #require(await eventually { rig.engine.loopStarts.live == before.live + 1 })
+
+        #expect(rig.engine.loopStarts.transcripts == before.transcripts)
+        #expect(await eventually { !rig.activities.isEmpty })
+        #expect(rig.activities.last?[.week]?.total.input == 30_000)
+        rig.engine.setPopoverOpen(false)
+        rig.engine.shutDown()
+        await rig.finish()
+    }
+}
