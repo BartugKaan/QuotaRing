@@ -20,7 +20,7 @@ import Testing
         #expect(CLIRefreshCommand.maxOutputBytes == 256 * 1024)
     }
 
-    @Test func environmentHasOnlyTheFiveVariablesAndNoAutoUpdates() {
+    @Test func environmentIsMinimalAndTurnsOffUpdatesAndReporting() {
         let environment = CLIRefreshCommand.environment(
             home: home, user: "test", lang: "tr_TR.UTF-8",
             binaryDirectory: URL(fileURLWithPath: "/Users/test/.npm-global/bin", isDirectory: true),
@@ -33,6 +33,8 @@ import Testing
                 "LANG": "tr_TR.UTF-8",
                 "PATH": "/Users/test/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
                 "DISABLE_AUTOUPDATER": "1",
+                "DISABLE_TELEMETRY": "1",
+                "DISABLE_ERROR_REPORTING": "1",
             ])
     }
 
@@ -49,6 +51,8 @@ import Testing
                 "LANG": "en_US.UTF-8",
                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
                 "DISABLE_AUTOUPDATER": "1",
+                "DISABLE_TELEMETRY": "1",
+                "DISABLE_ERROR_REPORTING": "1",
                 "CLAUDE_CONFIG_DIR": "/Users/test/work-claude",
             ])
     }
@@ -70,6 +74,8 @@ import Testing
             #expect(environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == nil)
             #expect(!environment.keys.contains { $0.contains("NONESSENTIAL") })
             #expect(environment["DISABLE_AUTOUPDATER"] == "1")
+            #expect(environment["DISABLE_TELEMETRY"] == "1")
+            #expect(environment["DISABLE_ERROR_REPORTING"] == "1")
         }
     }
 

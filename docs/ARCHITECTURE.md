@@ -136,7 +136,8 @@ UsageEngine (auto-refresh loop, MainActor)
               2. for each usable file, in order (answers cached per file identity, 10 s limit each):
                  `--version` contains "(Claude Code)", and `--help` lists --safe-mode and --no-session-persistence;
                  not Claude Code or too old → try the next (none left: notFound or unsupportedVersion)
-              3. BoundedProcess: CLIRefreshCommand.arguments, minimal environment (with DISABLE_AUTOUPDATER=1),
+              3. BoundedProcess: CLIRefreshCommand.arguments, minimal environment (auto-updater, telemetry and error
+                 reporting off),
                  stdin /dev/null, stderr discarded, 30 s limit, 256 KB output limit, SIGTERM then SIGKILL to the
                  process group
               4. CLIRefreshResult.parse → success | modelCallDetected | notLoggedIn | failed(reason)
@@ -150,9 +151,9 @@ UsageEngine (auto-refresh loop, MainActor)
   onboarding is complete. Settings never turns it on without the consent sheet; the popover only opens Settings.
 - **Before consent** only file metadata is inspected (to show the path in Settings); the `--version` and `--help` checks
   are part of the first run.
-- **Environment.** Exactly `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` and `DISABLE_AUTOUPDATER=1` (plus
-  `CLAUDE_CONFIG_DIR` for a custom config directory), for the checks and the run alike: nothing QuotaRing starts may
-  update Claude Code. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is deliberately absent: it makes `/usage` answer from
+- **Environment.** Exactly `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
+  `DISABLE_ERROR_REPORTING=1` (plus `CLAUDE_CONFIG_DIR` for a custom config directory), for the checks and the run
+  alike: nothing QuotaRing starts may update Claude Code or report telemetry or errors. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is deliberately absent: it makes `/usage` answer from
   the stale cache without a network request.
 - **Process handling.** `BoundedProcess` keeps every `Process`, `Pipe` and `FileHandle` inside one run. The launch and
   all watching happen on a Dispatch queue, never on Swift's cooperative pool and never under a lock a cancellation

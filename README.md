@@ -225,9 +225,10 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
   The Refresh button also runs it, at most once a minute.
 - **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
   scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then
-  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`) and `DISABLE_AUTOUPDATER=1`, plus `CLAUDE_CONFIG_DIR` when you set
-  a custom config directory. `DISABLE_AUTOUPDATER=1` means a background run **never updates Claude Code** (an update
-  started by Claude Code itself once left an npm install broken). `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is
+  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
+  `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. So a background run
+  **never updates Claude Code** (an update started by Claude Code itself once left an npm install broken) and sends no
+  telemetry or error reports. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is
   deliberately not set: with it, `/usage` answers from the old cached numbers without asking Anthropic. It
   runs in an empty folder of QuotaRing's own, `~/Library/Application Support/QuotaRing/cli` (mode 700), so no project's
   settings apply. A run that takes longer than 30 seconds or prints more than 256 KB is stopped (`SIGTERM`, then

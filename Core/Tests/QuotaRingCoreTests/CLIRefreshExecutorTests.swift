@@ -175,6 +175,8 @@ private let checks = ["--version", "--help"]
                 "LANG": "en_US.UTF-8",
                 "PATH": fake.folder.path + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
                 "DISABLE_AUTOUPDATER": "1",
+                "DISABLE_TELEMETRY": "1",
+                "DISABLE_ERROR_REPORTING": "1",
             ])
         // The checks run with exactly the same environment: no check may update Claude Code either.
         #expect(try fake.recordedEnvironment("version-env.txt") == fake.recordedEnvironment())

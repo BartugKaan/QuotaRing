@@ -431,8 +431,10 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
 - Executes exactly the command above with a fixed argument array (no shell),
   `stdin` from `/dev/null`, a minimal environment (`HOME`, `USER`, `LOGNAME`,
   `LANG`, `PATH` = the binary's folder + `/usr/local/bin:/opt/homebrew/bin:
-  /usr/bin:/bin`, `DISABLE_AUTOUPDATER=1`, and `CLAUDE_CONFIG_DIR` when a
-  custom config dir is set), working directory
+  /usr/bin:/bin`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1`,
+  `DISABLE_ERROR_REPORTING=1` (R50; verified with bundled 2.1.308: cache still
+  refreshed, 0 turns, $0), and `CLAUDE_CONFIG_DIR` when a custom config dir is
+  set), working directory
   `~/Library/Application Support/QuotaRing/cli` (0700), 30 s timeout (process
   killed), output capped at 256 KB and never logged.
 - **Never auto-update** (fix round 1, 2026-10-22): the owner's npm Claude Code

@@ -10,7 +10,9 @@ import Foundation
 ///
 /// Everything is fixed: the arguments are a constant array passed without a shell, and the environment is built from
 /// scratch instead of inheriting QuotaRing's. It turns off Claude Code's auto-updater (`DISABLE_AUTOUPDATER=1`): a
-/// background run must never update Claude Code, which once left an npm install broken mid-update. It deliberately
+/// background run must never update Claude Code, which once left an npm install broken mid-update. It also turns off
+/// Claude Code's telemetry and error reporting (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`; verified with
+/// 2.1.308: the cache still refreshes, with no turns and no cost). It deliberately
 /// does **not** set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: verified on the owner's Mac, with it `/usage` answers
 /// from the stale cache without asking Anthropic, which defeats the purpose.
 public enum CLIRefreshCommand {
@@ -53,7 +55,8 @@ public enum CLIRefreshCommand {
     public static let maxHelpOutputBytes = 262_144
 
     /// The complete environment of the tool, for `/usage` and for the checks alike: `HOME`, `USER`, `LOGNAME`, `LANG`,
-    /// `PATH` and `DISABLE_AUTOUPDATER=1`, plus `CLAUDE_CONFIG_DIR` when a custom Claude config directory is set.
+    /// `PATH`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR`
+    /// when a custom Claude config directory is set.
     /// Nothing is inherited from QuotaRing's own environment.
     ///
     /// - Parameters:
@@ -74,6 +77,8 @@ public enum CLIRefreshCommand {
             "LANG": lang.flatMap { $0.isEmpty ? nil : $0 } ?? defaultLanguage,
             "PATH": ClaudeCLILocator.standardizedPath(binaryDirectory.path) + ":" + standardPath,
             "DISABLE_AUTOUPDATER": "1",
+            "DISABLE_TELEMETRY": "1",
+            "DISABLE_ERROR_REPORTING": "1",
         ]
         if let customConfigDirectory {
             environment["CLAUDE_CONFIG_DIR"] =
