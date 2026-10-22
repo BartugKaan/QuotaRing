@@ -308,7 +308,7 @@ development) still installs whatever version Homebrew has.
 
 The README promises "Xcode 16.4 or later", so the CI workflow has a job that
 selects Xcode 16.4 exactly (`XCODE_VERSION` in `scripts/ci/select-xcode.sh`) and
-runs `make test` and an unsigned `make build` with it. If GitHub removes Xcode 16.4
+runs `make test`, an unsigned `make build` and `make test-app` with it. If GitHub removes Xcode 16.4
 from the `macos-15` image, that job fails on purpose instead of testing another
 version. Then raise the documented minimum (README, CONTRIBUTING, and the job)
 together.

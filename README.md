@@ -95,7 +95,8 @@ make setup   # installs XcodeGen through Homebrew (see Brewfile)
 make run     # generates the Xcode project, builds and launches the app
 ```
 
-Other targets: `make demo` (launch with fixture data), `make test`, `make lint`, `make format`. See
+Other targets: `make demo` (launch with fixture data), `make test` (Core), `make test-app` (the app's unit tests),
+`make test-all` (both), `make lint`, `make format`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the full list.
 
 Builds from source are **ad-hoc signed** ("Sign to Run Locally") so anyone can build them without a developer account.

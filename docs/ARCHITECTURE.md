@@ -43,9 +43,10 @@ App/
   Popover/       popover view and its sections
   Settings/ Onboarding/ Services/    settings, first-run consent, notifications, launch at login, auto-refresh runner
   Resources/     Info.plist, entitlements, localized strings, asset catalog
+AppTests/        Swift Testing tests of the app's logic (hostless bundle; Support/ holds the sandbox and fakes)
 project.yml      XcodeGen spec (the .xcodeproj is generated and git-ignored)
 Configs/         xcconfig files; Local.xcconfig is git-ignored
-Makefile         setup, generate, build, run, demo, test, lint, format, clean
+Makefile         setup, generate, build, run, demo, test, test-app, test-all, lint, format, clean
 scripts/         icon generation, CI helpers (Xcode selection, pinned XcodeGen) and release scripts
 .github/         CI, CodeQL, release workflow, templates
 ```
@@ -313,9 +314,21 @@ environment, result parsing and the safety net, the process runner and executor 
 their arguments, environment and working folder, hang, exit with errors or print too much), and the scheduling rules.
 Tests never touch the real Keychain, real Claude files or the network, and never run the real `claude`.
 
-CI (`.github/workflows/ci.yml`) runs the tests, `make lint` and an unsigned build on the newest Xcode on the runner, and
-runs the tests and the unsigned build again on Xcode 16.4 exactly, the minimum version the README promises. XcodeGen is
-installed from a pinned release whose SHA-256 is checked (`scripts/ci/install-xcodegen.sh`).
+The app's own logic is tested with Swift Testing too (`make test-app`, in `AppTests/`): the settings store (including
+that consent, the Claude config directory and the tool path are read only from what the app saved, never from launch
+arguments), the welcome window's model (what each button and the close button record, the notification prompt and the
+Live gate), the text and ring of the menu bar item, what the popover's no-data section offers, `AppModel`'s derived
+state and notifications, `UsageEngine`'s cache, snapshot-saving and transcript handling, the ring renderer, the demo
+data and the notification texts. The test bundle is **hostless**: the app is never started, because that would read the
+user's real Claude files and preferences. The app's sources are compiled into the bundle (all but `QuotaRingApp.swift`,
+which has `@main`), and every test works in its own temporary folder and its own preferences file. Not covered, because
+they have no seam without a real Keychain, network or program: the Live request and the auto-refresh run inside
+`UsageEngine`, `CLIRefresher`, and the part of `NotificationService` that talks to `UNUserNotificationCenter`.
+
+CI (`.github/workflows/ci.yml`) runs Core's tests and `make lint`, builds unsigned and runs the app's tests on the newest
+Xcode on the runner, and runs Core's tests, the unsigned build and the app's tests again on Xcode 16.4 exactly, the
+minimum version the README promises. XcodeGen is installed from a pinned release whose SHA-256 is checked
+(`scripts/ci/install-xcodegen.sh`).
 
 ## Where to look when auditing
 

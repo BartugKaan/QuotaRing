@@ -20,7 +20,7 @@
 ## Checklist
 
 - [ ] The change is focused and the commits follow [Conventional Commits](https://www.conventionalcommits.org/)
-- [ ] `make test` passes and new logic has tests (Swift Testing)
+- [ ] `make test-all` passes and new logic has tests (Swift Testing)
 - [ ] `make lint` passes (run `make format` to fix formatting)
 - [ ] `make build` succeeds
 - [ ] No tokens, credentials, or real usage data in code, fixtures, logs, or screenshots
