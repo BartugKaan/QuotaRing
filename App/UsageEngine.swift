@@ -16,7 +16,8 @@ import os
 ///   ``CLIRefresher`` when the freshest snapshot is older than the refresh interval, at most every 120 s, with the
 ///   same back-off as Live mode, then re-reads the cache at once. If Claude Code ever answers with a model request, it
 ///   turns the feature off.
-/// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open.
+/// - **Transcripts:** scanned when the popover opens and every 60 s while it stays open. A scan under way stops when
+///   the popover closes and carries on from there the next time.
 /// - Pauses on system sleep (and Live and auto-refresh while offline), resumes on wake and reconnect.
 /// - Persists the last good snapshot (no secrets), bound to the config directory it came from, and loads it at launch.
 ///
@@ -98,7 +99,6 @@ final class UsageEngine {
     private var isAsleep = false
     private var isOnline = true
     private var isPopoverOpen = false
-    private var isScanningTranscripts = false
 
     // Settings as last applied, to tell which change happened.
     private var appliedLiveActive: Bool
@@ -111,6 +111,8 @@ final class UsageEngine {
     private var cacheTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
+    /// The transcript scan under way, from either the loop or a refresh. At most one at a time.
+    private var scanWork: Task<([ActivityRange: UsageBreakdown], [DailyTokens]), Never>?
     private var cooldownTask: Task<Void, Never>?
     /// The Live request of a manual refresh, so it can be cancelled like the loop's.
     private var manualLiveTask: Task<Void, Never>?
@@ -170,6 +172,7 @@ final class UsageEngine {
         engineLog.info("Shutting down")
         isShutDown = true
         pauseAll()
+        cancelTranscriptScan()
         cooldownTask?.cancel()
         cooldownTask = nil
     }
@@ -247,6 +250,10 @@ final class UsageEngine {
     func setPopoverOpen(_ open: Bool) {
         guard open != isPopoverOpen else { return }
         isPopoverOpen = open
+        if !open {
+            // Nobody sees the numbers of a scan that is still reading, and a scan carries on from where it stopped.
+            cancelTranscriptScan()
+        }
         restartTranscriptLoop()
     }
 
@@ -737,21 +744,38 @@ final class UsageEngine {
     // MARK: - Transcripts
 
     private func scanTranscripts() async {
-        guard !isScanningTranscripts else { return }
-        isScanningTranscripts = true
-        defer { isScanningTranscripts = false }
+        guard scanWork == nil else { return }
 
         let scanner = self.scanner
         let now = Date()
         let sessionResetsAt = selected?.session(at: now)?.resetsAt
-        let (activity, daily) = await Task.detached(priority: .utility) {
+        let work = Task.detached(priority: .utility) {
             let entries = await scanner.scan()
+            // A cancelled scan may be incomplete, and nobody is waiting for it.
+            guard !Task.isCancelled else { return ([ActivityRange: UsageBreakdown](), [DailyTokens]()) }
             return Self.aggregate(entries, now: now, sessionResetsAt: sessionResetsAt, calendar: .current)
-        }.value
+        }
+        scanWork = work
+        // Cancelling whoever waits (the loop, when the popover closes) cancels the scan, which stops at its next file or
+        // chunk and keeps what it read.
+        let (activity, daily) = await withTaskCancellationHandler {
+            await work.value
+        } onCancel: {
+            work.cancel()
+        }
+        if scanWork == work {
+            scanWork = nil
+        }
 
-        // Results from a projects directory that is no longer configured are dropped.
-        guard scanner === self.scanner else { return }
+        // Results of a cancelled scan, and from a projects directory that is no longer configured, are dropped.
+        guard !work.isCancelled, scanner === self.scanner else { return }
         onEvent(.activity(activity, daily))
+    }
+
+    /// Stops the transcript scan under way, if any. What it has read is kept by the scanner.
+    private func cancelTranscriptScan() {
+        scanWork?.cancel()
+        scanWork = nil
     }
 
     private nonisolated static func aggregate(
@@ -889,6 +913,7 @@ final class UsageEngine {
         accountGeneration += 1
         paths = ClaudePaths(customConfigDirectory: settings.customConfigDirectory)
         cacheReader = ClaudeCodeCacheReader(fileURL: paths.globalConfigFile)
+        cancelTranscriptScan()
         scanner = TranscriptScanner(projectsDirectory: paths.projectsDirectory)
         cacheFingerprint = nil
         hasReadCache = false
