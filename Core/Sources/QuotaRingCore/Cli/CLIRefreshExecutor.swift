@@ -70,7 +70,9 @@ public struct CLIRefreshContext: Equatable, Sendable {
 /// Every usable candidate is tried in order. Each is asked `--version` and, only if it is Claude Code, `--help`, with
 /// the same minimal environment as the run, so these checks cannot update Claude Code either. Only a definitive answer
 /// (the check exited with status 0) is remembered, for the file's ``CLIFileIdentity`` (its resolved path and metadata),
-/// so a replaced or updated file is checked again; a failed exit, a timeout or a launch failure is not remembered.
+/// so a replaced or updated file is checked again. A check that gave no answer (a failed exit, a timeout, a launch
+/// failure, too much output) is not an answer, but the file rests for ``failedCheckRetryInterval`` before it is asked
+/// again, so that a broken file early in the list does not cost up to 10 s before every refresh.
 /// Something that is not Claude Code, or a Claude Code too old for the command's options, is skipped and the next
 /// candidate is tried.
 ///
@@ -85,32 +87,56 @@ public actor CLIRefreshExecutor {
     private let versionTimeout: TimeInterval
     private let killGrace: TimeInterval
     private var versionChecks: [CLIFileIdentity: CLIVersionCheck] = [:]
+    /// Files whose last check gave no answer: why, and when.
+    private var failedChecks: [CLIFileIdentity: (failure: CLIRefreshFailure, at: Date)] = [:]
+    private let now: @Sendable () -> Date
+
+    /// How long a file whose check gave no answer rests before it is checked again.
+    public static let failedCheckRetryInterval: TimeInterval = 30 * 60
 
     /// - Parameter versionTimeout: The time limit of each check (`--version`, `--help`).
     public init(
         candidates: @escaping Candidates = { ClaudeCLILocator.candidates(home: $0, customPath: $1) },
         timeout: TimeInterval = CLIRefreshCommand.timeout,
         versionTimeout: TimeInterval = CLIRefreshCommand.versionTimeout,
-        killGrace: TimeInterval = CLIRefreshCommand.killGrace
+        killGrace: TimeInterval = CLIRefreshCommand.killGrace,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.candidates = candidates
         self.timeout = timeout
         self.versionTimeout = versionTimeout
         self.killGrace = killGrace
+        self.now = now
+    }
+
+    /// Why the last check of this file gave no answer, while the file is still resting (see
+    /// ``failedCheckRetryInterval``).
+    private func restingFailure(of identity: CLIFileIdentity) -> CLIRefreshFailure? {
+        guard let failed = failedChecks[identity] else { return nil }
+        let elapsed = now().timeIntervalSince(failed.at)
+        guard elapsed >= 0, elapsed < Self.failedCheckRetryInterval else {
+            failedChecks[identity] = nil
+            return nil
+        }
+        return failed.failure
     }
 
     /// The tool a run would use, from file metadata and remembered checks only (nothing is executed): the first
-    /// candidate known to be capable or not checked yet; otherwise the first known to be too old, then the first known
-    /// not to be Claude Code.
+    /// candidate known to be capable or not checked yet; otherwise the first known to be too old, then the first whose
+    /// check gave no answer (still resting), then the first known not to be Claude Code.
     public func locate(_ context: CLIRefreshContext) -> CLIBinaryState {
         let search = search(context)
         var tooOld: CLIBinaryState?
+        var resting: CLIBinaryState?
         var notClaudeCode: CLIBinaryState?
         for executable in search.executables {
             let check = versionChecks[executable.identity]
             let state = Self.state(executable, check, search)
             switch check {
-            case nil, .claudeCode:
+            case nil:
+                if restingFailure(of: executable.identity) == nil { return state }
+                if resting == nil { resting = state }
+            case .claudeCode:
                 return state
             case .unsupported:
                 if tooOld == nil { tooOld = state }
@@ -118,7 +144,7 @@ public actor CLIRefreshExecutor {
                 if notClaudeCode == nil { notClaudeCode = state }
             }
         }
-        return tooOld ?? notClaudeCode ?? Self.state(nil, nil, search)
+        return tooOld ?? resting ?? notClaudeCode ?? Self.state(nil, nil, search)
     }
 
     /// One refresh: find the first capable Claude Code (checking each candidate once per file), run `/usage` with it,
@@ -130,6 +156,9 @@ public actor CLIRefreshExecutor {
     /// Code are skipped silently.
     public func run(_ context: CLIRefreshContext) async -> CLIRunReport {
         let search = search(context)
+        // A file that changed (or is gone) has a new identity: whatever rest its old identity had is forgotten.
+        let present = Set(search.executables.map(\.identity))
+        failedChecks = failedChecks.filter { present.contains($0.key) }
         var firstTooOld: CLIRunReport?
         var firstUnanswered: CLIRunReport?
         var notClaudeCode: CLIBinaryState?
@@ -138,14 +167,26 @@ public actor CLIRefreshExecutor {
             let check: CLIVersionCheck
             if let remembered = versionChecks[executable.identity] {
                 check = remembered
+            } else if let failure = restingFailure(of: executable.identity) {
+                // Asked recently without an answer: not asked again yet, and reported as before.
+                if firstUnanswered == nil {
+                    firstUnanswered = CLIRunReport(
+                        outcome: .failed(failure), binary: Self.state(executable, nil, search))
+                }
+                continue
             } else {
                 switch await checkCapability(executable, environment: environment, context: context) {
                 case .success(let result):
                     versionChecks[executable.identity] = result
+                    failedChecks[executable.identity] = nil
                     check = result
                 case .failure(.cancelled):
                     return CLIRunReport(outcome: .failed(.cancelled), binary: Self.state(executable, nil, search))
                 case .failure(let failure):
+                    // A file that changed under the check is a new file next time; anything else rests.
+                    if failure != .toolChanged {
+                        failedChecks[executable.identity] = (failure, now())
+                    }
                     if firstUnanswered == nil {
                         firstUnanswered = CLIRunReport(
                             outcome: .failed(failure), binary: Self.state(executable, nil, search))

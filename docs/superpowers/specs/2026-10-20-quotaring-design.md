@@ -454,7 +454,7 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
   Usable = valid, `--version` output contains "(Claude Code)", and `--help`
   lists both `--safe-mode` and `--no-session-persistence` (same minimal env,
   10 s limit each; only definitive exit-0 answers are cached, per resolved path
-  + file identity; the file is re-inspected right before every execution, the
+  + file identity; a check without an answer rests that file for 30 min; the file is re-inspected right before every execution, the
   `/usage` run included, and refused if its identity changed). Candidates that
   are not usable are skipped; if a Claude Code was found but all are too old,
   the status is "unsupported version" with its path and version (even when an

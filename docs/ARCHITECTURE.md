@@ -133,8 +133,9 @@ UsageEngine (auto-refresh loop, MainActor)
                  (~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude,
                  newest version first), then ~/.local/bin, ~/.claude/local, ~/.npm-global/bin, /opt/homebrew/bin,
                  /usr/local/bin; resolved through symlinks; regular, executable, owner = user or root, mode & 0o022 == 0
-              2. for each usable file, in order (definitive answers cached per file identity, 10 s limit each; the file is
-                 inspected again right before every execution and must not have changed):
+              2. for each usable file, in order (definitive answers cached per file identity, a check without an
+                 answer rests that file for 30 min, 10 s limit each; the file is inspected again right before every
+                 execution and must not have changed):
                  `--version` contains "(Claude Code)", and `--help` lists --safe-mode and --no-session-persistence;
                  not Claude Code or too old → try the next (none left: unsupportedVersion, else the first check
                  without an answer, else notFound)

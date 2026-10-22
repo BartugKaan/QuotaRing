@@ -90,11 +90,31 @@ private struct FakeClaude {
     }
 
     /// An executor that only ever finds files of this scratch directory.
-    func executor(candidates: [URL]? = nil, timeout: TimeInterval = 30) -> CLIRefreshExecutor {
+    func executor(
+        candidates: [URL]? = nil, timeout: TimeInterval = 30, clock: TestClock = TestClock()
+    ) -> CLIRefreshExecutor {
         let fixed = candidates ?? [tool]
         return CLIRefreshExecutor(
             candidates: { _, custom in (custom.map { [$0] } ?? []) + fixed },
-            timeout: timeout, versionTimeout: 30, killGrace: 0.3)
+            timeout: timeout, versionTimeout: 30, killGrace: 0.3, now: { clock.now })
+    }
+}
+
+/// A clock the test moves by hand.
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = Date(timeIntervalSince1970: 1_792_600_000)
+
+    var now: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return current
+    }
+
+    func advance(by seconds: TimeInterval) {
+        lock.lock()
+        current = current.addingTimeInterval(seconds)
+        lock.unlock()
     }
 }
 
@@ -323,28 +343,71 @@ private let checks = ["--version", "--help"]
 
     // MARK: - Only definitive answers are remembered
 
-    @Test func aFailingVersionCheckIsNotRemembered() async throws {
+    @Test func aFailingVersionCheckIsNotCachedAsAnAnswerButRestsForHalfAnHour() async throws {
+        let fake = try FakeClaude(versionExit: 1, result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let clock = TestClock()
+        let executor = fake.executor(clock: clock)
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        // Not an answer: Settings still shows it as not checked, and it is not skipped as "not Claude Code".
+        #expect(await executor.locate(context).versionCheck == nil)
+        // Within the rest period the file is not asked again, and the same failure is reported.
+        clock.advance(by: 29 * 60)
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(fake.calls == ["--version"])
+        // Afterwards it is asked again.
+        clock.advance(by: 2 * 60)
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(fake.calls == ["--version", "--version"])
+    }
+
+    @Test func aFailingHelpCheckRestsToo() async throws {
+        let fake = try FakeClaude(helpExit: 2, result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let clock = TestClock()
+        let executor = fake.executor(clock: clock)
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(fake.calls == checks)
+        clock.advance(by: 31 * 60)
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(fake.calls == checks + checks)
+    }
+
+    @Test func aBrokenEarlierCandidateDoesNotDelayEveryRefresh() async throws {
+        let broken = try FakeClaude(versionExit: 1, result: "{}")
+        defer { broken.scratch.remove() }
+        let current = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { current.scratch.remove() }
+        let executor = current.executor(candidates: [broken.tool, current.tool])
+        let context = try current.context()
+
+        #expect(await executor.run(context).outcome == .success)
+        #expect(await executor.run(context).outcome == .success)
+        // The broken file was asked once; the working one is checked once and then only run.
+        #expect(broken.calls == ["--version"])
+        #expect(current.calls == checks + [usageCall, usageCall])
+        // Settings shows the tool that works, not the resting broken one.
+        #expect(await executor.locate(context).location.executable?.executable == current.tool)
+    }
+
+    @Test func aChangedFileIsAskedAgainAtOnce() async throws {
         let fake = try FakeClaude(versionExit: 1, result: try fixtureText("cli-usage-success"))
         defer { fake.scratch.remove() }
         let executor = fake.executor()
         let context = try fake.context()
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
 
-        #expect(await executor.run(context).outcome == .failed(.exitStatus))
-        #expect(await executor.run(context).outcome == .failed(.exitStatus))
-        // Asked again on the second run, never asked for `--help`, never run with `/usage`.
-        #expect(fake.calls == ["--version", "--version"])
-        #expect(await executor.locate(context).versionCheck == nil)
-    }
-
-    @Test func aFailingHelpCheckIsNotRemembered() async throws {
-        let fake = try FakeClaude(helpExit: 2, result: try fixtureText("cli-usage-success"))
-        defer { fake.scratch.remove() }
-        let executor = fake.executor()
-        let context = try fake.context()
-
-        #expect(await executor.run(context).outcome == .failed(.exitStatus))
-        #expect(await executor.run(context).outcome == .failed(.exitStatus))
-        #expect(fake.calls == checks + checks)
+        // An update replaces the file: the rest period belonged to the old one.
+        let updated = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { updated.scratch.remove() }
+        try FileManager.default.removeItem(at: fake.tool)
+        try FileManager.default.copyItem(at: updated.tool, to: fake.tool)
+        #expect(await executor.run(context).outcome == .success)
     }
 
     // MARK: - Which problem is reported
