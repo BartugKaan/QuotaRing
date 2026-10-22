@@ -235,6 +235,7 @@ The release job fails early and with a readable message in most cases.
 | `MAC verification failed` while importing | `DEVELOPER_ID_P12_PASSWORD` does not match the password used for the export. |
 | `no valid 'Developer ID Application' identity` | Wrong certificate type, expired, or exported without its private key. Export again from **My Certificates**. |
 | `does not belong to the team in APPLE_TEAM_ID` | `APPLE_TEAM_ID` is not the team that owns the certificate. |
+| Archive, export or DMG signing fails with `errSecInternalComponent`, `User interaction is not allowed`, or "unable to build chain" / "no identity found" right after a successful import | codesign cannot use the private key. `scripts/release/import-cert.sh` imports it non-extractable (`-x`) with only `/usr/bin/codesign` on its access list, so that nothing in the build can export the identity. First check that `security set-key-partition-list` ran without an error in the import step, and re-run the failed job once. If it still fails, try a run with `-T /usr/bin/security` added back to the `security import` call (keep `-x`), and record what was needed in the script's comment. Do not drop `-x`: it is what keeps the key from being copied out of the keychain. |
 | `Notarization did not succeed (status: Invalid ...)` | The step prints Apple's log. Typical causes: Hardened Runtime off, an unsigned nested binary, or a missing secure timestamp. |
 | `HTTP status code: 401` from `notarytool` | `ASC_KEY_ID`, `ASC_ISSUER_ID` or `ASC_KEY_P8_BASE64` is wrong, or the key was revoked or lacks the Developer role. |
 | Attestation step fails | The repository is private (see "Repository prerequisites"), or the job lacks `id-token: write` and `attestations: write`. |
@@ -272,6 +273,9 @@ Delete any draft release that was created for that tag before re-tagging.
   release steps) and also if any earlier step fails. The
   decoded `.p12` and `.p8` live in private temp files that are deleted when the
   script exits.
+- The private key is imported non-extractable, with only `codesign` on its
+  access list, so nothing that runs during the build can export the identity
+  while the keychain is unlocked.
 - No script prints a secret, and none enables shell tracing.
 - Third-party actions are pinned to full commit SHAs; Dependabot proposes updates
   weekly. The workflow itself holds the minimum permissions it needs.
