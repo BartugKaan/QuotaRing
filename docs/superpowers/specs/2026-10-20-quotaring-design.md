@@ -429,7 +429,8 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
   records it; closing the window with its close button records auto-refresh
   (and Live mode) off. In Settings, turning it on goes through the consent sheet.
 - Runs only when the cached snapshot is older than the refresh interval, never
-  more often than every 120 s, paused while asleep or offline, with the same
+  more often than every 120 s, paused while asleep, offline or away (displays
+  asleep, screen locked, session inactive), with the same
   back-off as Live mode on failures; the Refresh button also triggers it
   (60 s cooldown). After a run, the cache loop re-reads immediately.
 - Executes exactly the command above with a fixed argument array (no shell),

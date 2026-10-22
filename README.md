@@ -244,8 +244,9 @@ telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
 - **QuotaRing never touches your login for this.** Claude Code uses and renews its own credentials, as it does when you
   run it in a terminal.
 - **When:** only when the numbers shown are older than your refresh interval, never more often than every 2 minutes,
-  not while your Mac sleeps or is offline, and with the same back-off as Live mode after a failure (up to 30 minutes).
-  The Refresh button also runs it, at most once a minute.
+  not while your Mac sleeps or is offline, not while you are away (displays asleep, screen locked or another user
+  session active; it catches up as soon as you are back), and with the same back-off as Live mode after a failure (up
+  to 30 minutes). The Refresh button also runs it, at most once a minute.
 - **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
   scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then the system folders
   `/usr/bin:/bin:/usr/sbin:/sbin`, then `/usr/local/bin:/opt/homebrew/bin`, so nothing installed there can stand in

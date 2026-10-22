@@ -32,7 +32,7 @@ First public release, planned as 0.1.0.
   never sent when expired. With a custom config directory only that directory's own Keychain item is read.
 - Opt-in auto-refresh ("Refresh with Claude Code") for Claude desktop app users: QuotaRing runs Claude Code's own
   `claude -p "/usage" --safe-mode --no-session-persistence --output-format json` in the background when the numbers are
-  older than the refresh interval (at most every 2 minutes, paused while asleep or offline, with Live mode's back-off;
+  older than the refresh interval (at most every 2 minutes, paused while asleep, offline or away, with Live mode's back-off;
   the Refresh button runs it too, at most once a minute), then re-reads the cache at once. It makes no model request and
   QuotaRing handles no credentials for it: Claude Code uses and renews its own login. Offered in the first-run window (a
   checkbox, pre-checked, recorded only when one of the window's buttons is pressed; closing the window turns nothing on) and in Settings → Data behind a consent sheet that shows the exact command; Settings shows the
@@ -68,7 +68,8 @@ First public release, planned as 0.1.0.
 - Source selection by freshness, with the source and age shown in the UI ("Claude Code · 3 min ago", "Live · 1 min
   ago").
 - Gentle polling: 5-minute default (3, 5, 10 or 15 minutes selectable) with jitter, exponential back-off that honors
-  `Retry-After`, a 60-second manual refresh cooldown, and pausing while asleep or offline.
+  `Retry-After`, a 60-second manual refresh cooldown, and pausing while asleep, offline or away (displays asleep, screen
+  locked or session switched).
 - Local notifications when session usage crosses configurable thresholds (default 80% and 95% used), once per window,
   and an optional notice when the session resets, sent on time from the local clock (checked every 30 seconds) even
   when no new data has arrived.
