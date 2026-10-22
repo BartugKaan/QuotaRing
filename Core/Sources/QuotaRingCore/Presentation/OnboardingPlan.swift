@@ -12,6 +12,8 @@ public struct OnboardingPlan: Equatable, Sendable {
 
     /// The Live mode consent to record.
     public var liveModeEnabled: Bool
+    /// The consent to refresh through Claude Code ("auto-refresh") to record.
+    public var cliRefreshEnabled: Bool
     /// The notification thresholds to store.
     public var notificationThresholds: [Int]
     /// Whether to show the system notification prompt.
@@ -21,11 +23,13 @@ public struct OnboardingPlan: Equatable, Sendable {
 
     public init(
         liveModeEnabled: Bool,
+        cliRefreshEnabled: Bool = false,
         notificationThresholds: [Int],
         requestsNotificationPermission: Bool,
         holdsLiveUntilPromptIsAnswered: Bool
     ) {
         self.liveModeEnabled = liveModeEnabled
+        self.cliRefreshEnabled = cliRefreshEnabled
         self.notificationThresholds = notificationThresholds
         self.requestsNotificationPermission = requestsNotificationPermission
         self.holdsLiveUntilPromptIsAnswered = holdsLiveUntilPromptIsAnswered
@@ -34,15 +38,19 @@ public struct OnboardingPlan: Equatable, Sendable {
     /// - Parameters:
     ///   - enableLiveMode: `true` only for the explicit "Enable Live mode" button.
     ///   - notifyNearLimit: The "Notify me when I'm close to my limit" checkbox.
+    ///   - refreshWithClaudeCode: The "Keep numbers fresh with Claude Code" checkbox. It needs no system prompt, so it
+    ///     never holds anything back.
     ///   - currentThresholds: The thresholds stored now; kept when notifications are wanted and some are set.
     ///   - defaultThresholds: Used when notifications are wanted and none are set.
     public init(
         enableLiveMode: Bool,
         notifyNearLimit: Bool,
+        refreshWithClaudeCode: Bool = false,
         currentThresholds: [Int],
         defaultThresholds: [Int]
     ) {
         liveModeEnabled = enableLiveMode
+        cliRefreshEnabled = refreshWithClaudeCode
         if notifyNearLimit {
             notificationThresholds = currentThresholds.isEmpty ? defaultThresholds : currentThresholds
         } else {

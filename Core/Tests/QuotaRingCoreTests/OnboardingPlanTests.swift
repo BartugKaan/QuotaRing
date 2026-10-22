@@ -51,4 +51,24 @@ import Testing
         #expect(plan(live: false, notify: true, current: []).notificationThresholds == [80, 95])
         #expect(plan(live: true, notify: false, current: [50]).notificationThresholds == [])
     }
+
+    @Test func refreshWithClaudeCodeIsRecordedOnItsOwn() {
+        // The checkbox is recorded as chosen, and it needs no system prompt, so it never holds Live mode back.
+        for live in [false, true] {
+            for notify in [false, true] {
+                let on = OnboardingPlan(
+                    enableLiveMode: live, notifyNearLimit: notify, refreshWithClaudeCode: true,
+                    currentThresholds: [80, 95], defaultThresholds: defaults)
+                let off = OnboardingPlan(
+                    enableLiveMode: live, notifyNearLimit: notify, refreshWithClaudeCode: false,
+                    currentThresholds: [80, 95], defaultThresholds: defaults)
+                #expect(on.cliRefreshEnabled)
+                #expect(!off.cliRefreshEnabled)
+                #expect(on.holdsLiveUntilPromptIsAnswered == off.holdsLiveUntilPromptIsAnswered)
+                #expect(on.liveModeEnabled == live)
+            }
+        }
+        // Without the argument nothing is turned on.
+        #expect(!plan(live: true, notify: true).cliRefreshEnabled)
+    }
 }
