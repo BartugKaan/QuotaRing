@@ -1,0 +1,27 @@
+{
+    "five_hour": {
+        "utilization": 37.5,
+        "resets_at": 1792623000
+    },
+    "seven_day": {
+        "utilization": 18,
+        "resets_at": "2026-10-27T09:00:00.192984+00:00"
+    },
+    "seven_day_oauth_apps": null,
+    "seven_day_opus": {
+        "utilization": 7.25,
+        "resets_at": "2026-10-27T09:00:00Z"
+    },
+    "seven_day_sonnet": null,
+    "extra_usage": {
+        "is_enabled": true,
+        "monthly_limit": 5000,
+        "used_credits": 1250.5,
+        "utilization": 25.01,
+        "currency": "USD",
+        "decimal_places": 2
+    },
+    "some_future_key": {
+        "anything": [1, 2, 3]
+    }
+}

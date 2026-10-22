@@ -1,0 +1,64 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. QuotaRing is deliberately small and auditable, so every feature is
+        weighed against what it would read, send, or store.
+
+        **Do not paste tokens, credentials, or logs that may contain secrets.**
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation or need, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: Describe the behavior you have in mind. Sketches or mock-ups are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false
+  - type: dropdown
+    id: data-impact
+    attributes:
+      label: Does it need new data access?
+      description: Best guess is fine; this helps judge privacy impact.
+      options:
+        - No, it only changes how existing data is shown
+        - It would read another local file or folder
+        - It would need network access
+        - It would store something new on disk
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: quotaring-version
+    attributes:
+      label: QuotaRing version
+      description: Optional. Shown in Settings > About.
+      placeholder: "0.1.0"
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this request.
+          required: true
+        - label: >-
+            I understand that features adding telemetry, additional network hosts, or any storage
+            of credentials will not be accepted.
+          required: true

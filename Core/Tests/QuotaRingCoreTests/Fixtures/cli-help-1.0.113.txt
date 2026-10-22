@@ -1,0 +1,24 @@
+Usage: claude [options] [command] [prompt]
+
+Claude Code - starts an interactive session by default, use -p/--print for non-interactive output
+
+Arguments:
+  prompt                                            Your prompt
+
+Options:
+  -d, --debug [filter]                              Enable debug mode with optional category filtering
+  --verbose                                         Override verbose mode setting from config
+  -p, --print                                       Print response and exit (useful for pipes)
+  --output-format <format>                          Output format (only works with --print): "text" (default), "json" (single result), or "stream-json" (realtime streaming) (choices: "text", "json", "stream-json")
+  --mcp-config <configs...>                         Load MCP servers from JSON files or strings (space-separated)
+  -c, --continue                                    Continue the most recent conversation
+  -r, --resume [sessionId]                          Resume a conversation
+  --model <model>                                   Model for the current session
+  -v, --version                                     Output the version number
+  -h, --help                                        Display help for command
+
+Commands:
+  config                                            Manage configuration (eg. claude config set -g theme dark)
+  mcp                                               Configure and manage MCP servers
+  doctor                                            Check the health of your Claude Code auto-updater
+  update                                            Check for updates and install if available

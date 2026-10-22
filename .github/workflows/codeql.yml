@@ -1,0 +1,61 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 05:17 UTC.
+    - cron: "17 5 * * 1"
+
+# Nothing at workflow level; the job requests exactly what CodeQL needs.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  analyze:
+    name: Analyze (swift)
+    # Code scanning results can only be uploaded for public repositories (or
+    # private ones with GitHub Advanced Security). Skip, rather than fail, while
+    # the repository is private.
+    if: ${{ github.event.repository.private != true }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+
+      - name: Install XcodeGen
+        run: scripts/ci/install-xcodegen.sh
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: swift
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build for analysis
+        run: make build XCODEBUILD_FLAGS="CODE_SIGNING_ALLOWED=NO"
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: "/language:swift"

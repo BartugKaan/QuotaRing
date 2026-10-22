@@ -1,0 +1,11 @@
+.build/
+*.xcodeproj/
+Configs/Local.xcconfig
+DerivedData/
+build/
+dist/
+.DS_Store
+.superpowers/
+*.p8
+*.p12
+.swiftpm/

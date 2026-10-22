@@ -1,0 +1,12 @@
+// Personal build settings. Copy this file to Configs/Local.xcconfig (git-ignored) and fill in your own values.
+// Base.xcconfig includes Local.xcconfig last, so everything here overrides the "Sign to Run Locally" defaults.
+//
+// Signing with a stable identity keeps a Keychain "Always Allow" grant across rebuilds while you test Live mode,
+// and makes Keychain prompts behave like they do for signed releases.
+
+// Your 10-character Apple team ID (Xcode > Settings > Accounts, or developer.apple.com > Membership).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// An "Apple Development" certificate from that team, managed by Xcode.
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_STYLE = Automatic
