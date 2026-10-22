@@ -143,12 +143,19 @@ public enum RefreshPlanner {
 
     /// Seconds until an automatic Live request could next be due: when the freshest snapshot reaches
     /// `refreshInterval` of age, or when the back-off ends, whichever is later. Clamped with ``clampDelay(_:)``.
+    ///
+    /// While automatic requests are suspended (`isSuspended`, see ``suspendsAutomaticRequests(after:)``) nothing can
+    /// become due by itself, so this is the longest wait, ``delayRange``'s upper bound. Without that the age and the
+    /// back-off would both have run out a few minutes after the refusal and the loop would wake up every second until the
+    /// user pressed Refresh. The caller restarts its loop where the suspension is lifted.
     public static func nextCheckDelay(
         freshest: UsageSnapshot?,
         now: Date,
         refreshInterval: TimeInterval,
-        nextAllowedLiveAt: Date?
+        nextAllowedLiveAt: Date?,
+        isSuspended: Bool = false
     ) -> TimeInterval {
+        if isSuspended { return delayRange.upperBound }
         var wait: TimeInterval = 0
         if let freshest {
             wait = max(wait, freshest.fetchedAt.addingTimeInterval(refreshInterval).timeIntervalSince(now))
