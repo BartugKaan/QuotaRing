@@ -11,9 +11,11 @@ private enum Saved {
     static let notificationThresholds = "notificationThresholds"
     static let notifyOnReset = "notifyOnReset"
     static let liveModeEnabled = "liveModeEnabled"
+    static let liveModeConsentVersion = "liveModeConsentVersion"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
     static let customConfigDirectory = "customConfigDirectory"
     static let cliRefreshEnabled = "cliRefreshEnabled"
+    static let cliRefreshConsentVersion = "cliRefreshConsentVersion"
     static let cliRefreshSafetyStop = "cliRefreshSafetyStop"
     static let customCLIPath = "customCLIPath"
     static let obsoleteSafetyStop = "cliRefreshDisabledForSafety"
@@ -117,8 +119,10 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         let saved = sandbox.savedValues
         #expect(saved[Saved.refreshInterval] as? Double == 900)
         #expect(saved[Saved.liveModeEnabled] as? Bool == true)
+        #expect(saved[Saved.liveModeConsentVersion] as? Int == 1)
         #expect(saved[Saved.hasCompletedOnboarding] as? Bool == true)
         #expect(saved[Saved.cliRefreshEnabled] as? Bool == true)
+        #expect(saved[Saved.cliRefreshConsentVersion] as? Int == 1)
         #expect(saved[Saved.customConfigDirectory] as? String == config.path)
         #expect(saved[Saved.notificationThresholds] as? [Int] == [70])
     }
@@ -146,7 +150,9 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         let sandbox = try TestSandbox()
         defer { sandbox.remove() }
         sandbox.defaults.set(true, forKey: Saved.liveModeEnabled)
+        sandbox.defaults.set(UsageAPI.consentVersion, forKey: Saved.liveModeConsentVersion)
         sandbox.defaults.set(true, forKey: Saved.cliRefreshEnabled)
+        sandbox.defaults.set(CLIRefreshCommand.consentVersion, forKey: Saved.cliRefreshConsentVersion)
 
         let settings = sandbox.makeSettings()
 
@@ -154,6 +160,161 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         #expect(settings.cliRefreshEnabled)
         #expect(!settings.isLiveModeActive)
         #expect(!settings.isCLIRefreshActive)
+    }
+}
+
+/// Consent counts only for the version of the feature it was given for (`UsageAPI.consentVersion`,
+/// `CLIRefreshCommand.consentVersion`), so a build that changes what a feature does asks again.
+@MainActor
+@Suite struct SettingsStoreConsentVersionTests {
+    /// What an earlier build, or one whose feature did something else, left on disk: the user said yes, onboarding is
+    /// done, and the version is `version` (`nil` for none saved).
+    private func savedConsent(in sandbox: TestSandbox, version: Any?) {
+        sandbox.defaults.set(true, forKey: Saved.liveModeEnabled)
+        sandbox.defaults.set(true, forKey: Saved.cliRefreshEnabled)
+        sandbox.defaults.set(true, forKey: Saved.hasCompletedOnboarding)
+        if let version {
+            sandbox.defaults.set(version, forKey: Saved.liveModeConsentVersion)
+            sandbox.defaults.set(version, forKey: Saved.cliRefreshConsentVersion)
+        }
+    }
+
+    @Test func theCurrentVersionsAreOne() {
+        #expect(UsageAPI.consentVersion == 1)
+        #expect(CLIRefreshCommand.consentVersion == 1)
+    }
+
+    @Test func consentForTheCurrentVersionCounts() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        savedConsent(in: sandbox, version: 1)
+
+        let settings = sandbox.makeSettings()
+
+        #expect(settings.liveModeEnabled)
+        #expect(settings.cliRefreshEnabled)
+        #expect(settings.isLiveModeActive)
+        #expect(settings.isCLIRefreshActive)
+        #expect(settings.liveModeConsentVersion == UsageAPI.consentVersion)
+        #expect(settings.cliRefreshConsentVersion == CLIRefreshCommand.consentVersion)
+    }
+
+    @Test func consentSavedWithoutAVersionDoesNotCount() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        savedConsent(in: sandbox, version: nil)
+
+        let settings = sandbox.makeSettings()
+
+        #expect(!settings.liveModeEnabled)
+        #expect(!settings.cliRefreshEnabled)
+        #expect(!settings.isLiveModeActive)
+        #expect(!settings.isCLIRefreshActive)
+        // Reading it changes nothing on disk.
+        #expect(sandbox.savedValues[Saved.liveModeEnabled] as? Bool == true)
+        #expect(sandbox.savedValues[Saved.liveModeConsentVersion] == nil)
+    }
+
+    /// Another version (an older or a newer build), or a number that is not a version at all.
+    @Test(arguments: [0, 2, 999, -1] as [Int])
+    func consentForAnotherVersionDoesNotCount(version: Int) throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        savedConsent(in: sandbox, version: version)
+
+        let settings = sandbox.makeSettings()
+
+        #expect(!settings.liveModeEnabled)
+        #expect(!settings.cliRefreshEnabled)
+        #expect(!settings.isLiveModeActive)
+        #expect(!settings.isCLIRefreshActive)
+    }
+
+    @Test func aVersionOfTheWrongTypeDoesNotCount() throws {
+        for version in ["1", true, 1.5, [1]] as [Any] {
+            let sandbox = try TestSandbox()
+            defer { sandbox.remove() }
+            savedConsent(in: sandbox, version: version)
+
+            let settings = sandbox.makeSettings()
+
+            #expect(!settings.liveModeEnabled, "\(version)")
+            #expect(!settings.cliRefreshEnabled, "\(version)")
+        }
+    }
+
+    @Test func agreeingAgainRecordsTheCurrentVersion() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        savedConsent(in: sandbox, version: 2)
+        let settings = sandbox.makeSettings()
+        try #require(!settings.liveModeEnabled && !settings.cliRefreshEnabled)
+
+        // What the consent sheets do.
+        settings.liveModeEnabled = true
+        settings.cliRefreshEnabled = true
+
+        #expect(settings.isLiveModeActive)
+        #expect(settings.isCLIRefreshActive)
+        #expect(sandbox.savedValues[Saved.liveModeConsentVersion] as? Int == UsageAPI.consentVersion)
+        #expect(sandbox.savedValues[Saved.cliRefreshConsentVersion] as? Int == CLIRefreshCommand.consentVersion)
+        let relaunched = sandbox.makeSettings()
+        #expect(relaunched.isLiveModeActive)
+        #expect(relaunched.isCLIRefreshActive)
+    }
+
+    @Test func turningAFeatureOffClearsItsVersion() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        let settings = sandbox.makeSettings()
+        settings.liveModeEnabled = true
+        settings.cliRefreshEnabled = true
+        try #require(sandbox.savedValues[Saved.liveModeConsentVersion] != nil)
+        try #require(sandbox.savedValues[Saved.cliRefreshConsentVersion] != nil)
+
+        settings.liveModeEnabled = false
+        #expect(sandbox.savedValues[Saved.liveModeConsentVersion] == nil)
+        #expect(sandbox.savedValues[Saved.liveModeEnabled] as? Bool == false)
+        #expect(settings.liveModeConsentVersion == 0)
+        // The other feature keeps its own.
+        #expect(sandbox.savedValues[Saved.cliRefreshConsentVersion] as? Int == CLIRefreshCommand.consentVersion)
+
+        settings.cliRefreshEnabled = false
+        #expect(sandbox.savedValues[Saved.cliRefreshConsentVersion] == nil)
+        #expect(sandbox.savedValues[Saved.cliRefreshEnabled] as? Bool == false)
+        #expect(settings.cliRefreshConsentVersion == 0)
+    }
+
+    @Test func aSafetyStopClearsTheAutoRefreshVersion() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        let settings = sandbox.makeSettings()
+        settings.cliRefreshEnabled = true
+
+        settings.stopCLIRefreshForSafety(.modelCall)
+
+        #expect(sandbox.savedValues[Saved.cliRefreshConsentVersion] == nil)
+        #expect(!sandbox.makeSettings().cliRefreshEnabled)
+    }
+
+    @Test func theCommandLineCannotSupplyTheVersion() throws {
+        let sandbox = try TestSandbox()
+        defer { sandbox.remove() }
+        // An earlier build's yes, without a version, and a launch that tries to supply the current one.
+        savedConsent(in: sandbox, version: nil)
+        putOnTheCommandLine(
+            [
+                Saved.liveModeConsentVersion: UsageAPI.consentVersion,
+                Saved.cliRefreshConsentVersion: CLIRefreshCommand.consentVersion,
+            ], in: sandbox.defaults)
+        try #require(sandbox.defaults.integer(forKey: Saved.liveModeConsentVersion) == UsageAPI.consentVersion)
+
+        let settings = sandbox.makeSettings()
+
+        #expect(!settings.liveModeEnabled)
+        #expect(!settings.cliRefreshEnabled)
+        #expect(sandbox.savedValues[Saved.liveModeConsentVersion] == nil)
+        #expect(sandbox.savedValues[Saved.cliRefreshConsentVersion] == nil)
     }
 }
 
@@ -254,8 +415,10 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         putOnTheCommandLine(
             [
                 Saved.liveModeEnabled: true,
+                Saved.liveModeConsentVersion: UsageAPI.consentVersion,
                 Saved.hasCompletedOnboarding: true,
                 Saved.cliRefreshEnabled: true,
+                Saved.cliRefreshConsentVersion: CLIRefreshCommand.consentVersion,
                 Saved.customCLIPath: danger.path,
                 Saved.customConfigDirectory: "/tmp/elsewhere",
                 Saved.cliRefreshSafetyStop: "modelCall",
@@ -282,6 +445,7 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
             [
                 Saved.liveModeEnabled: true, Saved.hasCompletedOnboarding: true, Saved.cliRefreshEnabled: true,
                 Saved.customCLIPath: "/tmp/elsewhere/claude", Saved.customConfigDirectory: "/tmp/elsewhere",
+                Saved.liveModeConsentVersion: 1, Saved.cliRefreshConsentVersion: 1,
             ], in: sandbox.defaults)
 
         _ = sandbox.makeSettings()
@@ -289,7 +453,7 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         // A relaunch without the arguments must find nothing of them.
         for key in [
             Saved.liveModeEnabled, Saved.hasCompletedOnboarding, Saved.cliRefreshEnabled, Saved.customCLIPath,
-            Saved.customConfigDirectory,
+            Saved.customConfigDirectory, Saved.liveModeConsentVersion, Saved.cliRefreshConsentVersion,
         ] {
             #expect(sandbox.savedValues[key] == nil, "\(key) was saved")
         }
@@ -299,8 +463,9 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         let sandbox = try TestSandbox()
         defer { sandbox.remove() }
         sandbox.defaults.set(true, forKey: Saved.liveModeEnabled)
+        sandbox.defaults.set(UsageAPI.consentVersion, forKey: Saved.liveModeConsentVersion)
         sandbox.defaults.set(true, forKey: Saved.hasCompletedOnboarding)
-        putOnTheCommandLine([Saved.liveModeEnabled: false], in: sandbox.defaults)
+        putOnTheCommandLine([Saved.liveModeEnabled: false, Saved.liveModeConsentVersion: 0], in: sandbox.defaults)
 
         let settings = sandbox.makeSettings()
 
@@ -326,8 +491,10 @@ private func putOnTheCommandLine(_ values: [String: Any], in defaults: UserDefau
         let sandbox = try TestSandbox()
         defer { sandbox.remove() }
         sandbox.defaults.set(true, forKey: Saved.liveModeEnabled)
+        sandbox.defaults.set(UsageAPI.consentVersion, forKey: Saved.liveModeConsentVersion)
         sandbox.defaults.set(true, forKey: Saved.hasCompletedOnboarding)
         sandbox.defaults.set(true, forKey: Saved.cliRefreshEnabled)
+        sandbox.defaults.set(CLIRefreshCommand.consentVersion, forKey: Saved.cliRefreshConsentVersion)
         sandbox.defaults.set("/usr/bin/claude", forKey: Saved.customCLIPath)
 
         let settings = SettingsStore(defaults: sandbox.defaults, persistentDomain: nil)

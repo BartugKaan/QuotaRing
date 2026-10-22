@@ -82,6 +82,22 @@ import Testing
         #expect(await eventually { rig.prompt.finished == 1 })
     }
 
+    @Test func theConsentIsRecordedForTheCurrentVersions() throws {
+        let rig = try rig(notify: false, refresh: true)
+        defer { rig.sandbox.remove() }
+
+        rig.model.finish(enableLiveMode: true)
+
+        #expect(rig.settings.liveModeConsentVersion == UsageAPI.consentVersion)
+        #expect(rig.settings.cliRefreshConsentVersion == CLIRefreshCommand.consentVersion)
+        #expect(rig.sandbox.savedValues["liveModeConsentVersion"] as? Int == UsageAPI.consentVersion)
+        #expect(rig.sandbox.savedValues["cliRefreshConsentVersion"] as? Int == CLIRefreshCommand.consentVersion)
+        // So a relaunch of the same build finds both still on.
+        let relaunched = rig.sandbox.makeSettings()
+        #expect(relaunched.isLiveModeActive)
+        #expect(relaunched.isCLIRefreshActive)
+    }
+
     @Test func uncheckedBoxesAreRecordedAsOff() throws {
         let rig = try rig(notify: false, refresh: false)
         defer { rig.sandbox.remove() }
@@ -352,6 +368,11 @@ import Testing
         #expect(rig.settings.liveModeEnabled == live)
         #expect(rig.settings.cliRefreshEnabled == (refresh && !closed))
         #expect(rig.settings.hasCompletedOnboarding)
+        // A consent is saved with the version of the feature it was given for; no consent saves none.
+        let saved = rig.sandbox.savedValues
+        #expect(saved["liveModeConsentVersion"] as? Int == (live ? UsageAPI.consentVersion : nil))
+        #expect(
+            saved["cliRefreshConsentVersion"] as? Int == (refresh && !closed ? CLIRefreshCommand.consentVersion : nil))
         #expect(rig.settings.notificationThresholds.isEmpty == !notify)
 
         let holdsGate = live && notify

@@ -8,8 +8,9 @@ import Foundation
 ///   whether extra usage is on with its percentage. No token, and no extra-usage money amounts.
 /// - Each file records the Claude config directory it was read from. ``load(configDirectory:)`` returns nothing for
 ///   any other directory, because another directory can belong to another account.
-/// - The directory is private to the user (0700). The file is 0600 from the moment it exists: it is written to a
-///   private temporary file that is then renamed over the target, which is atomic.
+/// - The directory is private to the user (0700, set again on every save), and the file is set to 0600. Privacy rests
+///   on the directory: other users cannot enter it, whatever mode the file briefly has while it is being created. The
+///   file is written to a temporary file in that directory and then renamed over the target, which is atomic.
 /// - Loading accepts only a regular file of at most ``maxFileSize`` bytes. A symbolic link is ignored.
 ///
 /// Methods run synchronously; callers serialize them (the app uses one queue, so a delete lands after any pending

@@ -14,7 +14,8 @@ These are non-negotiable, because they are what users trust the app for:
 
 - The only network host is `api.anthropic.com`. No telemetry, analytics, crash reporting or update pings.
 - Never write, refresh, persist, log or print an OAuth token. Never write to `~/.claude.json`, anything under
-  `~/.claude/`, or Keychain items. Never launch the `claude` CLI.
+  `~/.claude/`, or Keychain items. Never launch `claude` except through `Core/Cli` (the fixed, consented
+  auto-refresh command).
 - No third-party runtime dependencies. Apple's SDKs only.
 - Percentages from Anthropic are **percent used** (0 to 100). Remaining is `100 - used`.
 - Keep it auditable: prefer small, plain code over clever abstractions.

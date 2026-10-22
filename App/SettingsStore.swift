@@ -52,8 +52,28 @@ final class SettingsStore {
 
     /// The user's consent to Live mode (Keychain read plus a request to `api.anthropic.com`). Off by default. Read only
     /// from the app's saved preferences, never from launch arguments.
+    ///
+    /// It counts only when it was given for the current ``UsageAPI/consentVersion``: a consent saved by a build whose
+    /// Live mode did something else (or by one that saved no version) reads as `false`, so the user is asked again.
+    /// Setting it to `true` records the consent for the current version, which only onboarding and the consent sheet
+    /// do; setting it to `false` clears the version too.
     var liveModeEnabled: Bool {
-        didSet { defaults.set(liveModeEnabled, forKey: Key.liveModeEnabled) }
+        get { liveModeConsent && liveModeConsentVersion == UsageAPI.consentVersion }
+        set {
+            liveModeConsent = newValue
+            liveModeConsentVersion = newValue ? UsageAPI.consentVersion : 0
+        }
+    }
+
+    /// Backing store of ``liveModeEnabled``: the saved answer, whatever version it was given for.
+    private var liveModeConsent: Bool {
+        didSet { defaults.set(liveModeConsent, forKey: Key.liveModeEnabled) }
+    }
+
+    /// The ``UsageAPI/consentVersion`` the Live mode consent was given for; 0 for none. Read only from the app's saved
+    /// preferences, like the consent itself. Not optional, for the same reason as `customConfigPath`.
+    private(set) var liveModeConsentVersion: Int {
+        didSet { Self.save(version: liveModeConsentVersion, forKey: Key.liveModeConsentVersion, in: defaults) }
     }
 
     /// Whether the first-run onboarding was completed. Live mode never runs before it. Read only from the app's saved
@@ -65,13 +85,31 @@ final class SettingsStore {
     /// The user's consent to refresh through Claude Code ("auto-refresh"): running `claude -p "/usage" …` in the
     /// background (see ``CLIRefreshCommand``). Off unless chosen in onboarding or Settings. Read only from the app's
     /// saved preferences, never from launch arguments. Turning it on clears ``cliRefreshSafetyStop``.
+    ///
+    /// It counts only when it was given for the current ``CLIRefreshCommand/consentVersion``: a consent saved by a build
+    /// that ran another command or environment (or by one that saved no version) reads as `false`, so the user is
+    /// asked again. Setting it to `true` records the consent for the current version, which only onboarding and the
+    /// consent sheet do; setting it to `false` (also a safety stop) clears the version too.
     var cliRefreshEnabled: Bool {
-        didSet {
-            defaults.set(cliRefreshEnabled, forKey: Key.cliRefreshEnabled)
-            if cliRefreshEnabled, cliRefreshSafetyStop != nil {
+        get { cliRefreshConsent && cliRefreshConsentVersion == CLIRefreshCommand.consentVersion }
+        set {
+            cliRefreshConsent = newValue
+            cliRefreshConsentVersion = newValue ? CLIRefreshCommand.consentVersion : 0
+            if newValue, cliRefreshSafetyStop != nil {
                 cliRefreshSafetyStop = nil
             }
         }
+    }
+
+    /// Backing store of ``cliRefreshEnabled``: the saved answer, whatever version it was given for.
+    private var cliRefreshConsent: Bool {
+        didSet { defaults.set(cliRefreshConsent, forKey: Key.cliRefreshEnabled) }
+    }
+
+    /// The ``CLIRefreshCommand/consentVersion`` the auto-refresh consent was given for; 0 for none. Read only from the
+    /// app's saved preferences, like the consent itself. Not optional, for the same reason as `customConfigPath`.
+    private(set) var cliRefreshConsentVersion: Int {
+        didSet { Self.save(version: cliRefreshConsentVersion, forKey: Key.cliRefreshConsentVersion, in: defaults) }
     }
 
     /// Why auto-refresh turned itself off (see ``CLISafetyStop``), so the app can say so, also after a relaunch; `nil`
@@ -180,10 +218,12 @@ final class SettingsStore {
         // the argument domain, so `-liveModeEnabled YES -hasCompletedOnboarding YES` on the command line would turn on
         // Keychain reads without the user ever agreeing. (Display settings may still come from there.)
         let saved = persistentDomain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
-        liveModeEnabled = saved[Key.liveModeEnabled] as? Bool ?? false
+        liveModeConsent = saved[Key.liveModeEnabled] as? Bool ?? false
+        liveModeConsentVersion = Self.version(saved[Key.liveModeConsentVersion])
         hasCompletedOnboarding = saved[Key.hasCompletedOnboarding] as? Bool ?? false
         // Running a program is consent too, and which program runs must not come from the command line either.
-        cliRefreshEnabled = saved[Key.cliRefreshEnabled] as? Bool ?? false
+        cliRefreshConsent = saved[Key.cliRefreshEnabled] as? Bool ?? false
+        cliRefreshConsentVersion = Self.version(saved[Key.cliRefreshConsentVersion])
         if let stop = (saved[Key.cliRefreshSafetyStop] as? String).flatMap(CLISafetyStop.init(rawValue:)) {
             cliSafetyStopValue = stop.rawValue
         } else {
@@ -209,6 +249,23 @@ final class SettingsStore {
         Set(thresholds.filter { (1...100).contains($0) }).sorted()
     }
 
+    /// A saved consent version: a positive whole number, else 0 (none). A Boolean is not a version, even though
+    /// property lists bridge it to a number.
+    private static func version(_ value: Any?) -> Int {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+            let version = Int(exactly: number.doubleValue), version > 0
+        else { return 0 }
+        return version
+    }
+
+    private static func save(version: Int, forKey key: String, in defaults: UserDefaults) {
+        if version > 0 {
+            defaults.set(version, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     private enum Key {
         static let refreshInterval = "refreshInterval"
         static let ringShowsRemaining = "ringShowsRemaining"
@@ -216,9 +273,11 @@ final class SettingsStore {
         static let notificationThresholds = "notificationThresholds"
         static let notifyOnReset = "notifyOnReset"
         static let liveModeEnabled = "liveModeEnabled"
+        static let liveModeConsentVersion = "liveModeConsentVersion"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let customConfigDirectory = "customConfigDirectory"
         static let cliRefreshEnabled = "cliRefreshEnabled"
+        static let cliRefreshConsentVersion = "cliRefreshConsentVersion"
         static let cliRefreshSafetyStop = "cliRefreshSafetyStop"
         static let obsoleteCLIRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
         static let customCLIPath = "customCLIPath"

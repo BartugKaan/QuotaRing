@@ -14,6 +14,13 @@ public enum UsageDecodingError: Error, Equatable {
 /// report: unusable `limits[]` entries are skipped, unknown keys are ignored and unknown limit kinds are kept as
 /// ``LimitKind/other(_:)``. When `limits[]` yields no usable entry the legacy top-level keys are used instead.
 public enum UsageResponseDecoder {
+    /// At most this many usable `limits[]` entries are kept, in response order. Real responses have a handful; the cap
+    /// keeps a hostile or broken response from making the popover build an unbounded number of rows.
+    static let maxLimits = 32
+
+    /// At most this many breakdown rows are kept, after de-duplication by `key`. Real responses have four.
+    static let maxBreakdownRows = 16
+
     /// - Throws: ``UsageDecodingError/notAnObject`` for invalid JSON or a non-object root, and
     ///   ``UsageDecodingError/noUsableLimits`` when nothing displayable was found.
     public static func decode(_ data: Data) throws -> UsageReport {
@@ -32,7 +39,7 @@ public enum UsageResponseDecoder {
             throw UsageDecodingError.notAnObject
         }
 
-        var limits = (root["limits"] as? [Any] ?? []).compactMap(decodeLimit)
+        var limits = Array((root["limits"] as? [Any] ?? []).lazy.compactMap(decodeLimit).prefix(maxLimits))
         if limits.isEmpty {
             limits = decodeLegacyLimits(root)
         }
@@ -121,6 +128,8 @@ public enum UsageResponseDecoder {
 
     // MARK: extra usage and breakdown
 
+    /// A `decimal_places` outside ``ExtraUsage/supportedDecimalPlaces`` and a `currency` that is not three uppercase
+    /// ASCII letters (an ISO 4217 code) are dropped, so the defaults apply instead.
     private static func decodeExtraUsage(_ value: Any?) -> ExtraUsage? {
         guard let extra = JSONValue.object(value) else { return nil }
         return ExtraUsage(
@@ -128,15 +137,34 @@ public enum UsageResponseDecoder {
             monthlyLimitMinor: JSONValue.double(extra["monthly_limit"]),
             usedCreditsMinor: JSONValue.double(extra["used_credits"]),
             percentUsed: JSONValue.double(extra["utilization"]).map(clampPercent),
-            currency: JSONValue.nonEmptyString(extra["currency"]),
-            decimalPlaces: JSONValue.int(extra["decimal_places"])
+            currency: JSONValue.nonEmptyString(extra["currency"]).flatMap(currencyCode),
+            decimalPlaces: JSONValue.int(extra["decimal_places"]).flatMap { places in
+                ExtraUsage.supportedDecimalPlaces.contains(places) ? places : nil
+            }
         )
     }
 
-    /// Returns `nil` unless at least one row is usable.
+    /// The code if it matches `^[A-Z]{3}$`, else `nil`.
+    private static func currencyCode(_ string: String) -> String? {
+        let bytes = string.utf8
+        guard bytes.count == 3, bytes.allSatisfy({ (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains($0) }) else {
+            return nil
+        }
+        return string
+    }
+
+    /// Returns `nil` unless at least one row is usable. Rows are de-duplicated by `key` (the first one wins, so the
+    /// popover never sees two rows with the same id) and capped at ``maxBreakdownRows``.
     private static func decodeWeeklyBreakdown(_ value: Any?) -> WeeklyBreakdown? {
         guard let breakdown = JSONValue.object(value) else { return nil }
-        let rows = (breakdown["rows"] as? [Any] ?? []).compactMap(decodeBreakdownRow)
+        var seenKeys = Set<String>()
+        var rows: [BreakdownRow] = []
+        for row in (breakdown["rows"] as? [Any] ?? []).lazy.compactMap(decodeBreakdownRow) {
+            guard rows.count < maxBreakdownRows else { break }
+            if seenKeys.insert(row.key).inserted {
+                rows.append(row)
+            }
+        }
         guard !rows.isEmpty else { return nil }
         return WeeklyBreakdown(
             asOf: FlexibleDate.parse(breakdown["as_of"]),

@@ -29,10 +29,13 @@ open-source app whose behavior you can read in an afternoon. Everything it reads
   window. An optional notice when the session resets (off by default).
 - **Auto-refresh with Claude Code (opt-in).** If you use the Claude desktop app, QuotaRing can run Claude Code's own
   `/usage` in the background so the numbers stay fresh. It makes no AI request, spends no usage, and QuotaRing never
-  touches your login. See [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
+  touches your login. The welcome window shown on first run offers it with the checkbox already checked; it turns on
+  when you press one of that window's buttons with the box left checked. See
+  [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
 - **Settings.** Launch at login, refresh interval (3, 5, 10 or 15 minutes), ring shows remaining or used, percentage
   text on or off, notification thresholds, Claude config directory, the auto-refresh switch and the Live mode switch.
-- **Token-free by default.** The default mode needs no credentials and makes no network connections.
+- **Token-free by default.** The default mode needs no credentials, and QuotaRing itself makes no network connections
+  by default. (With auto-refresh on, the `claude` process it starts asks Anthropic for your usage.)
 - **Native and small.** Swift 6, AppKit and SwiftUI, universal binary, no third-party runtime dependencies.
 - **Light and dark mode, VoiceOver labels, Reduce Motion.** English and Turkish.
 
@@ -70,18 +73,25 @@ Optional, recommended if you want to be sure what you run. Each release publishe
 ```sh
 VERSION=0.1.0   # the version you downloaded
 
-# Compare the file with the published checksums (use .zip instead of .dmg for the zip)
-grep "QuotaRing-$VERSION\.dmg\$" SHA256SUMS | shasum -a 256 -c
+# Compare the files you downloaded with the published checksums (files you did not download are skipped)
+shasum -a 256 -c --ignore-missing SHA256SUMS
 
-# Verify GitHub's build provenance attestation (needs the GitHub CLI)
-gh attestation verify "QuotaRing-$VERSION.dmg" --repo BartugKaan/QuotaRing
+# Verify GitHub's build provenance attestation (needs the GitHub CLI); use .zip instead of .dmg for the zip
+gh attestation verify "QuotaRing-$VERSION.dmg" --repo BartugKaan/QuotaRing \
+  --signer-workflow BartugKaan/QuotaRing/.github/workflows/release.yml
 
 # Check the installed app's signature and notarization
 codesign --verify --deep --strict --verbose=2 /Applications/QuotaRing.app
 spctl --assess --type execute --verbose=2 /Applications/QuotaRing.app
+
+# Show who signed it: note the TeamIdentifier line
+codesign -dv --verbose=2 /Applications/QuotaRing.app 2>&1 | grep TeamIdentifier
 ```
 
-The attestation ties the file to the exact commit and workflow run in this repository that built it.
+The attestation ties the file to the exact commit in this repository and to its release workflow
+(`--signer-workflow`), not just to any workflow in the repository. `spctl` accepts any notarized Developer ID app, so a
+copy re-signed by someone else would pass it too. The `TeamIdentifier` tells them apart: it must be the same for every
+QuotaRing release, so note it the first time and compare it on every update.
 
 ### Build from source
 
@@ -176,7 +186,9 @@ Settings at any time.
 Your consent is recorded the moment you click "Enable Live mode", in the first-run window or in Settings. In the
 first-run window, when you also left notifications on, only the first Keychain read is delayed, until the notification
 prompt has settled (at most 15 seconds), so macOS does not put two prompts on screen at once. The consent settings are
-read from QuotaRing's saved preferences only: command-line launch arguments cannot switch Live mode on.
+read from QuotaRing's saved preferences only: command-line launch arguments cannot switch Live mode on. The consent is
+saved with a version of what Live mode does: if a later QuotaRing changes the endpoint, the request or what it reads,
+Live mode stays off until you turn it on and agree again. Turning Live mode off clears the consent.
 
 When enabled:
 
@@ -190,11 +202,13 @@ When enabled:
 - The token is **re-read on every poll** and held in memory only for the length of one request. It is never cached
   between polls, written to disk, put in preferences, logged or copied to the pasteboard.
 - It makes a single HTTPS `GET` to `https://api.anthropic.com/api/oauth/usage`. The URL is a compile-time constant and
-  is not configurable. The request carries four headers: `Authorization: Bearer <token>`,
+  is not configurable. QuotaRing sets four headers: `Authorization: Bearer <token>`,
   `anthropic-beta: oauth-2025-04-20`, `Accept: application/json` and
-  `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. No body, no cookies. QuotaRing
-  identifies itself honestly and does not pretend to be Claude Code.
-- The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials.
+  `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. macOS's networking adds standard
+  headers of its own, such as `Accept-Encoding` and `Accept-Language`. No body, no cookies. QuotaRing identifies itself
+  honestly and does not pretend to be Claude Code.
+- The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials. Redirects are
+  refused, and a response larger than 1 MiB is refused too.
 - Automatic polls are sent only when Live mode is on, the cached snapshot is older than your refresh interval, and
   the token has not expired. Pressing Refresh in the popover while Live mode is on also makes one request, at most
   once every 60 seconds. An expired token is never sent, not even on a manual refresh; QuotaRing falls back to the
@@ -208,7 +222,9 @@ The Claude desktop app never refreshes the cache that QuotaRing reads, but Claud
 Auto-refresh runs that command for you. It is **off until you allow it**: the first-run window offers it with a
 checkbox (pre-checked, recommended if you use the desktop app) that counts only when you press one of the window's two
 buttons; closing the window turns nothing on. Settings → Data asks for confirmation with a sheet
-that shows the exact command before it turns on. Turning it off takes effect at once.
+that shows the exact command before it turns on. Turning it off takes effect at once. As with Live mode, the consent is
+saved with a version of the command and its environment: if a later QuotaRing changes them, auto-refresh stays off
+until you agree again.
 
 What runs, exactly:
 
@@ -231,8 +247,9 @@ telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
   not while your Mac sleeps or is offline, and with the same back-off as Live mode after a failure (up to 30 minutes).
   The Refresh button also runs it, at most once a minute.
 - **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
-  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then
-  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
+  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then the system folders
+  `/usr/bin:/bin:/usr/sbin:/sbin`, then `/usr/local/bin:/opt/homebrew/bin`, so nothing installed there can stand in
+  for a system tool), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
   `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. So a background run
   **never updates Claude Code** (an update started by Claude Code itself once left an npm install broken), and Claude
   Code is asked not to send telemetry or error reports (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); whether it
@@ -249,7 +266,10 @@ telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
   and `/usr/local/bin/claude`. A file is used only if, after following symbolic links, it is a regular executable file
   owned by you or by root and not writable by other users, its `--version` output says "(Claude Code)", and its
   `--help` lists both `--safe-mode` and `--no-session-persistence` (older versions lack them, and are skipped in favor
-  of the next candidate). These checks run once per file, with the same minimal environment. Settings shows which tool
+  of the next candidate). These checks run once per file, with the same minimal environment. Only the `claude` file
+  itself is checked: if it is a script, such as an npm install's `#!/usr/bin/env node` launcher, the interpreter it
+  names (`node`) is looked up on the `PATH` above, and its owner and permissions are not checked (see
+  [SECURITY.md](SECURITY.md)). Settings shows which tool
   is used and its version (the desktop app's build as "Claude app (2.1.308)", with the full path as a tooltip), says so
   when the only Claude Code found is too old, and lets you choose another file or go back to looking. The chosen path
   and the consent, like the Claude config directory, are read from QuotaRing's saved preferences only; command-line
@@ -284,8 +304,8 @@ sends nothing.
   saving), limit metadata (kind, group, scope name such as a model name, severity, active flag), when it was fetched and
   from which source, and the absolute path of the Claude config directory it belongs to, so it is never shown for a
   different directory. It never contains tokens.
-  The folder is private to you (mode 700) and the file is 600. It is deleted when you change the config directory or
-  QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
+  The folder is private to you (mode 700), and the file is set to mode 600. It is deleted when you change the config
+  directory or QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
 - `~/Library/Application Support/QuotaRing/cli`: an empty folder (mode 700) that auto-refresh uses as the working
   directory of the `claude` command. QuotaRing writes nothing into it.
 - Your preferences, in UserDefaults (non-sensitive values only), including which notification thresholds were already
@@ -372,6 +392,13 @@ Running `claude` once renews the Keychain token, and Live mode picks up from the
 QuotaRing does not ask again until you press Refresh, turn Live mode off and on, or relaunch QuotaRing; until then it
 shows a message. Press Refresh in the popover, or switch Live mode off and on again in Settings, and it asks once
 more. Choose "Always Allow" to avoid repeated prompts.
+
+**How do I take back "Always Allow"?**
+"Always Allow" adds QuotaRing to the access list of Claude Code's Keychain item. Turning Live mode off in QuotaRing does
+not remove it, and any later QuotaRing signed by the same developer can then read the item without asking. To take it
+back, open Keychain Access, find the "Claude Code-credentials" item (with a custom config directory, the variant named
+after it) and open it. Under Access Control, select QuotaRing in the list, remove it with the minus button, and choose
+Save Changes. macOS asks again the next time Live mode reads the item.
 
 **I run Claude Code with `CLAUDE_CONFIG_DIR`. Does QuotaRing follow it?**
 Set the same folder in Settings → Data. Apps started from Finder or at login do not see the environment variables of

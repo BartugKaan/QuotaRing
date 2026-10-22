@@ -5,6 +5,13 @@ public enum UsageAPI {
     public static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     public static let betaHeader = "oauth-2025-04-20"
 
+    /// The version of what the user agrees to when turning on Live mode. The app records it with the consent, and a
+    /// consent recorded for another version does not count, so the user is asked again.
+    ///
+    /// Bump it whenever what Live mode does changes in a way the user agreed to: the endpoint or the request it sends
+    /// (method, headers), or the data it reads for it (which Keychain items or credentials file, and what of them).
+    public static let consentVersion = 1
+
     /// The `User-Agent` QuotaRing identifies itself with.
     public static func userAgent(version: String) -> String {
         "QuotaRing/\(version) (+https://github.com/BartugKaan/QuotaRing)"
@@ -21,7 +28,8 @@ public enum UsageAPIError: Error, Equatable, Sendable {
     case server(status: Int)
     /// The request never produced a response (offline, timeout, TLS failure, ...).
     case network
-    /// A success response whose body held no usable limits.
+    /// A success response whose body held no usable limits, or a response whose body was over the transport's size
+    /// limit (whatever its status).
     case decoding
 }
 
@@ -49,6 +57,8 @@ public struct UsageAPIClient: Sendable {
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport.send(request)
+        } catch HTTPTransportError.responseTooLarge {
+            throw .decoding
         } catch {
             throw .network
         }

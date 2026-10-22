@@ -46,8 +46,15 @@ First public release, planned as 0.1.0.
   without a shell, with a constant argument array, a from-scratch environment that turns Claude Code's auto-updater off
   (`DISABLE_AUTOUPDATER=1`; a background run never updates Claude Code) and asks Claude Code not to send telemetry or
   error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`), `/dev/null` as input and its own empty working
-  folder, is stopped after 30 seconds or 256 KB of output, and its output is never logged or stored. Any sign of a model
-  request in the result (turns, cost or tokens) turns auto-refresh off and says why.
+  folder, is stopped after 30 seconds or 256 KB of output, and its output is never logged or stored. Its `PATH` puts the
+  system folders before `/usr/local/bin` and `/opt/homebrew/bin`, so nothing installed there can stand in for a system
+  tool. Any sign of a model request in the result (turns, cost or tokens) turns auto-refresh off and says why.
+- Versioned consent: the Live mode and auto-refresh consents are saved with the version of what the feature does, and a
+  consent given for another version does not count, so a release that changes the endpoint, the command, its
+  environment or the data read asks again. Turning a feature off clears its consent.
+- Limits on hostile or broken input: a Live response over 1 MiB is refused, at most 32 limits and 16 breakdown rows
+  (de-duplicated) are kept, an out-of-range `decimal_places` or a currency that is not a three-letter code is ignored,
+  and Claude Code's cache file is checked and read through one open descriptor, so a FIFO cannot block the reader.
 - Live-mode consent: it is recorded as soon as you click "Enable Live mode"; in the first-run window only the first
   Keychain read waits for the notification prompt to settle (at most 15 seconds). The consent settings ignore
   command-line launch arguments. If you deny the Keychain prompt, Live mode stops there (no other Keychain item, no
@@ -76,8 +83,10 @@ First public release, planned as 0.1.0.
 - Open-source project files: README, CONTRIBUTING, Code of Conduct, security policy, MIT license, issue forms, pull
   request template, architecture overview.
 - Continuous integration (tests, lint, unsigned build on the newest Xcode, plus tests and an unsigned build on Xcode
-  16.4, the minimum supported version), CodeQL analysis, Dependabot for GitHub Actions, and a release pipeline that
-  produces a Developer ID signed and notarized DMG and zip with `SHA256SUMS` and a GitHub build-provenance attestation.
+  16.4, the minimum supported version), CodeQL analysis of the Swift code and of the workflows, Dependabot for GitHub
+  Actions (with a 7-day cooldown), and a release pipeline that produces a Developer ID signed and notarized DMG and zip
+  with `SHA256SUMS` and a GitHub build-provenance attestation. The signing key is imported non-extractable, and the
+  release fails if the app carries any entitlement.
   XcodeGen is installed from a pinned release with a verified SHA-256 checksum instead of Homebrew.
 
 ### Known limitations

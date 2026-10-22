@@ -200,7 +200,7 @@ private let checks = ["--version", "--help"]
                 "USER": "test",
                 "LOGNAME": "test",
                 "LANG": "en_US.UTF-8",
-                "PATH": fake.folder.path + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "PATH": fake.folder.path + ":/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin",
                 "DISABLE_AUTOUPDATER": "1",
                 "DISABLE_TELEMETRY": "1",
                 "DISABLE_ERROR_REPORTING": "1",
