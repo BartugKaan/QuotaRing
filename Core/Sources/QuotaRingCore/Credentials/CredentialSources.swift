@@ -43,6 +43,12 @@ public struct KeychainCredentialSource: CredentialSource {
     public func readCredentialData() throws(CredentialError) -> Data? {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(Self.query(service: service) as CFDictionary, &result)
+        return try Self.credentialData(status: status, result: result)
+    }
+
+    /// What a `SecItemCopyMatching` answer means. (Apart from the call, so that tests can feed it any status without
+    /// touching a Keychain.)
+    static func credentialData(status: OSStatus, result: CFTypeRef?) throws(CredentialError) -> Data? {
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else { throw .malformed }
@@ -108,8 +114,9 @@ public struct FileCredentialSource: CredentialSource {
         return try Self.readAll(descriptor, capacity: Int(info.st_size))
     }
 
-    /// Reads to end of file, refusing to grow past the size limit if the file changes after `fstat`.
-    private static func readAll(_ descriptor: Int32, capacity: Int) throws(CredentialError) -> Data {
+    /// Reads to end of file, refusing to grow past the size limit if the file changes after `fstat`. (Not private so that
+    /// tests can feed it a descriptor that fails or yields more than `fstat` promised.)
+    static func readAll(_ descriptor: Int32, capacity: Int) throws(CredentialError) -> Data {
         let limit = OAuthCredential.maxCredentialDataSize
         var data = Data(capacity: capacity)
         var chunk = [UInt8](repeating: 0, count: 16_384)

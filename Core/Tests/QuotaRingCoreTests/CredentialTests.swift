@@ -573,6 +573,80 @@ private struct TemporaryDirectory {
         }
     }
 
+    /// `readAll` runs on a descriptor that already passed `fstat`; the file may change after that.
+    @Test func readingStopsAtTheLimitEvenIfTheFileGrewAfterTheCheck() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let limit = OAuthCredential.maxCredentialDataSize
+        let grown = try directory.file("grown.json", contents: Data(count: limit + 1), mode: 0o600)
+        let descriptor = open(grown.path, O_RDONLY)
+        try #require(descriptor >= 0)
+        defer { close(descriptor) }
+
+        // The caller believed the file was empty (capacity 0) when it checked.
+        #expect(throws: CredentialError.insecureFile) {
+            try FileCredentialSource.readAll(descriptor, capacity: 0)
+        }
+    }
+
+    @Test func aReadThatFailsIsMalformedNotPartialData() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let file = try directory.file("closed.json", contents: contents, mode: 0o600)
+        let descriptor = open(file.path, O_RDONLY)
+        try #require(descriptor >= 0)
+        close(descriptor)
+
+        // The descriptor is gone, so read(2) fails with EBADF.
+        #expect(throws: CredentialError.malformed) {
+            try FileCredentialSource.readAll(descriptor, capacity: 16)
+        }
+    }
+
+    @Test func readingTakesEveryByteOfAFileLargerThanOneChunk() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        // Bigger than the 16 KiB read chunk, with a pattern that shows a lost or repeated chunk.
+        let body = Data((0..<40_000).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ 7) })
+        let file = try directory.file("large.json", contents: body, mode: 0o600)
+
+        #expect(try FileCredentialSource(fileURL: file).readCredentialData() == body)
+    }
+
+    // MARK: Keychain answers
+    //
+    // These feed `credentialData(status:result:)` made-up answers. They never call `SecItemCopyMatching`, so no
+    // Keychain is read, and no access prompt can appear.
+
+    @Test func aKeychainHitYieldsItsData() throws {
+        let stored = Data("stored".utf8)
+        #expect(try KeychainCredentialSource.credentialData(status: errSecSuccess, result: stored as CFData) == stored)
+    }
+
+    @Test func aKeychainHitThatIsNotDataIsMalformed() {
+        for result in [nil, "text" as CFString, 5 as CFNumber] as [CFTypeRef?] {
+            #expect(throws: CredentialError.malformed) {
+                try KeychainCredentialSource.credentialData(status: errSecSuccess, result: result)
+            }
+        }
+    }
+
+    @Test func noKeychainItemIsNilNotAnError() throws {
+        #expect(try KeychainCredentialSource.credentialData(status: errSecItemNotFound, result: nil) == nil)
+    }
+
+    @Test func anyOtherKeychainStatusIsReportedWithItsCode() {
+        for status in [errSecAuthFailed, errSecUserCanceled, errSecInteractionNotAllowed, errSecNoSuchKeychain] {
+            #expect(throws: CredentialError.keychain(status)) {
+                try KeychainCredentialSource.credentialData(status: status, result: nil)
+            }
+            // Data a failed lookup might still carry is never used.
+            #expect(throws: CredentialError.keychain(status)) {
+                try KeychainCredentialSource.credentialData(status: status, result: Data("leftover".utf8) as CFData)
+            }
+        }
+    }
+
     @Test func labelsCarryNoSecrets() {
         let file = FileCredentialSource(fileURL: URL(fileURLWithPath: "/Users/test/.claude/.credentials.json"))
         #expect(file.label == "File: /Users/test/.claude/.credentials.json")
