@@ -190,6 +190,9 @@ import Testing
         #expect(CLIRefreshStatus.failed(.exitStatus).needsAttention)
         #expect(CLIRefreshStatus.disabledForSafety(.modelCall).needsAttention)
         #expect(CLIRefreshStatus.disabledForSafety(.unverifiableOutput).needsAttention)
+        #expect(CLIRefreshStatus.disabledForSafety(.modelCall).isSafetyStop)
+        #expect(!CLIRefreshStatus.off.isSafetyStop)
+        #expect(!CLIRefreshStatus.failed(.timedOut).isSafetyStop)
     }
 
     // MARK: - Did the run help?

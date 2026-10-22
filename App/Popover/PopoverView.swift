@@ -84,10 +84,12 @@ struct PopoverView: View {
             ActivitySection(activity: model.activity, daily: model.daily, now: now)
         } else {
             // A cache file that exists but cannot be read is the likely reason for having no data at all. Auto-refresh's
-            // problems are listed here too, unless the section below is about auto-refresh and says it itself.
+            // problems are listed here too, unless the section below is about auto-refresh and says it itself. Why it
+            // turned itself off is always listed, until it is turned on again.
             let isLiveModeActive = model.settings.isLiveModeActive && !model.isDemo
+            let showsCLINotice = isLiveModeActive || cliStatus.isSafetyStop
             let cliNotice =
-                isLiveModeActive ? PopoverNotice.cliNotice(for: cliStatus, isActive: isCLIRefreshActive, now: now) : nil
+                showsCLINotice ? PopoverNotice.cliNotice(for: cliStatus, isActive: isCLIRefreshActive, now: now) : nil
             NoticeStack(
                 notices: [cliNotice, PopoverNotice.cacheNotice(for: model.cacheProblem)].compactMap { $0 },
                 onAction: { _ in showDataSettings() })
@@ -317,9 +319,13 @@ struct NoDataSection: View {
 
             if !isLiveModeActive && !isCLIRefreshActive {
                 VStack(spacing: 8) {
-                    Button("Turn on auto-refresh…", action: openDataSettings)
-                        .controlSize(.large)
-                        .help("Open Settings, where auto-refresh is explained and can be turned on")
+                    // After a safety switch-off the notice above explains it and links to Settings; turning it back on
+                    // is not suggested here.
+                    if !cliStatus.isSafetyStop {
+                        Button("Turn on auto-refresh…", action: openDataSettings)
+                            .controlSize(.large)
+                            .help("Open Settings, where auto-refresh is explained and can be turned on")
+                    }
                     Button("Enable Live mode…", action: openDataSettings)
                         .buttonStyle(.link)
                         .help("Open Settings, where Live mode is explained and can be turned on")
@@ -403,7 +409,9 @@ struct NoDataSection: View {
             Text(
                 "QuotaRing shows the numbers the `claude` command-line tool saves on this Mac. Start a session or run `/usage` there, and they appear here. The Claude desktop app does not save them."
             )
-            Text("Auto-refresh can run Claude Code's `/usage` for you in the background.")
+            if !cliStatus.isSafetyStop {
+                Text("Auto-refresh can run Claude Code's `/usage` for you in the background.")
+            }
         }
     }
 }
@@ -485,6 +493,10 @@ struct NoDataSection: View {
             NoDataSection(
                 isLiveModeActive: false, liveStatus: .off, isCLIRefreshActive: true, cliStatus: .notLoggedIn,
                 now: now, openDataSettings: {})
+            Divider()
+            NoDataSection(
+                isLiveModeActive: false, liveStatus: .off, isCLIRefreshActive: false,
+                cliStatus: .disabledForSafety(.unverifiableOutput), now: now, openDataSettings: {})
         }
         .frame(width: PopoverMetrics.width)
     }

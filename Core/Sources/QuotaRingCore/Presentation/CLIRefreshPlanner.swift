@@ -58,6 +58,12 @@ public enum CLIRefreshStatus: Equatable, Sendable {
     /// The feature turned itself off for this reason (see ``CLISafetyStop``).
     case disabledForSafety(CLISafetyStop)
 
+    /// Whether auto-refresh turned itself off for safety.
+    public var isSafetyStop: Bool {
+        if case .disabledForSafety = self { return true }
+        return false
+    }
+
     /// Whether the user should be told something is wrong.
     public var needsAttention: Bool {
         switch self {
