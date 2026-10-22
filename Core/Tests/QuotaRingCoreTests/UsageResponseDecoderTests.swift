@@ -260,6 +260,49 @@ private func seconds(_ date: Date?) -> Double {
         #expect(sparse.extraUsage == ExtraUsage(isEnabled: false))
     }
 
+    @Test(arguments: ["999999999999999", "100000000", "7", "-1", "-999999999999999", "1.5"])
+    func decimalPlacesOutsideTheSupportedRangeAreDropped(places: String) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "used_credits": 1, "currency": "USD", "decimal_places": \(places)}}
+                """
+        )
+        let extra = try #require(report.extraUsage)
+        #expect(extra.decimalPlaces == nil)
+        // The rest of the entry is kept.
+        #expect(extra.isEnabled)
+        #expect(extra.usedCreditsMinor == 1)
+        #expect(extra.currency == "USD")
+    }
+
+    @Test(arguments: [0, 3, 6])
+    func decimalPlacesInsideTheSupportedRangeAreKept(places: Int) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "decimal_places": \(places)}}
+                """
+        )
+        #expect(report.extraUsage?.decimalPlaces == places)
+    }
+
+    @Test(arguments: [
+        #""usd""#, #""US""#, #""USDT""#, #""U$D""#, #""ÜSD""#, #"" USD""#, #""US\nD""#, "42", "null", #""""#,
+    ])
+    func currencyThatIsNotAnISOCodeIsDropped(currency: String) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "used_credits": 1, "currency": \(currency), "decimal_places": 2}}
+                """
+        )
+        let extra = try #require(report.extraUsage)
+        #expect(extra.currency == nil)
+        #expect(extra.decimalPlaces == 2)
+        #expect(extra.usedCreditsMinor == 1)
+    }
+
     @Test func breakdownWithoutUsableRowsIsNil() throws {
         let report = try decode(
             json: """

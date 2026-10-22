@@ -263,9 +263,11 @@ private struct ExtraUsageRow: View {
         return String(localized: "\(used) of \(cap)", comment: "Extra usage: amount spent of the monthly limit")
     }
 
-    /// Minor units (cents) as money in the account's currency.
+    /// Minor units (cents) as money in the account's currency. The decoder already drops an out-of-range
+    /// `decimal_places`; clamping again keeps a huge value from ever reaching the formatter, which would freeze or crash.
     private func money(_ minor: Double) -> String {
-        let places = max(0, extraUsage.decimalPlaces ?? 2)
+        let supported = ExtraUsage.supportedDecimalPlaces
+        let places = min(supported.upperBound, max(supported.lowerBound, extraUsage.decimalPlaces ?? 2))
         let amount = minor / pow(10, Double(places))
         if let code = extraUsage.currency, !code.isEmpty {
             return amount.formatted(.currency(code: code).precision(.fractionLength(places)))

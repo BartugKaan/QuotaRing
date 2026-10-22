@@ -99,6 +99,11 @@ public struct ExtraUsage: Hashable, Sendable, Codable {
     public var currency: String?
     public var decimalPlaces: Int?
 
+    /// The `decimal_places` values QuotaRing accepts. Real currencies use 0 to 4; a larger value would make the money
+    /// formatter allocate and format that many digits, which can freeze or crash the app, so the decoder drops any
+    /// value outside this range and the popover clamps to it again.
+    public static let supportedDecimalPlaces: ClosedRange<Int> = 0...6
+
     public init(
         isEnabled: Bool,
         monthlyLimitMinor: Double? = nil,
