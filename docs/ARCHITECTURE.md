@@ -161,7 +161,9 @@ UsageEngine (auto-refresh loop, MainActor)
   the stale cache without a network request.
 - **Process handling.** `BoundedProcess` keeps every `Process`, `Pipe` and `FileHandle` inside one run. The launch and
   all watching happen on a Dispatch queue, never on Swift's cooperative pool and never under a lock a cancellation
-  needs. Cancelling the waiting task (sleep, the feature turned off, settings changed) stops the process group.
+  needs. Cancelling the waiting task (sleep, the feature turned off, settings changed, QuotaRing quitting) stops the
+  process group. Helpers a finished tool leaves in its process group are stopped too, while the run is under way;
+  the tool's own exit and output are kept, so a finished run is still judged (a detected model call still counts).
 - **Safety net.** A success needs `type: result`, `is_error: false`, `num_turns: 0` and `total_cost_usd: 0`. Any turn,
   cost, or token or request count above zero means the model was used: the feature turns itself off.
 - **Manual refresh.** Refresh runs it first (at most once a minute, ignoring back-off and data age); when it succeeds,

@@ -162,6 +162,16 @@ final class UsageEngine {
         resume()
     }
 
+    /// Stops every loop and any running request or Claude Code run, at once: cancelling a run sends its process group
+    /// `SIGTERM` synchronously, before the app goes away. Called when the app quits.
+    func shutDown() {
+        guard isStarted else { return }
+        engineLog.info("Shutting down")
+        pauseAll()
+        cooldownTask?.cancel()
+        cooldownTask = nil
+    }
+
     func refresh(userInitiated: Bool) async {
         onEvent(.refreshing(true))
         defer { onEvent(.refreshing(false)) }

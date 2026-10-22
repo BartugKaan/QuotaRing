@@ -23,6 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // A running `claude` refresh must not outlive QuotaRing.
+        model.shutDown()
+    }
+
     /// The first-run window explains what is read and where anything is sent before Live mode can be switched on.
     /// Not shown in demo mode, which touches no real data.
     private func showOnboardingIfNeeded() {

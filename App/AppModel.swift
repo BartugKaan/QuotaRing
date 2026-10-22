@@ -83,6 +83,11 @@ final class AppModel {
         engine?.start()
     }
 
+    /// Stops all work, including a running Claude Code refresh. Called when the app quits.
+    func shutDown() {
+        engine?.shutDown()
+    }
+
     /// The session limit as it applies at `now` (shown as reset once its reset time has passed).
     func session(at now: Date) -> UsageLimit? {
         snapshot?.session(at: now)

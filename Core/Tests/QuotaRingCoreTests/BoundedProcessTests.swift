@@ -184,17 +184,63 @@ import Testing
         #expect(output.stdout.count == 1_000)
     }
 
-    @Test func aHelperHoldingTheOutputOpenDoesNotHoldTheRun() async throws {
+    /// Waits until the process `pidFile` names is gone (reaped), or about 5 s.
+    private func isGone(pidFile: URL) async throws -> Bool {
+        let pidText = try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let pid = try #require(pid_t(pidText))
+        for _ in 0..<100 {
+            if kill(pid, 0) != 0 { return true }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return kill(pid, 0) != 0
+    }
+
+    @Test func aHelperHoldingTheOutputOpenDoesNotHoldTheRunAndIsStopped() async throws {
         let scratch = try CLIScratchDirectory()
         defer { scratch.remove() }
+        let pidFile = scratch.url.appendingPathComponent("helper.pid")
         // The background `sleep` inherits standard output, so its end never arrives while it runs.
-        let script = try scratch.file("tool", contents: "#!/bin/sh\nsleep 20 &\necho hi\nexit 0\n")
+        let script = try scratch.file(
+            "tool", contents: "#!/bin/sh\nsleep 20 &\necho $! > \"\(pidFile.path)\"\necho hi\nexit 0\n")
 
         let started = Date()
         let output = await run(script, in: scratch.url, endOfOutputGrace: 0.3)
         #expect(output == ProcessOutput(termination: .exited(0), stdout: Data("hi\n".utf8)))
-        // Far less than the helper's 20 s.
+        // Far less than the helper's 20 s, and the helper it left behind does not outlive the run.
         #expect(Date().timeIntervalSince(started) < 15)
+        #expect(try await isGone(pidFile: pidFile))
+    }
+
+    @Test func cancellingAfterTheToolExitedStopsItsHelpersAndKeepsItsResult() async throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        let pidFile = scratch.url.appendingPathComponent("helper.pid")
+        let exited = scratch.url.appendingPathComponent("exited")
+        let script = try scratch.file(
+            "tool",
+            contents:
+                "#!/bin/sh\nsleep 30 &\necho $! > \"\(pidFile.path)\"\necho hi\ntouch \"\(exited.path)\"\nexit 0\n")
+        let directory = scratch.url
+        let environment = self.environment
+
+        // A long wait for the end of output, so the cancellation lands while the helper still holds it open.
+        let task = Task {
+            await BoundedProcess.run(
+                executable: script, arguments: [], environment: environment, currentDirectory: directory,
+                timeout: 60, killGrace: 0.3, maxOutputBytes: 1_000, endOfOutputGrace: 30)
+        }
+        for _ in 0..<600 where !FileManager.default.fileExists(atPath: exited.path) {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try await Task.sleep(for: .seconds(1))
+        let cancelled = Date()
+        task.cancel()
+        let output = await task.value
+
+        // The tool itself finished: its result stands (a finished run must still be judged), only the helper goes.
+        #expect(output == ProcessOutput(termination: .exited(0), stdout: Data("hi\n".utf8)))
+        #expect(Date().timeIntervalSince(cancelled) < 15)
+        #expect(try await isGone(pidFile: pidFile))
     }
 
     @Test func aMissingExecutableFailsToLaunch() async throws {

@@ -38,6 +38,9 @@ public struct ProcessOutput: Equatable, Sendable {
 /// - Past the time limit, past the output limit or when the waiting task is cancelled, the process group gets
 ///   `SIGTERM`, then `SIGKILL` after a grace period. (`Process` starts the child in its own process group, so helpers
 ///   it started are stopped too.)
+/// - Helpers the program leaves running after it exited are stopped as well, while the run is still under way: if
+///   they hold its output open when the run ends, or when the run is stopped in the meantime. The program's own result
+///   (its exit and output) is kept in that case, because it did finish.
 /// - Never blocks a thread of Swift's cooperative pool, nor the caller of a cancellation: the launch (which can take a
 ///   while, for example while macOS checks a newly installed binary) and all watching happen on a Dispatch queue.
 ///
@@ -182,8 +185,15 @@ public enum BoundedProcess {
         /// Stops the process for `reason`, unless the run already ended or is being stopped for another reason.
         func stop(_ reason: ProcessTermination) {
             lock.lock()
-            guard !isFinished, stopReason == nil, exit == nil else {
+            guard !isFinished, stopReason == nil else {
                 lock.unlock()
+                return
+            }
+            if exit != nil, reason != .outputLimitExceeded {
+                // The program itself finished; only helpers it left behind can remain. Its result stands.
+                let helpersRemain = !reachedEndOfOutput
+                lock.unlock()
+                if helpersRemain { signalLeftoverHelpers() }
                 return
             }
             stopReason = reason
@@ -213,12 +223,23 @@ public enum BoundedProcess {
         private func signal(_ signal: Int32) {
             lock.lock()
             defer { lock.unlock() }
-            guard isLaunched, exit == nil, process.isRunning else { return }
+            guard isLaunched, !isFinished else { return }
             let pid = process.processIdentifier
             guard pid > 0 else { return }
-            if kill(-pid, signal) != 0 {
-                kill(pid, signal)
+            if exit == nil, process.isRunning {
+                if kill(-pid, signal) != 0 {
+                    kill(pid, signal)
+                }
+            } else if exit != nil, !reachedEndOfOutput {
+                // The program exited, but its output is still open: a helper in its process group is alive, so the
+                // group (named after the program) still exists and cannot belong to anything else.
+                kill(-pid, signal)
             }
+        }
+
+        /// `SIGKILL` to the helpers an exited program left running in its process group (see ``signal(_:)``).
+        private func signalLeftoverHelpers() {
+            signal(SIGKILL)
         }
 
         private func received(_ chunk: Data) {
@@ -267,6 +288,11 @@ public enum BoundedProcess {
             guard !isFinished, let continuation else {
                 lock.unlock()
                 return
+            }
+            // Helpers that still hold the output open when the run ends do not outlive it.
+            if exit != nil, !reachedEndOfOutput, isLaunched {
+                let pid = process.processIdentifier
+                if pid > 0 { kill(-pid, SIGKILL) }
             }
             isFinished = true
             self.continuation = nil
