@@ -207,7 +207,8 @@ When enabled:
   `User-Agent: QuotaRing/<version> (+https://github.com/BartugKaan/QuotaRing)`. macOS's networking adds standard
   headers of its own, such as `Accept-Encoding` and `Accept-Language`. No body, no cookies. QuotaRing identifies itself
   honestly and does not pretend to be Claude Code.
-- The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials.
+- The request uses an ephemeral `URLSession`: no cookie storage, no URL cache, no stored credentials. Redirects are
+  refused, and a response larger than 1 MiB is refused too.
 - Automatic polls are sent only when Live mode is on, the cached snapshot is older than your refresh interval, and
   the token has not expired. Pressing Refresh in the popover while Live mode is on also makes one request, at most
   once every 60 seconds. An expired token is never sent, not even on a manual refresh; QuotaRing falls back to the

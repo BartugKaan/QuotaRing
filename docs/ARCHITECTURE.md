@@ -217,6 +217,15 @@ over time:
 - `resets_at` accepts ISO 8601 with any fractional digits and offset, or epoch seconds, or `null`.
 - One malformed entry is dropped without discarding the rest. Unknown keys are ignored. If nothing usable remains, decoding
   throws and the app keeps its last good snapshot.
+- Sizes are bounded, because the popover builds every row: at most 32 usable limits and 16 breakdown rows are kept, in
+  response order, and breakdown rows are de-duplicated by `key` (the first wins). An `extra_usage.decimal_places`
+  outside 0 to 6 and a `currency` that is not three uppercase letters are dropped, so the defaults apply; the popover
+  clamps the places again before formatting money.
+- Before decoding, `URLSessionTransport` refuses a Live response body over 1 MiB: a larger `Content-Length` before the
+  body is read, a longer stream as soon as it passes the limit. The client reports it as a decoding failure.
+- `ClaudeCodeCacheReader` opens `.claude.json` once (following symlinks, `O_NONBLOCK`), checks the open descriptor with
+  `fstat` (regular file, at most 50 MB) and reads it with a bounded loop, so the file cannot be swapped between the
+  check and the read, and a FIFO cannot block it.
 
 ## Polling
 
