@@ -292,8 +292,8 @@ sends nothing.
   saving), limit metadata (kind, group, scope name such as a model name, severity, active flag), when it was fetched and
   from which source, and the absolute path of the Claude config directory it belongs to, so it is never shown for a
   different directory. It never contains tokens.
-  The folder is private to you (mode 700) and the file is 600. It is deleted when you change the config directory or
-  QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
+  The folder is private to you (mode 700), and the file is set to mode 600. It is deleted when you change the config
+  directory or QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
 - `~/Library/Application Support/QuotaRing/cli`: an empty folder (mode 700) that auto-refresh uses as the working
   directory of the `claude` command. QuotaRing writes nothing into it.
 - Your preferences, in UserDefaults (non-sensitive values only), including which notification thresholds were already
