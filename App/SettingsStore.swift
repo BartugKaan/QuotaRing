@@ -119,7 +119,8 @@ final class SettingsStore {
         }
     }
 
-    /// A Claude config directory chosen in Settings, or `nil` for the default `~/.claude`.
+    /// A Claude config directory chosen in Settings, or `nil` for the default `~/.claude`. Read only from the app's saved
+    /// preferences, never from launch arguments: auto-refresh passes it to Claude Code as `CLAUDE_CONFIG_DIR`.
     var customConfigDirectory: URL? {
         get { customConfigPath.isEmpty ? nil : URL(fileURLWithPath: customConfigPath, isDirectory: true) }
         set { customConfigPath = newValue?.path ?? "" }
@@ -177,8 +178,7 @@ final class SettingsStore {
         notifyOnReset = defaults.object(forKey: Key.notifyOnReset) as? Bool ?? false
         // Consent is read from what the app itself saved, never from launch arguments: `UserDefaults` also answers from
         // the argument domain, so `-liveModeEnabled YES -hasCompletedOnboarding YES` on the command line would turn on
-        // Keychain reads without the user ever agreeing. (Display settings and the development-only
-        // `-customConfigDirectory` override may still come from there.)
+        // Keychain reads without the user ever agreeing. (Display settings may still come from there.)
         let saved = persistentDomain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
         liveModeEnabled = saved[Key.liveModeEnabled] as? Bool ?? false
         hasCompletedOnboarding = saved[Key.hasCompletedOnboarding] as? Bool ?? false
@@ -197,7 +197,9 @@ final class SettingsStore {
         } else {
             customCLIPathValue = ""
         }
-        if let path = defaults.string(forKey: Key.customConfigDirectory), path.hasPrefix("/") {
+        // Where Claude Code's data is decides what an executed program is pointed at (CLAUDE_CONFIG_DIR), so it must not
+        // come from the command line either.
+        if let path = saved[Key.customConfigDirectory] as? String, path.hasPrefix("/") {
             customConfigPath = path
         } else {
             customConfigPath = ""

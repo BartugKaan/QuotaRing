@@ -291,7 +291,8 @@ approximate in the UI.
 - **`NotificationService`** fires each threshold once per window. The window is identified by `resetsAt` rounded to the
   minute, because the reported value jitters by sub-seconds between fetches.
 - **`SettingsStore`** is UserDefaults-backed and holds non-sensitive values only. The consent settings (Live mode,
-  auto-refresh, onboarding completed) and the chosen `claude` path ignore command-line launch arguments.
+  auto-refresh, onboarding completed), the chosen `claude` path and the Claude config directory ignore command-line
+  launch arguments.
 - **Demo mode** (`--demo`) swaps in fixture data and never touches the Keychain, the network or Claude files.
 
 ## Concurrency and logging

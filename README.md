@@ -245,7 +245,8 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
   of the next candidate). These checks run once per file, with the same minimal environment. Settings shows which tool
   is used and its version (the desktop app's build as "Claude app (2.1.308)", with the full path as a tooltip), says so
   when the only Claude Code found is too old, and lets you choose another file or go back to looking. The chosen path
-  and the consent are read from QuotaRing's saved preferences only; command-line launch arguments cannot set them.
+  and the consent, like the Claude config directory, are read from QuotaRing's saved preferences only; command-line
+  launch arguments cannot set them.
 - **Safety net:** a result only counts when it says `type: result`, `is_error: false`, `num_turns: 0` and
   `total_cost_usd: 0`, and when Claude Code's cache can be read afterwards and is newer. If a future Claude Code ever
   answers `/usage` with a model request instead (any turn, cost or token count), auto-refresh **turns itself off** and
