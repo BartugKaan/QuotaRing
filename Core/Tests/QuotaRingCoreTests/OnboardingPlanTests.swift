@@ -71,4 +71,33 @@ import Testing
         // Without the argument nothing is turned on.
         #expect(!plan(live: true, notify: true).cliRefreshEnabled)
     }
+
+    @Test func closingTheWindowRecordsNeitherLiveModeNorAutoRefresh() {
+        // The red close button is not a choice: whatever the checkbox shows, nothing that runs or reads is turned on.
+        for notify in [false, true] {
+            let closed = OnboardingPlan(
+                enableLiveMode: false, notifyNearLimit: notify, refreshWithClaudeCode: true,
+                currentThresholds: [80, 95], defaultThresholds: defaults, closedWithoutChoosing: true)
+            #expect(!closed.liveModeEnabled)
+            #expect(!closed.cliRefreshEnabled)
+            #expect(!closed.holdsLiveUntilPromptIsAnswered)
+        }
+        // Even if a caller passed Live mode along with a close.
+        let odd = OnboardingPlan(
+            enableLiveMode: true, notifyNearLimit: true, refreshWithClaudeCode: true,
+            currentThresholds: [80, 95], defaultThresholds: defaults, closedWithoutChoosing: true)
+        #expect(!odd.liveModeEnabled)
+        #expect(!odd.cliRefreshEnabled)
+        #expect(!odd.holdsLiveUntilPromptIsAnswered)
+    }
+
+    @Test func eitherButtonRecordsTheCheckbox() {
+        for live in [false, true] {
+            let chosen = OnboardingPlan(
+                enableLiveMode: live, notifyNearLimit: false, refreshWithClaudeCode: true,
+                currentThresholds: [80, 95], defaultThresholds: defaults, closedWithoutChoosing: false)
+            #expect(chosen.cliRefreshEnabled)
+            #expect(chosen.liveModeEnabled == live)
+        }
+    }
 }

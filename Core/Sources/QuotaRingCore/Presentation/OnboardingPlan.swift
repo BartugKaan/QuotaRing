@@ -42,15 +42,19 @@ public struct OnboardingPlan: Equatable, Sendable {
     ///     never holds anything back.
     ///   - currentThresholds: The thresholds stored now; kept when notifications are wanted and some are set.
     ///   - defaultThresholds: Used when notifications are wanted and none are set.
+    ///   - closedWithoutChoosing: The window was closed with its close button instead of one of its two buttons. That is
+    ///     no choice, so neither Live mode nor auto-refresh is turned on, whatever the checkbox shows.
     public init(
         enableLiveMode: Bool,
         notifyNearLimit: Bool,
         refreshWithClaudeCode: Bool = false,
         currentThresholds: [Int],
-        defaultThresholds: [Int]
+        defaultThresholds: [Int],
+        closedWithoutChoosing: Bool = false
     ) {
+        let enableLiveMode = enableLiveMode && !closedWithoutChoosing
         liveModeEnabled = enableLiveMode
-        cliRefreshEnabled = refreshWithClaudeCode
+        cliRefreshEnabled = refreshWithClaudeCode && !closedWithoutChoosing
         if notifyNearLimit {
             notificationThresholds = currentThresholds.isEmpty ? defaultThresholds : currentThresholds
         } else {

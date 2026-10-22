@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Shows the first-run window in its own centered window. Closing it with the red button counts as choosing
-/// "Use without Live mode".
+/// Shows the first-run window in its own centered window. Closing it with the red button turns on nothing: Live mode and
+/// auto-refresh are recorded off, whatever the window shows.
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
     private let model: OnboardingModel
@@ -59,8 +59,8 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // The red button: the safe default.
-        model.finish(enableLiveMode: false)
+        // The red button: no choice was made, so nothing that runs or reads is turned on.
+        model.finish(enableLiveMode: false, closedWindow: true)
         window?.delegate = nil
         window = nil
         onClose()

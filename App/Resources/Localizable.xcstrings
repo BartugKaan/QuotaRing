@@ -421,12 +421,12 @@
         }
       }
     },
-    "By default, QuotaRing works entirely on this Mac:" : {
+    "By default, QuotaRing itself works entirely on this Mac:" : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Varsayılan olarak QuotaRing tamamen bu Mac’te çalışır:"
+            "value" : "Varsayılan olarak QuotaRing’in kendisi tamamen bu Mac’te çalışır:"
           }
         }
       }
@@ -1336,16 +1336,6 @@
         }
       }
     },
-    "Nothing leaves your Mac: no account, no analytics, no network connections." : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hiçbir şey Mac’inizden çıkmaz: hesap yok, analitik yok, ağ bağlantısı yok."
-          }
-        }
-      }
-    },
     "Nothing saved" : {
       "localizations" : {
         "tr" : {
@@ -1587,6 +1577,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "QuotaRing bağımsız bir projedir; Anthropic ile bağlantısı yoktur ve Anthropic tarafından onaylanmamış ya da desteklenmemiştir. Claude, Anthropic’in ticari markasıdır."
+          }
+        }
+      }
+    },
+    "QuotaRing itself sends nothing: no account, no analytics, no network connections." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing’in kendisi hiçbir şey göndermez: hesap yok, analitik yok, ağ bağlantısı yok."
           }
         }
       }
@@ -1867,22 +1867,22 @@
         }
       }
     },
-    "Runs Claude Code's own `/usage` in the background now and then: no AI request, no usage spent, and QuotaRing never sees your login." : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude Code’un kendi `/usage` komutunu arada bir arka planda çalıştırır: yapay zekâ isteği yapılmaz, kullanım harcanmaz ve QuotaRing girişinizi asla görmez."
-          }
-        }
-      }
-    },
     "Runs Claude Code's own `/usage` in the background when the numbers are older than the refresh interval, at most every 2 minutes." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Değerler yenileme aralığından eskiyse Claude Code’un kendi `/usage` komutunu arka planda çalıştırır; en fazla 2 dakikada bir."
+          }
+        }
+      }
+    },
+    "Runs the `claude` program now and then; it asks Anthropic for your usage with Claude Code's own login. No AI request, no usage spent, and QuotaRing never sees the login." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "`claude` programını arada bir çalıştırır; program, kullanımınızı Claude Code’un kendi girişiyle Anthropic’e sorar. Yapay zekâ isteği yapılmaz, kullanım harcanmaz ve QuotaRing girişi asla görmez."
           }
         }
       }

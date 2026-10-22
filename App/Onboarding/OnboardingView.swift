@@ -41,14 +41,17 @@ final class OnboardingModel {
     /// Records the user's choices and completes onboarding, at once. Does nothing after the first call.
     ///
     /// Live mode turns on only here, through the explicit "Enable Live mode" button; every other way of leaving the
-    /// window (the default button, Return, closing the window) leaves it off. The two checkboxes are recorded as they
-    /// are, whichever way the window is left. What is recorded is decided by ``OnboardingPlan``.
+    /// window (the default button, Return, closing the window) leaves it off. Auto-refresh turns on only when one of the
+    /// two buttons is pressed with its checkbox on; closing the window with its close button records it off. What is
+    /// recorded is decided by ``OnboardingPlan``.
+    ///
+    /// - Parameter closedWindow: The window was closed with its close button rather than a button.
     ///
     /// Two system prompts must not appear at once. When the user wants both Live mode and notifications, the
     /// notification prompt comes first and Live mode's first Keychain read (which can raise macOS's Keychain prompt)
     /// waits until it was answered, or at most ``OnboardingPlan/maxPromptWait``. The consent itself is recorded right
     /// away, so a prompt that is never answered cannot drop it.
-    func finish(enableLiveMode: Bool) {
+    func finish(enableLiveMode: Bool, closedWindow: Bool = false) {
         guard !isFinished else { return }
         isFinished = true
 
@@ -57,7 +60,8 @@ final class OnboardingModel {
             notifyNearLimit: notifyNearLimit,
             refreshWithClaudeCode: refreshWithClaudeCode,
             currentThresholds: settings.notificationThresholds,
-            defaultThresholds: SettingsStore.defaultNotificationThresholds)
+            defaultThresholds: SettingsStore.defaultNotificationThresholds,
+            closedWithoutChoosing: closedWindow)
 
         // The hold goes in before the consent, so the engine never sees Live mode on without it.
         let gate = plan.holdsLiveUntilPromptIsAnswered ? liveGate : nil
@@ -102,7 +106,7 @@ struct OnboardingView: View {
                         "Keep numbers fresh with Claude Code (recommended if you use the Claude desktop app)",
                         isOn: $model.refreshWithClaudeCode)
                     Text(
-                        "Runs Claude Code's own `/usage` in the background now and then: no AI request, no usage spent, and QuotaRing never sees your login."
+                        "Runs the `claude` program now and then; it asks Anthropic for your usage with Claude Code's own login. No AI request, no usage spent, and QuotaRing never sees the login."
                     )
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -126,7 +130,7 @@ struct OnboardingView: View {
 
     private var defaultModeCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("By default, QuotaRing works entirely on this Mac:")
+            Text("By default, QuotaRing itself works entirely on this Mac:")
                 .font(.headline)
             InfoRow(
                 symbol: "doc.text",
@@ -143,7 +147,7 @@ struct OnboardingView: View {
             )
             InfoRow(
                 symbol: "lock.shield",
-                text: "Nothing leaves your Mac: no account, no analytics, no network connections.")
+                text: "QuotaRing itself sends nothing: no account, no analytics, no network connections.")
         }
         .card()
     }

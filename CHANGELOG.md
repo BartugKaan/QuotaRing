@@ -35,7 +35,7 @@ First public release, planned as 0.1.0.
   older than the refresh interval (at most every 2 minutes, paused while asleep or offline, with Live mode's back-off;
   the Refresh button runs it too, at most once a minute), then re-reads the cache at once. It makes no model request and
   QuotaRing handles no credentials for it: Claude Code uses and renews its own login. Offered in the first-run window (a
-  checkbox, on by default) and in Settings → Data behind a consent sheet that shows the exact command; Settings shows the
+  checkbox, pre-checked, recorded only when one of the window's buttons is pressed; closing the window turns nothing on) and in Settings → Data behind a consent sheet that shows the exact command; Settings shows the
   tool's path and version, lets you choose another `claude`, and shows the status. The popover's out-of-date notice
   offers "Turn on auto-refresh…" (it opens Settings, never switches anything on), and problems such as "not signed in"
   are shown there.

@@ -205,7 +205,8 @@ When enabled:
 
 The Claude desktop app never refreshes the cache that QuotaRing reads, but Claude Code's own `/usage` command does.
 Auto-refresh runs that command for you. It is **off until you allow it**: the first-run window offers it with a
-checkbox (on by default, recommended if you use the desktop app), and Settings → Data asks for confirmation with a sheet
+checkbox (pre-checked, recommended if you use the desktop app) that counts only when you press one of the window's two
+buttons; closing the window turns nothing on. Settings → Data asks for confirmation with a sheet
 that shows the exact command before it turns on. Turning it off takes effect at once.
 
 What runs, exactly:
