@@ -114,8 +114,7 @@ struct PopoverView: View {
 
     private func activitySection(now: Date) -> some View {
         ActivitySection(
-            activity: model.activity, daily: model.daily, now: now,
-            range: Binding(get: { model.activityRange }, set: { model.activityRange = $0 }))
+            activity: model.activity, daily: model.daily, now: now, range: model.activityRangeBinding)
     }
 
     private func footer(now: Date) -> some View {

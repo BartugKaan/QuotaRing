@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import QuotaRingCore
+import SwiftUI
 import Testing
 
 /// An ``AppModel`` that cannot reach anything real: its settings and defaults are the sandbox's, the engine behind it
@@ -331,18 +332,18 @@ final class ModelRig {
         #expect(rig.model.activity == [.today: more])
     }
 
-    @Test func theChosenActivityRangeSurvivesThePopoverClosing() throws {
+    @Test func theActivityPickersBindingWritesTheModelsRangeAndReadsItBack() throws {
         let rig = try ModelRig()
         defer { rig.sandbox.remove() }
-        #expect(rig.model.activityRange == .session)
+        let binding = rig.model.activityRangeBinding
+        #expect(binding.wrappedValue == .session)
 
-        rig.model.activityRange = .week
-        rig.model.popoverDidOpen()
-        rig.model.popoverDidClose()
-        rig.model.popoverDidOpen()
-        rig.model.popoverDidClose()
-
+        // What the picker does when the user chooses 7 days.
+        binding.wrappedValue = .week
         #expect(rig.model.activityRange == .week)
+
+        rig.model.activityRange = .today
+        #expect(binding.wrappedValue == .today)
     }
 }
 

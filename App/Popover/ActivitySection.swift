@@ -2,6 +2,14 @@ import Charts
 import QuotaRingCore
 import SwiftUI
 
+extension AppModel {
+    /// What the Activity section's range picker reads and writes: the model's ``activityRange``, which outlives the
+    /// popover's views.
+    var activityRangeBinding: Binding<ActivityRange> {
+        Binding(get: { self.activityRange }, set: { self.activityRange = $0 })
+    }
+}
+
 /// Tokens used on this Mac, counted from Claude Code's local transcripts: a segmented range (session, today,
 /// 7 days), the total, the top models and projects, and for 7 days a bar chart per day.
 ///
