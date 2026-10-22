@@ -21,7 +21,8 @@ public enum UsageAPIError: Error, Equatable, Sendable {
     case server(status: Int)
     /// The request never produced a response (offline, timeout, TLS failure, ...).
     case network
-    /// A success response whose body held no usable limits.
+    /// A success response whose body held no usable limits, or a response whose body was over the transport's size
+    /// limit (whatever its status).
     case decoding
 }
 
@@ -49,6 +50,8 @@ public struct UsageAPIClient: Sendable {
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport.send(request)
+        } catch HTTPTransportError.responseTooLarge {
+            throw .decoding
         } catch {
             throw .network
         }
