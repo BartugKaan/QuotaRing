@@ -77,6 +77,16 @@
         }
       }
     },
+    "`/usage` only asks Anthropic for your usage numbers. If Claude Code ever answers it with a model request instead, QuotaRing turns auto-refresh off by itself and tells you." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "`/usage` yalnızca Anthropic’ten kullanım değerlerinizi ister. Claude Code bir gün bunun yerine bir model isteğiyle yanıt verirse QuotaRing otomatik yenilemeyi kendiliğinden kapatır ve size bildirir."
+          }
+        }
+      }
+    },
     "5-hour session" : {
       "comment" : "VoiceOver: name of the session ring",
       "localizations" : {
@@ -210,6 +220,177 @@
         }
       }
     },
+    "Auto-refresh and Live mode get new numbers once the ones shown are this old. Numbers older than twice this are shown as out of date. The Claude Code cache is checked every 30 s." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme ve Canlı mod, gösterilen değerler bu kadar eskiyince yeni değerler alır. Bunun iki katından eski değerler için “güncel değil” uyarısı gösterilir. Claude Code önbelleği her 30 saniyede bir kontrol edilir."
+          }
+        }
+      }
+    },
+    "Auto-refresh can run Claude Code's `/usage` for you in the background." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme, Claude Code’un `/usage` komutunu sizin için arka planda çalıştırabilir."
+          }
+        }
+      }
+    },
+    "Auto-refresh can't find Claude Code's command-line tool (`claude`). Install it, or choose it in Settings → Data." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme, Claude Code’un komut satırı aracını (`claude`) bulamıyor. Aracı yükleyin veya Ayarlar → Veri bölümünden seçin."
+          }
+        }
+      }
+    },
+    "Auto-refresh could not run Claude Code. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme Claude Code’u çalıştıramadı. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh is off. QuotaRing does not run Claude Code." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme kapalı. QuotaRing, Claude Code’u çalıştırmaz."
+          }
+        }
+      }
+    },
+    "Auto-refresh is on. The first reading should arrive in a moment." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme açık. İlk veriler birazdan gelmeli."
+          }
+        }
+      }
+    },
+    "Auto-refresh is on. Turning it off stops it right away." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme açık. Kapatırsanız hemen durur."
+          }
+        }
+      }
+    },
+    "Auto-refresh is running Claude Code…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme Claude Code’u çalıştırıyor…"
+          }
+        }
+      }
+    },
+    "Auto-refresh last ran %@." : {
+      "comment" : "Auto-refresh status; the argument is a relative time such as 3 min ago",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme en son %@ çalıştı."
+          }
+        }
+      }
+    },
+    "Auto-refresh turned itself off: Claude Code answered `/usage` with a model request, which would use your limits." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme kendini kapattı: Claude Code, `/usage` komutunu bir model isteğiyle yanıtladı; bu, limitlerinizi tüketirdi."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code could not be started. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code başlatılamadı. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code is not signed in. Run `claude` once in Terminal and sign in." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code’da oturum açılmamış. Terminal’de `claude` komutunu bir kez çalıştırıp giriş yapın."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code printed far more than expected and was stopped. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code beklenenden çok daha fazla çıktı verdiği için durduruldu. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code ran, but its usage numbers did not change. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code çalıştı ama kullanım değerleri değişmedi. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code reported an error. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code bir hata bildirdi. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code took longer than 30 seconds and was stopped. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code 30 saniyeden uzun sürdüğü için durduruldu. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code's answer was not in the expected format. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code’un yanıtı beklenen biçimde değildi. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
     "By default, QuotaRing works entirely on this Mac:" : {
       "localizations" : {
         "tr" : {
@@ -271,6 +452,17 @@
         }
       }
     },
+    "Choose Claude Code's command-line tool, claude. It is often in ~/.local/bin, ~/.npm-global/bin, /opt/homebrew/bin or /usr/local/bin." : {
+      "comment" : "File picker message for Claude Code's command-line tool",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un komut satırı aracını (claude) seçin. Genellikle ~/.local/bin, ~/.npm-global/bin, /opt/homebrew/bin veya /usr/local/bin klasöründedir."
+          }
+        }
+      }
+    },
     "Choose the folder Claude Code keeps its data in. The default is ~/.claude." : {
       "comment" : "Folder picker message",
       "localizations" : {
@@ -292,6 +484,16 @@
         }
       }
     },
+    "Claude Code" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        }
+      }
+    },
     "Claude Code · %@" : {
       "comment" : "Popover footer: data came from Claude Code's own cache; the argument is like 3 min ago",
       "localizations" : {
@@ -299,6 +501,37 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude Code · %@"
+          }
+        }
+      }
+    },
+    "Claude Code %@" : {
+      "comment" : "The found command-line tool's version; the argument is a version number such as 2.1.287",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code %@"
+          }
+        }
+      }
+    },
+    "Claude Code uses and renews its own login. QuotaRing never reads, sees or stores your credentials." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code kendi girişini kullanır ve yeniler. QuotaRing kimlik bilgilerinizi asla okumaz, görmez veya saklamaz."
+          }
+        }
+      }
+    },
+    "Claude Code uses its own login; QuotaRing never sees your credentials. No AI request, no usage spent, no session saved." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code kendi girişini kullanır; QuotaRing kimlik bilgilerinizi asla görmez. Yapay zekâ isteği yapılmaz, kullanım harcanmaz, oturum kaydedilmez."
           }
         }
       }
@@ -319,6 +552,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude Code girişinin süresi doldu. Yenilemek için `claude` komutunu bir kez çalıştırın; kullanım burada görünecek."
+          }
+        }
+      }
+    },
+    "Claude Code's own `/usage` command, in the background, exactly like this:" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kendi `/usage` komutu, arka planda, tam olarak şöyle:"
           }
         }
       }
@@ -361,6 +604,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yeniden sormak için Yenile’ye tıklayın veya Canlı modu kapatın."
+          }
+        }
+      }
+    },
+    "Command-line tool" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Komut satırı aracı"
           }
         }
       }
@@ -408,6 +661,16 @@
         }
       }
     },
+    "Data is out of date. Auto-refresh updates it the next time it can run Claude Code." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veriler güncel değil. Otomatik yenileme, Claude Code’u bir sonraki çalıştırabildiğinde verileri günceller."
+          }
+        }
+      }
+    },
     "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not." : {
       "localizations" : {
         "tr" : {
@@ -418,12 +681,12 @@
         }
       }
     },
-    "Data is out of date. Only the `claude` command-line tool updates these numbers (a session or `/usage`); the Claude desktop app does not. Live mode can keep numbers fresh for a few hours after you last used the `claude` command." : {
+    "Data is out of date. Only the `claude` command-line tool updates these numbers; the Claude desktop app does not. QuotaRing can run it for you in the background." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veriler güncel değil. Bu değerleri yalnızca `claude` komut satırı aracı günceller (bir oturum veya `/usage`); Claude masaüstü uygulaması güncellemez. Canlı mod, `claude` komutunu son kullanımınızdan sonra birkaç saat boyunca değerleri güncel tutabilir."
+            "value" : "Veriler güncel değil. Bu değerleri yalnızca `claude` komut satırı aracı günceller; Claude masaüstü uygulaması güncellemez. QuotaRing bu aracı sizin için arka planda çalıştırabilir."
           }
         }
       }
@@ -455,6 +718,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Demo modu örnek veri gösterir ve hiçbir dosyayı okumaz."
+          }
+        }
+      }
+    },
+    "Demo mode shows sample data: auto-refresh cannot be changed." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo modu örnek veri gösterir: otomatik yenileme değiştirilemez."
           }
         }
       }
@@ -539,6 +812,16 @@
         }
       }
     },
+    "How often" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne sıklıkla"
+          }
+        }
+      }
+    },
     "It counts tokens from Claude Code's local transcripts. The text of your conversations is not kept." : {
       "localizations" : {
         "tr" : {
@@ -559,12 +842,22 @@
         }
       }
     },
-    "Just refreshed. Live requests are limited to one a minute." : {
+    "Just refreshed. You can refresh again in a minute." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Az önce yenilendi. Canlı istekler dakikada bir kez yapılabilir."
+            "value" : "Az önce yenilendi. Bir dakika sonra yeniden yenileyebilirsiniz."
+          }
+        }
+      }
+    },
+    "Keep numbers fresh with Claude Code (recommended if you use the Claude desktop app)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Değerleri Claude Code ile güncel tut (Claude masaüstü uygulamasını kullanıyorsanız önerilir)"
           }
         }
       }
@@ -667,26 +960,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canlı mod, Anthropic’ten daha güncel değerler ister. Neler olduğunu aşağıda ayrıntılı olarak görebilirsiniz."
-          }
-        }
-      }
-    },
-    "Live mode asks Anthropic for new numbers at most this often. Numbers older than twice this are shown as out of date. The Claude Code cache is checked every 30 s." : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Canlı mod, Anthropic’ten yeni değerleri en fazla bu sıklıkta ister. Bunun iki katından eski değerler için “güncel değil” uyarısı gösterilir. Claude Code önbelleği her 30 saniyede bir kontrol edilir."
-          }
-        }
-      }
-    },
-    "Live mode can keep numbers fresh for a few hours after you last used the `claude` command." : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Canlı mod, `claude` komutunu son kullanımınızdan sonra birkaç saat boyunca değerleri güncel tutabilir."
           }
         }
       }
@@ -812,6 +1085,16 @@
         }
       }
     },
+    "Looking…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aranıyor…"
+          }
+        }
+      }
+    },
     "macOS has not been asked to allow notifications from QuotaRing yet." : {
       "localizations" : {
         "tr" : {
@@ -892,6 +1175,16 @@
         }
       }
     },
+    "No AI request, no usage spent" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yapay zekâ isteği yok, kullanım harcanmaz"
+          }
+        }
+      }
+    },
     "No Claude Code login found" : {
       "localizations" : {
         "tr" : {
@@ -913,6 +1206,16 @@
         }
       }
     },
+    "No session is saved, and no plugins, hooks or MCP servers start. It runs in an empty folder of QuotaRing's own." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kaydedilmez; hiçbir eklenti, kanca (hook) veya MCP sunucusu başlatılmaz. QuotaRing’e ait boş bir klasörde çalışır."
+          }
+        }
+      }
+    },
     "No usage data yet" : {
       "localizations" : {
         "tr" : {
@@ -923,12 +1226,42 @@
         }
       }
     },
+    "Not found" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bulunamadı"
+          }
+        }
+      }
+    },
+    "Not looked for in demo mode" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo modunda aranmaz"
+          }
+        }
+      }
+    },
     "Nothing leaves your Mac: no account, no analytics, no network connections." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hiçbir şey Mac’inizden çıkmaz: hesap yok, analitik yok, ağ bağlantısı yok."
+          }
+        }
+      }
+    },
+    "Nothing saved" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiçbir şey kaydedilmez"
           }
         }
       }
@@ -1024,6 +1357,27 @@
         }
       }
     },
+    "Only when the numbers shown are older than your refresh interval (now %@), at most every 2 minutes, and not while your Mac sleeps or is offline. The Refresh button runs it too, at most once a minute." : {
+      "comment" : "Auto-refresh consent sheet; the argument is the refresh interval such as 5 minutes",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yalnızca gösterilen değerler yenileme aralığınızdan (şu an %@) eskiyse, en fazla 2 dakikada bir ve Mac’iniz uykudayken veya çevrimdışıyken asla. Yenile düğmesi de komutu çalıştırır, en fazla dakikada bir kez."
+          }
+        }
+      }
+    },
+    "Open Data settings…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veri ayarlarını aç…"
+          }
+        }
+      }
+    },
     "Open Login Items Settings…" : {
       "localizations" : {
         "tr" : {
@@ -1040,6 +1394,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bildirim Ayarlarını Aç…"
+          }
+        }
+      }
+    },
+    "Open Settings, where auto-refresh is explained and can be turned on" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenilemenin açıklandığı ve açılabildiği Ayarlar’ı açın"
           }
         }
       }
@@ -1071,6 +1435,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Diğer limit"
+          }
+        }
+      }
+    },
+    "Other users can change the chosen file, so QuotaRing does not run it." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen dosyayı başka kullanıcılar değiştirebildiği için QuotaRing onu çalıştırmaz."
           }
         }
       }
@@ -1143,6 +1517,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "QuotaRing, `claude` komut satırı aracının bu Mac’e kaydettiği değerleri gösterir. Bir oturum başlatın veya orada `/usage` komutunu çalıştırın; değerler burada görünür. Claude masaüstü uygulaması bu değerleri kaydetmez."
+          }
+        }
+      }
+    },
+    "QuotaRing will run Claude Code's command-line tool to keep its usage numbers fresh. Here is exactly what happens." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing, kullanım değerlerini güncel tutmak için Claude Code’un komut satırı aracını çalıştıracak. Neler olduğunu aşağıda ayrıntılı olarak görebilirsiniz."
           }
         }
       }
@@ -1264,6 +1648,16 @@
         }
       }
     },
+    "Refresh with Claude Code" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code ile yenile"
+          }
+        }
+      }
+    },
     "Refreshing" : {
       "comment" : "VoiceOver: a refresh is in progress",
       "localizations" : {
@@ -1301,6 +1695,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Güvenlik sorunu bildir"
+          }
+        }
+      }
+    },
+    "Reset" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sıfırla"
           }
         }
       }
@@ -1369,6 +1773,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Halkada gösterilen"
+          }
+        }
+      }
+    },
+    "Runs Claude Code's own `/usage` in the background now and then: no AI request, no usage spent, and QuotaRing never sees your login." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’un kendi `/usage` komutunu arada bir arka planda çalıştırır: yapay zekâ isteği yapılmaz, kullanım harcanmaz ve QuotaRing girişinizi asla görmez."
+          }
+        }
+      }
+    },
+    "Runs Claude Code's own `/usage` in the background when the numbers are older than the refresh interval, at most every 2 minutes." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Değerler yenileme aralığından eskiyse Claude Code’un kendi `/usage` komutunu arka planda çalıştırır; en fazla 2 dakikada bir."
           }
         }
       }
@@ -1447,12 +1871,72 @@
         }
       }
     },
+    "The chosen file belongs to another user, so QuotaRing does not run it." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen dosya başka bir kullanıcıya ait olduğu için QuotaRing onu çalıştırmaz."
+          }
+        }
+      }
+    },
+    "The chosen file can't be read." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen dosya okunamıyor."
+          }
+        }
+      }
+    },
+    "The chosen file is not a program that can be run." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen dosya çalıştırılabilir bir program değil."
+          }
+        }
+      }
+    },
+    "The chosen file no longer exists." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen dosya artık yok."
+          }
+        }
+      }
+    },
+    "The chosen item is not a file." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçilen öğe bir dosya değil."
+          }
+        }
+      }
+    },
     "The latest usage report has no 5-hour data." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Son kullanım raporunda 5 saatlik veri yok."
+          }
+        }
+      }
+    },
+    "The text below explains what auto-refresh runs and how often." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aşağıdaki metin, otomatik yenilemenin neyi ve ne sıklıkla çalıştırdığını açıklar."
           }
         }
       }
@@ -1477,12 +1961,32 @@
         }
       }
     },
+    "The version is checked before the first run." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sürüm, ilk çalıştırmadan önce kontrol edilir."
+          }
+        }
+      }
+    },
     "These two are read on this Mac only; they are never sent anywhere." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bu ikisi yalnızca bu Mac’te okunur; hiçbir yere gönderilmez."
+          }
+        }
+      }
+    },
+    "This file is not Claude Code, so it is never run with `/usage`." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu dosya Claude Code değil; bu yüzden asla `/usage` ile çalıştırılmaz."
           }
         }
       }
@@ -1567,6 +2071,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konuşma kayıtları"
+          }
+        }
+      }
+    },
+    "Turn on auto-refresh" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenilemeyi aç"
+          }
+        }
+      }
+    },
+    "Turn on auto-refresh?" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme açılsın mı?"
+          }
+        }
+      }
+    },
+    "Turn on auto-refresh…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenilemeyi aç…"
           }
         }
       }
@@ -1690,6 +2224,16 @@
         }
       }
     },
+    "What runs" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne çalışır"
+          }
+        }
+      }
+    },
     "When 5-hour usage reaches %@" : {
       "localizations" : {
         "tr" : {
@@ -1730,12 +2274,12 @@
         }
       }
     },
-    "You can turn Live mode on or off at any time in Settings → Data." : {
+    "You can turn Live mode and auto-refresh on or off at any time in Settings → Data." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Canlı modu istediğiniz zaman Ayarlar → Veri bölümünden açıp kapatabilirsiniz."
+            "value" : "Canlı modu ve otomatik yenilemeyi istediğiniz zaman Ayarlar → Veri bölümünden açıp kapatabilirsiniz."
           }
         }
       }
@@ -1747,6 +2291,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude oturum limitiniz sıfırlandı"
+          }
+        }
+      }
+    },
+    "Your login" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girişiniz"
           }
         }
       }

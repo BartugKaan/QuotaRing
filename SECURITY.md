@@ -1,7 +1,8 @@
 # Security Policy
 
-QuotaRing is a small app that can, in its opt-in Live mode, handle a sensitive secret (Claude Code's OAuth token). Security
-reports are taken seriously and are very welcome.
+QuotaRing is a small app that can, in its opt-in Live mode, handle a sensitive secret (Claude Code's OAuth token), and,
+with opt-in auto-refresh, execute a program on your Mac (Claude Code's `claude` tool). Security reports are taken
+seriously and are very welcome.
 
 ## Supported versions
 
@@ -52,6 +53,8 @@ In scope:
   `api.anthropic.com`, or otherwise exposed.
 - Any network traffic to a host other than `api.anthropic.com`, or any telemetry.
 - Any write to Claude Code's files (`~/.claude.json`, `~/.claude/**`) or Keychain items.
+- Any way to make QuotaRing execute a program other than a validated Claude Code tool, run it with other arguments or
+  environment, run it without the user's consent, or keep, log or forward what it prints.
 - Crashes, hangs or unbounded resource use triggered by malformed, hostile or huge `~/.claude.json`, transcript or API
   response data.
 - Weaknesses in the build, signing, notarization or release pipeline (for example unpinned actions or tools, leaked
@@ -73,7 +76,8 @@ Out of scope:
 1. Claude Code's OAuth access token, which QuotaRing handles only in Live mode.
 2. The contents of `~/.claude.json` (it also holds MCP server definitions and account details) and of Claude Code
    transcripts, which are your conversations.
-3. The integrity of the app you run.
+3. The integrity of the app you run, and of the one program it may run (auto-refresh).
+4. Your usage limits: nothing QuotaRing does may send a prompt to a model.
 
 **Controls**
 
@@ -82,7 +86,10 @@ Out of scope:
 | Token leaks to disk or logs | The token is read from the Keychain on every poll, wrapped in a `Secret` type whose description, debug description and reflection are redacted and which is not `Codable`, used for one request, then dropped. It is never put in UserDefaults, files, logs, crash reports or the pasteboard. Logging uses `os.Logger` with privacy annotations and never includes token-derived data. |
 | Token sent to the wrong place | The endpoint is a compile-time constant (`https://api.anthropic.com/api/oauth/usage`), not a setting, so configuration or a hostile file cannot redirect it. HTTPS only, with App Transport Security defaults. |
 | Cross-request leakage | Requests use an ephemeral `URLSession`: no cookies, no URL cache, no credential storage. |
-| Breaking the user's Claude Code login | QuotaRing never refreshes tokens (refresh tokens are single-use) and never launches the `claude` CLI. An expired token is not sent anywhere. |
+| Breaking the user's Claude Code login | QuotaRing never refreshes tokens (refresh tokens are single-use). An expired token is not sent anywhere. The only `claude` run is the opt-in auto-refresh command, in which Claude Code uses and renews its own login exactly as when you run it yourself. |
+| Executing a local program (auto-refresh, opt-in) | Off until the user agrees in onboarding or in a consent sheet that shows the exact command; the consent and the chosen path are read from saved preferences only, never from launch arguments. The tool is looked for only in a fixed list of install locations (or the one file the user chose), and used only if, after following symbolic links, it is a regular executable file owned by the user or root and not group- or world-writable, and its `--version` output says "(Claude Code)" (checked once per file identity, again after the file changes). It runs with a constant argument array (`-p "/usage" --safe-mode --no-session-persistence --output-format json`) and no shell, an environment built from scratch (`HOME`, `USER`, `LOGNAME`, `LANG`, `PATH`, and `CLAUDE_CONFIG_DIR` for a custom config directory), standard input from `/dev/null`, standard error discarded, and an empty private working folder (mode 700). A 30 s timeout, a 256 KB output cap and cancellation stop the whole process group (`SIGTERM`, then `SIGKILL`). The output is parsed in memory and dropped; only an outcome name is logged. |
+| Credentials during auto-refresh | None handled: QuotaRing reads no token, Keychain item or credentials file for it. Claude Code signs in as itself. |
+| Spending usage by accident | `/usage` makes no model request (verified: zero turns, cost and tokens). Every result is checked for exactly that; any turn, cost or token count turns auto-refresh off and tells the user. |
 | Reading more than necessary | From `~/.claude.json` only the `cachedUsageUtilization` key is kept; the rest is dropped immediately. The one other value looked at is the account id (`oauthAccount.accountUuid`), which is compared with the id in the cache entry and then dropped. Transcripts are reduced to timestamp, model, token counts, project folder name and message id, and entries older than 8 days are dropped from memory. A credentials file is accepted only if it is a regular file owned by you and not group or world readable. Nothing is read from the Keychain before you opt in. The consent settings are read from QuotaRing's saved preferences only, so command-line launch arguments cannot enable Live mode. |
 | Another account's numbers | If the cache entry and `oauthAccount` name different accounts, the cached, the saved and the live numbers are all dropped and the saved snapshot is deleted from disk. A custom config directory reads only its own Keychain item (the plain `Claude Code-credentials` item belongs to the default account). |
 | Repeated Keychain prompts | If you deny the Keychain prompt, Live mode stops there (it reads neither another Keychain item nor the credentials file) and does not ask again until you press Refresh, turn Live mode off and on, or relaunch QuotaRing. |
@@ -94,7 +101,11 @@ Out of scope:
 
 **Not defended against**
 
-- Malware already running as you. It can read the same files, and it can request the same Keychain item.
+- Malware already running as you. It can read the same files, and it can request the same Keychain item. It can also
+  replace the `claude` tool that auto-refresh runs (any file you own is yours to change); QuotaRing only refuses files
+  that other accounts can change.
+- Claude Code itself. With auto-refresh on, QuotaRing runs the Claude Code you installed; what that program does, and
+  which hosts it contacts, is up to Claude Code.
 - A compromised Anthropic endpoint or TLS trust store.
 - You choosing to paste secrets into a public issue. The issue forms warn against it.
 
@@ -109,6 +120,8 @@ outside the Mac App Store, with:
 - Developer ID signing and Apple notarization;
 - no third-party runtime dependencies;
 - a single network host, fixed in code;
+- one optional program to run (Claude Code's `claude`), validated and run with a fixed command, which needs no sandbox
+  exception either;
 - source that is small enough to audit.
 
 The trade-off is real: an unsandboxed app has the same file access as you. That is why the code is open, the privacy
@@ -124,7 +137,8 @@ small and separate (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 | Account id | `oauthAccount.accountUuid` and the account id of the cache entry, both in `~/.claude.json` | Compared once per read to detect a cache from another account, then dropped. Never stored, logged or sent. |
 | Rest of `~/.claude.json` | Same file | Discarded immediately. Never logged, stored or sent. |
 | Transcript metadata | `~/.claude/projects/**/*.jsonl` | Timestamp, model, token counts, project folder name, message id, kept in memory only and dropped after 8 days. Message text is not retained. |
-| Preferences | Settings window | UserDefaults, non-sensitive values only (including which notification thresholds were already announced for the current window). |
+| Output of `claude -p "/usage"` (auto-refresh only) | The `claude` process QuotaRing starts | At most 256 KB, read in memory, checked for the result fields and for any sign of a model request, then dropped. Never logged, stored or sent. The usage numbers themselves are read afterwards from Claude Code's cache, as always. |
+| Preferences | Settings window | UserDefaults, non-sensitive values only (including which notification thresholds were already announced for the current window, the auto-refresh consent, and the path of a `claude` tool you chose). |
 
 ## Verifying a release
 

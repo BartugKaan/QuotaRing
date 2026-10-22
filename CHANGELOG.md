@@ -30,6 +30,20 @@ First public release, planned as 0.1.0.
 - Opt-in Live mode that reads Claude Code's OAuth token read-only from the Keychain and requests
   `api.anthropic.com/api/oauth/usage`. The token is re-read on every poll, never stored, logged or refreshed, and
   never sent when expired. With a custom config directory only that directory's own Keychain item is read.
+- Opt-in auto-refresh ("Refresh with Claude Code") for Claude desktop app users: QuotaRing runs Claude Code's own
+  `claude -p "/usage" --safe-mode --no-session-persistence --output-format json` in the background when the numbers are
+  older than the refresh interval (at most every 2 minutes, paused while asleep or offline, with Live mode's back-off;
+  the Refresh button runs it too, at most once a minute), then re-reads the cache at once. It makes no model request and
+  QuotaRing handles no credentials for it: Claude Code uses and renews its own login. Offered in the first-run window (a
+  checkbox, on by default) and in Settings → Data behind a consent sheet that shows the exact command; Settings shows the
+  tool's path and version, lets you choose another `claude`, and shows the status. The popover's out-of-date notice
+  offers "Turn on auto-refresh…" (it opens Settings, never switches anything on), and problems such as "not signed in"
+  are shown there.
+- Auto-refresh safety: the tool is found in fixed install locations or the file you chose, and used only if it resolves
+  to a regular executable owned by you or root, not writable by others, whose `--version` says "(Claude Code)". It runs
+  without a shell, with a constant argument array, a from-scratch environment, `/dev/null` as input and its own empty
+  working folder, is stopped after 30 seconds or 256 KB of output, and its output is never logged or stored. Any sign of
+  a model request in the result (turns, cost or tokens) turns auto-refresh off and says why.
 - Live-mode consent: it is recorded as soon as you click "Enable Live mode"; in the first-run window only the first
   Keychain read waits for the notification prompt to settle (at most 15 seconds). The consent settings ignore
   command-line launch arguments. If you deny the Keychain prompt, Live mode stops there (no other Keychain item, no
@@ -48,7 +62,7 @@ First public release, planned as 0.1.0.
   and an optional notice when the session resets, sent on time from the local clock (checked every 30 seconds) even
   when no new data has arrived.
 - Settings for launch at login, refresh interval, ring showing remaining or used, percentage text, notification
-  thresholds, Claude config directory and Live mode consent.
+  thresholds, Claude config directory, auto-refresh and Live mode consent.
 - First-run onboarding that explains what is read and sent before any Keychain access.
 - Demo mode (`make demo` or the `--demo` launch argument) that uses fixture data and touches no Keychain, network or
   Claude files.
@@ -65,15 +79,17 @@ First public release, planned as 0.1.0.
 ### Known limitations
 
 - Only the `claude` command-line tool updates the usage cache that the default mode reads (a session or `/usage`). The
-  Claude desktop app does not (verified on 2026-10-21), so if you use only the desktop app the default mode goes stale.
-  Either run `claude` or `/usage` now and then, or turn on Live mode, which stays fresh for roughly as long as Claude
-  Code's login token is valid (about 8 hours after the CLI last ran). A better answer for desktop-app users is being
-  considered for v1.1.
+  Claude desktop app does not (verified on 2026-10-21), so if you use only the desktop app, turn on auto-refresh (it
+  needs Claude Code's command-line tool installed and signed in once). Without it, run `claude` or `/usage` now and
+  then, or use Live mode, which stays fresh for roughly as long as Claude Code's login token is valid (about 8 hours
+  after the CLI last ran).
 
 ### Security
 
 - Not sandboxed by design (it must read Claude Code's files and a Keychain item created by another program); the
   reasoning and the threat model are in [SECURITY.md](SECURITY.md).
 - No telemetry, analytics, crash reporting or update checks, and no third-party runtime dependencies.
+- Auto-refresh executes one local program, Claude Code's `claude`, only with consent and only after validating it; the
+  consent and the chosen path cannot be set through launch arguments. The details are in [SECURITY.md](SECURITY.md).
 
 [Unreleased]: https://github.com/BartugKaan/QuotaRing/commits/main

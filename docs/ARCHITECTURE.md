@@ -10,8 +10,8 @@ reads, sends and stores, see [How it works and privacy](../README.md#how-it-work
 QuotaRing is a menu bar app in two parts:
 
 - **`QuotaRingCore`**: a Swift package (in `Core/`) with all the logic that does not need a UI: models, decoding, file
-  and credential access, the API client, polling policy, transcript scanning and formatting. It is tested with
-  `swift test` and needs no Xcode project.
+  and credential access, the API client, polling policy, transcript scanning, running Claude Code's `/usage`
+  (auto-refresh) and formatting. It is tested with `swift test` and needs no Xcode project.
 - **The app** (in `App/`): an AppKit status item, SwiftUI views, settings, onboarding and notifications. It owns state
   and scheduling and calls into Core.
 
@@ -31,6 +31,8 @@ Core/
     Credentials/     credential parsing, Keychain and file sources, resolver
     Network/         HTTP transport, usage API client, Retry-After, polling policy, live fetcher
     Transcripts/     transcript line parser, incremental scanner, aggregator, model names
+    Cli/             auto-refresh: finding and validating `claude`, the fixed command and environment, the bounded
+                     process runner, result checking (the safety net), and the executor that ties them together
     Presentation/    formatting, snapshot logic (staleness, reset handling), refresh planning, threshold tracking
     Persistence/     LastSnapshotStore: the saved last good snapshot (last-snapshot.json)
     Resources/       English and Turkish strings for relative times and durations
@@ -39,7 +41,7 @@ App/
   QuotaRingApp.swift, AppDelegate.swift, AppModel.swift, UsageEngine.swift, SettingsStore.swift, DemoData.swift
   StatusItem/    status item controller, ring image renderer
   Popover/       popover view and its sections
-  Settings/ Onboarding/ Services/    settings, first-run consent, notifications, launch at login
+  Settings/ Onboarding/ Services/    settings, first-run consent, notifications, launch at login, auto-refresh runner
   Resources/     Info.plist, entitlements, localized strings, asset catalog
 project.yml      XcodeGen spec (the .xcodeproj is generated and git-ignored)
 Configs/         xcconfig files; Local.xcconfig is git-ignored
@@ -58,6 +60,8 @@ flowchart LR
         TRANS["Local transcripts<br/>~/.claude/projects (jsonl files)"]
     end
 
+    CLI["Claude Code CLI (opt-in auto-refresh)<br/>claude -p /usage --safe-mode<br/>--no-session-persistence --output-format json"]
+
     subgraph CORE["QuotaRingCore"]
         READER["ClaudeCodeCacheReader"]
         FETCHER["LiveUsageFetcher<br/>CredentialResolver + UsageAPIClient"]
@@ -66,6 +70,7 @@ flowchart LR
         SCANNER["TranscriptScanner"]
         AGG["UsageAggregator"]
         STORE["LastSnapshotStore<br/>last-snapshot.json"]
+        EXEC["CLIRefreshExecutor<br/>ClaudeCLILocator + BoundedProcess<br/>+ CLIRefreshResult"]
     end
 
     ENGINE["UsageEngine<br/>scheduling, polling, persistence"]
@@ -82,6 +87,9 @@ flowchart LR
     AGG --> ENGINE
     ENGINE -->|events| MODEL
     ENGINE -.->|saves| STORE
+    ENGINE -.->|"auto-refresh (via CLIRefresher)"| EXEC
+    EXEC -.->|runs| CLI
+    CLI -.->|"Claude Code rewrites its own cache"| CACHE
     MODEL --> RING
     MODEL --> POPOVER
 ```
@@ -107,6 +115,44 @@ state.
 Both limit sources go through the same `UsageResponseDecoder`, so a live response and a cached copy of one are
 interpreted identically.
 
+Auto-refresh (opt-in, dashed above) is not a fourth source. It runs Claude Code's own `/usage`, which makes Claude Code
+rewrite source 1, and then the cache is read at once instead of on the next 30-second check.
+
+## Auto-refresh (opt-in)
+
+For Claude desktop app users, whose cache Claude Code otherwise never refreshes. QuotaRing never reads a credential for
+it: Claude Code uses and renews its own login.
+
+```
+UsageEngine (auto-refresh loop, MainActor)
+  └─ RefreshPlanner.shouldRunCLIRefresh: on, data older than the refresh interval, ≥ 120 s since the last run,
+     back-off over, awake and online
+      └─ CLIRefresher (App/Services): settings, user, LANG, private working folder ~/Library/Application Support/QuotaRing/cli
+          └─ CLIRefreshExecutor (actor, Core/Cli)
+              1. ClaudeCLILocator: chosen path, then ~/.local/bin, ~/.claude/local, ~/.npm-global/bin, /opt/homebrew/bin,
+                 /usr/local/bin; resolved through symlinks; regular, executable, owner = user or root, mode & 0o022 == 0
+              2. `claude --version` contains "(Claude Code)"   (once per file identity, 10 s limit)
+              3. BoundedProcess: CLIRefreshCommand.arguments, minimal environment, stdin /dev/null, stderr discarded,
+                 30 s limit, 256 KB output limit, SIGTERM then SIGKILL to the process group
+              4. CLIRefreshResult.parse → success | modelCallDetected | notLoggedIn | failed(reason)
+  └─ on success: read the cache now; if its entry did not get newer, count the run as failed (cacheNotUpdated)
+  └─ RefreshPlanner.cliRetry (back-off as Live mode) and cliStatus → AppModel.cliStatus → Settings and popover
+  └─ modelCallDetected: SettingsStore.disableCLIRefreshForSafety() (feature off, reason remembered)
+```
+
+- **Consent.** `cliRefreshEnabled` and `customCLIPath` are read from the app's saved preferences only (like Live mode's
+  consent), so launch arguments can neither turn auto-refresh on nor choose what it runs. Nothing runs before
+  onboarding is complete. Settings never turns it on without the consent sheet; the popover only opens Settings.
+- **Before consent** only file metadata is inspected (to show the path in Settings); the `--version` check is part of
+  the first run.
+- **Process handling.** `BoundedProcess` keeps every `Process`, `Pipe` and `FileHandle` inside one run. The launch and
+  all watching happen on a Dispatch queue, never on Swift's cooperative pool and never under a lock a cancellation
+  needs. Cancelling the waiting task (sleep, the feature turned off, settings changed) stops the process group.
+- **Safety net.** A success needs `type: result`, `is_error: false`, `num_turns: 0` and `total_cost_usd: 0`. Any turn,
+  cost, or token or request count above zero means the model was used: the feature turns itself off.
+- **Manual refresh.** Refresh runs it first (at most once a minute, ignoring back-off and data age); when it succeeds,
+  the Live request of the same refresh is skipped.
+
 ## Source selection
 
 - `SnapshotSelector.freshest` picks the candidate with the newest `fetchedAt` among the cached, live and persisted
@@ -129,8 +175,9 @@ interpreted identically.
   opened shows a warning in the popover at once, a malformed file only after 90 seconds without a good read (Claude
   Code rewrites the file often, so a single torn read is normal).
 - Only the `claude` command-line tool updates the cache that the default mode reads; the Claude desktop app does not
-  (verified 2026-10-21). Desktop-app users therefore see stale data in default mode unless they run `claude` or
-  `/usage`, or turn on Live mode (see the README, [Keeping the numbers fresh](../README.md#keeping-the-numbers-fresh)).
+  (verified 2026-10-21). Desktop-app users therefore see stale data in default mode unless they turn on auto-refresh
+  (below), run `claude` or `/usage` themselves, or turn on Live mode (see the README,
+  [Keeping the numbers fresh](../README.md#keeping-the-numbers-fresh)).
 
 `LastSnapshotStore` saves the last good snapshot to `~/Library/Application Support/QuotaRing/last-snapshot.json` so the
 ring is meaningful right after launch. The file holds the usage percentages and reset times, the weekly breakdown, the
@@ -161,7 +208,8 @@ over time:
 | Back-off | Doubles per consecutive failure, capped at 1800 s; `Retry-After` (seconds or HTTP date) is honored but never shortens the base interval |
 | Status codes | 200 decode; 401/403 "needs re-login" state; 429 rate-limited back-off; 5xx and network errors back off and keep stale data |
 | Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing |
-| Manual refresh | Re-reads the cache immediately; in Live mode also makes one request (never with an expired token), at most once per 60 s |
+| Auto-refresh (opt-in) | Runs Claude Code's `/usage` when the freshest snapshot is older than the refresh interval (+/-10% jitter), at most every 120 s; back-off as Live mode after failures; paused while asleep or offline |
+| Manual refresh | Re-reads the cache immediately; with auto-refresh on, runs it once (at most once per 60 s); in Live mode also makes one request (never with an expired token, skipped when auto-refresh just succeeded), at most once per 60 s |
 | System state | Pauses on sleep and while offline; refreshes on wake and reconnect, respecting cooldown and back-off |
 | Countdown | Ticks locally (every 30 s) between polls; no network needed |
 | Transcripts | Scanned on popover open and every 60 s while it is open |
@@ -188,7 +236,8 @@ Rules enforced in code:
 - The token lives in a `Secret` whose `description`, `debugDescription` and reflection are redacted, and which is not
   `Codable`.
 - An expired token (60 s skew) is not sent. The app falls back to the cache and shows a hint.
-- No refresh logic exists, and the `claude` CLI is never launched.
+- No refresh logic exists. The only time `claude` is launched is the opt-in auto-refresh command (above), which reads
+  no credential on QuotaRing's side.
 
 Nothing is read until the user gives consent in onboarding or Settings. Consent is recorded as soon as the user clicks
 "Enable Live mode"; in onboarding, only the first Keychain read is delayed until the notification prompt has settled
@@ -216,15 +265,17 @@ approximate in the UI.
 
 - **`AppModel`** (`@MainActor`, `@Observable`) holds the current snapshot, Live status, activity breakdowns and refresh
   state. Views and the status item render from it.
-- **`UsageEngine`** runs the cache and Live loops (all scheduling), sleep/wake and reachability handling, and
-  persistence of the last snapshot. It reports to `AppModel` through events.
+- **`UsageEngine`** runs the cache, Live and auto-refresh loops (all scheduling), sleep/wake and reachability handling,
+  and persistence of the last snapshot. It reports to `AppModel` through events.
+- **`CLIRefresher`** (`App/Services`) gives Core's `CLIRefreshExecutor` what only the app knows (user, `LANG`, the
+  settings, the private working folder) and logs outcome names only.
 - **`StatusItemController`** owns the `NSStatusItem`, draws the ring with `RingImageRenderer` (dimmed percentage and
   a dashed arc on a dashed faint track when the data is stale, "–" with a dashed track alone after a stale reset), hosts the SwiftUI popover in an `NSPopover`, and provides the right-click
   menu and VoiceOver label.
 - **`NotificationService`** fires each threshold once per window. The window is identified by `resetsAt` rounded to the
   minute, because the reported value jitters by sub-seconds between fetches.
 - **`SettingsStore`** is UserDefaults-backed and holds non-sensitive values only. The consent settings (Live mode,
-  onboarding completed) ignore command-line launch arguments.
+  auto-refresh, onboarding completed) and the chosen `claude` path ignore command-line launch arguments.
 - **Demo mode** (`--demo`) swaps in fixture data and never touches the Keychain, the network or Claude files.
 
 ## Concurrency and logging
@@ -238,7 +289,10 @@ file contents.
 Core logic is tested with Swift Testing (`make test`): decoders against sanitized real-shaped fixtures, cache extraction
 (including truncated, oversized and decoy-secret cases), credential parsing and resolver order, the API client against a
 recording stub transport, polling policy bounds, the scanner's dedupe and incremental behavior, redaction, formatting and
-threshold logic. Tests never touch the real Keychain, real Claude files or the network.
+threshold logic, and auto-refresh: locating and validating the tool (with temporary files), the exact command and
+environment, result parsing and the safety net, the process runner and executor (with fake `#!/bin/sh` tools that record
+their arguments, environment and working folder, hang, exit with errors or print too much), and the scheduling rules.
+Tests never touch the real Keychain, real Claude files or the network, and never run the real `claude`.
 
 CI (`.github/workflows/ci.yml`) runs the tests, `make lint` and an unsigned build on the newest Xcode on the runner, and
 runs the tests and the unsigned build again on Xcode 16.4 exactly, the minimum version the README promises. XcodeGen is
@@ -251,6 +305,7 @@ installed from a pinned release whose SHA-256 is checked (`scripts/ci/install-xc
 | What is read from `~/.claude.json`? | `Core/Sources/QuotaRingCore/Cache/` |
 | Where is the token read, and how is it protected? | `Core/Sources/QuotaRingCore/Credentials/`, `Models/Secret.swift` |
 | What is sent, and to where? | `Core/Sources/QuotaRingCore/Network/` (the endpoint constant is in the API client) |
+| What program can it run, and how? | `Core/Sources/QuotaRingCore/Cli/`, `App/Services/CLIRefresher.swift` |
 | What do transcripts contribute? | `Core/Sources/QuotaRingCore/Transcripts/` |
 | What is stored on disk? | `Core/Sources/QuotaRingCore/Persistence/LastSnapshotStore.swift`, `App/UsageEngine.swift`, `App/SettingsStore.swift` |
 | What can the app do at runtime? | `App/Resources/QuotaRing.entitlements`, `App/Resources/Info.plist` |

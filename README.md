@@ -27,8 +27,11 @@ open-source app whose behavior you can read in an afternoon. Everything it reads
   [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 - **Notifications.** Local notifications when session usage crosses a threshold (default 80% and 95% used), once per
   window. An optional notice when the session resets (off by default).
+- **Auto-refresh with Claude Code (opt-in).** If you use the Claude desktop app, QuotaRing can run Claude Code's own
+  `/usage` in the background so the numbers stay fresh. It makes no AI request, spends no usage, and QuotaRing never
+  touches your login. See [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
 - **Settings.** Launch at login, refresh interval (3, 5, 10 or 15 minutes), ring shows remaining or used, percentage
-  text on or off, notification thresholds, Claude config directory, and the Live mode switch.
+  text on or off, notification thresholds, Claude config directory, the auto-refresh switch and the Live mode switch.
 - **Token-free by default.** The default mode needs no credentials and makes no network connections.
 - **Native and small.** Swift 6, AppKit and SwiftUI, universal binary, no third-party runtime dependencies.
 - **Light and dark mode, VoiceOver labels, Reduce Motion.** English and Turkish.
@@ -41,7 +44,7 @@ ring shows what remains (100 minus used) by default; you can switch it to show w
 - macOS 14 Sonoma or later (Apple silicon or Intel)
 - A Claude subscription and Claude Code's command-line tool (`claude`). In the default mode QuotaRing reads the usage
   cache that **only the `claude` command-line tool updates** (a session or `/usage`); the Claude desktop app does not
-  (verified on 2026-10-21). If you mostly use the desktop app, read
+  (verified on 2026-10-21). If you mostly use the desktop app, turn on auto-refresh, or read
   [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
 ## Install
@@ -105,13 +108,15 @@ which makes it safe for screenshots and for trying the UI.
 
 ## How it works and privacy
 
-QuotaRing reads three things. Two of them are always on and are purely local. The third is opt-in.
+QuotaRing reads three things. Two of them are always on and are purely local. The third is opt-in. Separately, and
+also only if you allow it, QuotaRing can run one fixed Claude Code command so that Claude Code refreshes its own cache.
 
 | Source | What is read | Needs a token | Leaves your Mac |
 | --- | --- | --- | --- |
 | **Claude Code's cached usage snapshot** | One entry, `cachedUsageUtilization`, from `~/.claude.json` (plus an account id used only to check it, see below) | No | No |
 | **Local transcripts** | Token counts from `~/.claude/projects/**/*.jsonl` | No | No |
 | **Live endpoint** (opt-in "Live mode") | Claude Code's OAuth token from the Keychain, used for one request | Yes | The token goes to `api.anthropic.com` only |
+| **Auto-refresh** (opt-in) | Nothing extra: QuotaRing runs `claude -p "/usage" …`, Claude Code rewrites its own cache, and QuotaRing reads that cache as above | Not QuotaRing: Claude Code uses its own login | Claude Code asks Anthropic for your usage, as `/usage` always does; QuotaRing sends nothing |
 
 If you set a custom Claude config directory in Settings, the same files are read from there instead.
 
@@ -126,14 +131,17 @@ interval), it marks them as out of date: the menu bar dims the percentage and dr
 track, and the popover says so. If that old session window has already reset, the menu bar shows "–" and a dashed track
 alone rather than a number, because the old percentage no longer applies.
 
-If you use the desktop app, you have two options:
+If you use the desktop app, you have three options:
 
-1. **Run `claude` or `/usage` now and then.** QuotaRing picks up the new snapshot within about 30 seconds.
-2. **Turn on Live mode.** QuotaRing then asks Anthropic for your usage itself. It stays fresh for roughly as long as
+1. **Turn on auto-refresh (recommended).** The first-run window offers it, and Settings → Data has the switch.
+   QuotaRing then runs Claude Code's own `/usage` in the background whenever the numbers are older than your refresh
+   interval. Claude Code uses and renews its own login, so this keeps working for as long as Claude Code itself is
+   signed in. See [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage).
+2. **Run `claude` or `/usage` yourself now and then.** QuotaRing picks up the new snapshot within about 30 seconds.
+3. **Turn on Live mode.** QuotaRing then asks Anthropic for your usage itself. It stays fresh for roughly as long as
    Claude Code's login token is valid, which is about 8 hours after the CLI last ran. After that Live mode pauses until
    Claude Code renews the token, because QuotaRing never refreshes it (see [Live mode](#live-mode-opt-in-one-host)).
-
-An improvement for desktop-app users is being considered for v1.1; nothing is promised.
+   With auto-refresh on, Claude Code renews that token itself, so the two work well together.
 
 ### Default mode: nothing leaves your Mac
 
@@ -153,7 +161,8 @@ An improvement for desktop-app users is being considered for v1.1; nothing is pr
   avoid double counting. Prompt and response text is not retained. The result stays in memory and is never written to
   disk, and entries older than 8 days are dropped from memory. Lines over 10 MB are skipped. This works without any
   consent step because no secret is involved.
-- **No network.** In this mode the app makes no network connections at all.
+- **No network.** In this mode the app makes no network connections at all. (With auto-refresh on, the `claude`
+  process it starts connects to Anthropic; QuotaRing itself still does not.)
 
 The detail view always says where the numbers came from and how old they are, for example "Claude Code · 3 min ago".
 
@@ -192,10 +201,56 @@ When enabled:
 - **QuotaRing never refreshes the token.** Refresh tokens are single-use, so a third-party refresh could sign you out
   of Claude Code. When the token has expired, QuotaRing waits until Claude Code renews it.
 
+### Auto-refresh: opt-in, runs Claude Code's own `/usage`
+
+The Claude desktop app never refreshes the cache that QuotaRing reads, but Claude Code's own `/usage` command does.
+Auto-refresh runs that command for you. It is **off until you allow it**: the first-run window offers it with a
+checkbox (on by default, recommended if you use the desktop app), and Settings → Data asks for confirmation with a sheet
+that shows the exact command before it turns on. Turning it off takes effect at once.
+
+What runs, exactly:
+
+```sh
+claude -p "/usage" --safe-mode --no-session-persistence --output-format json
+```
+
+- `-p "/usage"` runs the `/usage` slash command without a terminal. Verified with Claude Code 2.1.287: it makes **no
+  model request** (`num_turns: 0`, `total_cost_usd: 0`, zero tokens), so it spends none of your usage, and it rewrites
+  `cachedUsageUtilization` in `~/.claude.json`. `--safe-mode` starts no plugins, hooks or MCP servers;
+  `--no-session-persistence` saves no session transcript.
+- **QuotaRing never touches your login for this.** Claude Code uses and renews its own credentials, as it does when you
+  run it in a terminal.
+- **When:** only when the numbers shown are older than your refresh interval, never more often than every 2 minutes,
+  not while your Mac sleeps or is offline, and with the same back-off as Live mode after a failure (up to 30 minutes).
+  The Refresh button also runs it, at most once a minute.
+- **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
+  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG` and `PATH` (the tool's folder, then
+  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. It
+  runs in an empty folder of QuotaRing's own, `~/Library/Application Support/QuotaRing/cli` (mode 700), so no project's
+  settings apply. A run that takes longer than 30 seconds or prints more than 256 KB is stopped (`SIGTERM`, then
+  `SIGKILL`, to the whole process group). The output is read in memory, checked, and dropped: it is never logged or
+  saved, only the outcome's name ("success", "notLoggedIn" and so on).
+- **Which `claude`:** apps started from Finder or at login do not see your shell's `PATH`, so QuotaRing looks in fixed
+  places: the file you chose in Settings, then `~/.local/bin/claude`, `~/.claude/local/claude`,
+  `~/.npm-global/bin/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. It uses the first one that,
+  after following symbolic links, is a regular executable file owned by you or by root and not writable by other users,
+  and whose `--version` output says "(Claude Code)". The version check runs once per file. Settings shows the path and
+  version, and lets you choose another file or go back to looking. The chosen path and the consent are read from
+  QuotaRing's saved preferences only; command-line launch arguments cannot set them.
+- **Safety net:** a result only counts when it says `type: result`, `is_error: false`, `num_turns: 0` and
+  `total_cost_usd: 0`. If a future Claude Code ever answers `/usage` with a model request instead (any turn, cost or
+  token count), auto-refresh **turns itself off** and tells you why. Not logged in, not found, a timeout or an error
+  are shown in Settings and the popover, and retried with back-off.
+
+While auto-refresh runs, the `claude` process talks to Anthropic as any Claude Code run does. QuotaRing itself still
+sends nothing.
+
 ### What it never does
 
-- Write, modify or delete anything in `~/.claude.json`, `~/.claude/` or the Keychain.
-- Launch the `claude` command-line tool.
+- Write, modify or delete anything in `~/.claude.json`, `~/.claude/` or the Keychain. (With auto-refresh on, Claude
+  Code itself rewrites its cache, as it does whenever it runs `/usage`.)
+- Launch the `claude` command-line tool, except the one fixed auto-refresh command above, and only after you allowed it.
+  It never starts an interactive session and never sends a prompt.
 - Contact any host other than `api.anthropic.com`.
 - Include telemetry, analytics, crash reporting or update checks. Check the Releases page for new versions yourself.
 - Use third-party libraries at runtime. The only dependencies are Apple's SDKs.
@@ -211,6 +266,8 @@ When enabled:
   different directory. It never contains tokens.
   The folder is private to you (mode 700) and the file is 600. It is deleted when you change the config directory or
   QuotaRing sees that the cache belongs to another account. Demo mode never writes it.
+- `~/Library/Application Support/QuotaRing/cli`: an empty folder (mode 700) that auto-refresh uses as the working
+  directory of the `claude` command. QuotaRing writes nothing into it.
 - Your preferences, in UserDefaults (non-sensitive values only), including which notification thresholds were already
   announced for the current session window.
 
@@ -224,18 +281,22 @@ The code is small on purpose. The parts that matter for trust live in `Core/Sour
 - `Cache/` reads the one cache key (and the account id used to vet it).
 - `Credentials/` is the only code that touches the Keychain or a credentials file.
 - `Network/` is the only code that performs requests; the endpoint is a constant there.
+- `Cli/` is the only code that runs a program: how `claude` is found and validated, its fixed command and environment,
+  the limits it runs under, and how its result is checked.
 - `Transcripts/` scans local logs.
 - `Persistence/` writes the one file QuotaRing saves, `last-snapshot.json`.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the rest. You can also watch the app with a network monitor such as
-LuLu or Little Snitch: in default mode you should see no connections, and in Live mode only `api.anthropic.com`.
+LuLu or Little Snitch: in default mode you should see no connections from QuotaRing, and in Live mode only
+`api.anthropic.com`. With auto-refresh on, the connections you see come from the `claude` process, not from QuotaRing.
 
 ### A note on Anthropic's terms
 
 Anthropic's Claude Code legal page says developers "may not collect, store, or intermediate Claude.ai credentials or
 session tokens". QuotaRing's Live mode reads **your own** token on **your own** Mac, keeps it in memory, and uses it
 only to ask Anthropic for **your own** usage, the same request Claude Code's `/usage` command makes. It never stores,
-logs or forwards the token. That is our reading of the line, and we are not Anthropic's lawyers; the policy could be
+logs or forwards the token. Auto-refresh does not involve QuotaRing in credentials at all: it runs Claude Code, which
+signs in as itself. That is our reading of the line, and we are not Anthropic's lawyers; the policy could be
 interpreted differently or change. This is why Live mode is opt-in and why the default mode needs no credentials at all.
 If you are not comfortable with it, leave Live mode off. QuotaRing keeps working from Claude Code's cache.
 
@@ -255,10 +316,27 @@ In default mode QuotaRing shows what Claude Code last wrote to its cache; it doe
 `claude` command-line tool updates that cache, when a session runs or when you run `/usage`. The Claude desktop app does
 not (verified on 2026-10-21), so if you mostly use the desktop app the cache can be hours or days old. Old numbers are
 marked: the menu bar dims the percentage and draws a dashed arc on a dashed faint track (or "–" with a dashed track
-alone if that session window has already reset), and the popover footer shows the source and age. You have two options: run `claude` or `/usage`
-occasionally (QuotaRing picks up the new snapshot within about 30 seconds, and the refresh button re-reads the cache
-immediately), or enable Live mode in Settings, which stays fresh for roughly as long as Claude Code's login token is
-valid, about 8 hours after the CLI last ran. A better answer for desktop-app users is being considered for v1.1.
+alone if that session window has already reset), and the popover footer shows the source and age. The popover's
+out-of-date notice offers "Turn on auto-refresh…", which opens Settings → Data. See the next question.
+
+**I use the Claude desktop app. How do I keep the numbers fresh?**
+Turn on auto-refresh (in the first-run window, or Settings → Data → "Refresh with Claude Code"). QuotaRing then runs
+Claude Code's own `/usage` in the background whenever the numbers are older than your refresh interval. You need Claude
+Code's command-line tool installed and signed in once (run `claude` in Terminal); the desktop app alone is not enough.
+Other options: run `claude` or `/usage` yourself now and then, or use Live mode, which stays fresh for about 8 hours
+after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numbers-fresh).
+
+**Auto-refresh says it can't find Claude Code, or that it is not signed in.**
+QuotaRing looks for `claude` in the usual install locations (see
+[Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage)). If yours is elsewhere, find it with `which claude` in
+Terminal and choose that file in Settings → Data. If it says Claude Code is not signed in, run `claude` once in Terminal
+and sign in.
+
+**Auto-refresh turned itself off "for safety". What happened?**
+A run of `/usage` came back with a model turn, a cost or a token count, which means that version of Claude Code sent
+`/usage` to the model instead of answering it locally. That would spend your usage on every refresh, so QuotaRing turned
+the feature off after that one run. You can turn it on again in Settings → Data, for example after updating Claude Code;
+if it happens again it turns off again.
 
 **Live mode says my login expired, but Claude works fine.**
 Live mode uses the token that Claude Code keeps in the Keychain, and only the `claude` command-line tool renews it. The
@@ -274,7 +352,8 @@ more. Choose "Always Allow" to avoid repeated prompts.
 
 **I run Claude Code with `CLAUDE_CONFIG_DIR`. Does QuotaRing follow it?**
 Set the same folder in Settings → Data. Apps started from Finder or at login do not see the environment variables of
-your shell, so QuotaRing cannot find the variable itself.
+your shell, so QuotaRing cannot find the variable itself. Auto-refresh then passes that folder to Claude Code as
+`CLAUDE_CONFIG_DIR`.
 
 **Why does the ring show remaining, but Claude shows "used"?**
 Anthropic reports percent used, and so does QuotaRing's data. The ring shows the remainder (100 minus used) so a full
@@ -296,8 +375,10 @@ No. QuotaRing is for Claude subscription limits only.
 
 **Does QuotaRing use up my limits?**
 No. It never sends prompts to a model. Reading the cache and transcripts is entirely local, and the Live mode request
-only asks Anthropic for your usage numbers. Because that endpoint is known to rate-limit aggressively, polling defaults
-to every 5 minutes and backs off after failures.
+only asks Anthropic for your usage numbers. Auto-refresh runs Claude Code's `/usage`, which makes no model request
+(verified: no turns, no cost, no tokens), and QuotaRing checks every result for exactly that, turning the feature off if
+it ever sees otherwise. Because the usage endpoint is known to rate-limit aggressively, refreshing defaults to every 5
+minutes and backs off after failures.
 
 **Something is wrong. Where do I report it?**
 Open an issue using the bug form, and please do not paste tokens or secrets. For security problems, follow
