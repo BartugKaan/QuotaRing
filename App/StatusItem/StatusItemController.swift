@@ -163,6 +163,14 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         render()
     }
 
+    /// The item was clicked or its popover shown, so a display is awake whatever a missed wake notification says.
+    /// Without this a lost `screensDidWake` would leave the item undrawn until the next restart.
+    private func screensAreEvidentlyAwake() {
+        guard screensAreAsleep else { return }
+        screensAreAsleep = false
+        render()
+    }
+
     /// Brings the button up to date with the model, touching only what changed (see ``StatusButtonState``).
     ///
     /// The presentation is always computed, also while the displays sleep: reading the model is what makes
@@ -197,6 +205,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     // MARK: - Clicks
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        screensAreEvidentlyAwake()
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showMenu()
@@ -243,6 +252,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        screensAreEvidentlyAwake()
         model.popoverDidOpen()
     }
 
