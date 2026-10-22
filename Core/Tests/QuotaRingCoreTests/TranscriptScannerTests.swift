@@ -44,6 +44,41 @@ private final class ScratchDirectory {
         try handle.seekToEnd()
         try handle.write(contentsOf: Data(text.utf8))
     }
+
+    func modificationDate(of url: URL) throws -> Date {
+        try #require(FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date)
+    }
+
+    func setModificationDate(_ date: Date, of url: URL) throws {
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+    }
+}
+
+/// Stands in for `Task.isCancelled`: answers `false` for the first `allowedChecks` questions and `true` after that, so
+/// that a test can cancel a scan at an exact point. The scan asks once per directory it lists, once per file and
+/// once before every chunk it reads.
+private final class CancelAfter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remaining: Int
+
+    init(allowedChecks: Int) {
+        remaining = allowedChecks
+    }
+
+    /// Sets how many further questions are answered with `false`; `.max` stops cancelling.
+    func allow(_ checks: Int) {
+        lock.lock()
+        remaining = checks
+        lock.unlock()
+    }
+
+    func check() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard remaining > 0 else { return true }
+        remaining -= 1
+        return false
+    }
 }
 
 private func seconds(_ text: String) throws -> Date {
@@ -274,15 +309,15 @@ private let scanNow = Date(timeIntervalSince1970: 1_792_584_000)
         #expect(await scanner.scan(now: scanNow).first?.dedupeKey.hasPrefix("msg_01TESTOLD1") == true)
 
         // Overwrite in place with longer content, then stamp it as older than what was recorded
-        // (as an archive restore or `cp -p` would).
+        // (as an archive restore or `cp -p` would). Still inside the retention window, or the file would be skipped.
+        let recorded = try scratch.modificationDate(of: url)
         let handle = try FileHandle(forWritingTo: url)
         try handle.write(
             contentsOf: Data(
                 (assistantLine(id: "msg_01TESTNEW1", padding: 400) + "\n"
                     + assistantLine(id: "msg_01TESTNEW2") + "\n").utf8))
         try handle.close()
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSince1970: 1_000_000)], ofItemAtPath: url.path)
+        try scratch.setModificationDate(recorded.addingTimeInterval(-3_600), of: url)
 
         let keys = await scanner.scan(now: scanNow).map(\.dedupeKey)
         #expect(keys.count == 2)
@@ -649,4 +684,264 @@ private let scanNow = Date(timeIntervalSince1970: 1_792_584_000)
         let entries = await scanner.scan(now: scanNow)
         #expect(entries.map { String($0.dedupeKey.split(separator: "|")[0]) } == ["msg_01TESTNEWER"])
     }
+
+    // MARK: Files that cannot matter
+
+    @Test func aFileLastModifiedBeforeTheRetentionWindowIsNeverOpened() async throws {
+        // The old file carries a line from yesterday, which a log last written 9 days ago cannot hold. That the line is
+        // not reported shows that the file was not read at all.
+        let stale = try scratch.write(
+            "-p/stale.jsonl", lines: [assistantLine(id: "msg_01TESTSTALE01", timestamp: "2026-10-20T10:00:00Z")])
+        try scratch.setModificationDate(scanNow.addingTimeInterval(-9 * 86_400), of: stale)
+        try scratch.write(
+            "-p/fresh.jsonl", lines: [assistantLine(id: "msg_01TESTFRESH01", timestamp: "2026-10-20T11:00:00Z")])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        let entries = await scanner.scan(now: scanNow)
+
+        #expect(messageIDs(entries) == ["msg_01TESTFRESH01"])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+    }
+
+    @Test func theCutoffIsExactlyTheRetentionBeforeNow() async throws {
+        let line = assistantLine(id: "msg_01TESTBORDER1", timestamp: "2026-10-13T12:00:00Z")
+        let atCutoff = try scratch.write("-p/at-cutoff.jsonl", lines: [line])
+        try scratch.setModificationDate(scanNow.addingTimeInterval(-TranscriptScanner.defaultRetention), of: atCutoff)
+        let justBefore = try scratch.write(
+            "-p/just-before.jsonl", lines: [assistantLine(id: "msg_01TESTBORDER2", timestamp: "2026-10-13T12:00:00Z")])
+        try scratch.setModificationDate(
+            scanNow.addingTimeInterval(-TranscriptScanner.defaultRetention - 1), of: justBefore)
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        // A file touched at the cutoff may still hold a line from that very moment; one second earlier cannot.
+        #expect(messageIDs(await scanner.scan(now: scanNow)) == ["msg_01TESTBORDER1"])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+    }
+
+    @Test func aFileThatAgesOutIsForgottenAndReadFromTheStartIfItIsTouchedAgain() async throws {
+        let url = try scratch.write(
+            "-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTAGING01", timestamp: "2026-10-20T10:00:00Z")])
+        try scratch.setModificationDate(scanNow.addingTimeInterval(-3_600), of: url)
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+        #expect(messageIDs(await scanner.scan(now: scanNow)) == ["msg_01TESTAGING01"])
+
+        // 9 days later nothing has touched it: it is neither opened nor remembered.
+        let later = scanNow.addingTimeInterval(9 * 86_400)
+        #expect(await scanner.scan(now: later).isEmpty)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+
+        // Claude Code resumes the session. The file is read from its first byte, and the old line stays out.
+        try scratch.append(
+            assistantLine(id: "msg_01TESTAGING02", timestamp: "2026-10-29T10:00:00Z") + "\n", to: "-p/a.jsonl")
+        try scratch.setModificationDate(later.addingTimeInterval(-3_600), of: url)
+        #expect(messageIDs(await scanner.scan(now: later)) == ["msg_01TESTAGING02"])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+    }
+
+    @Test func aRecentFileDoesNotKeepItsOldLines() async throws {
+        try scratch.write(
+            "-p/a.jsonl",
+            lines: [
+                assistantLine(id: "msg_01TESTNINEDAY1", timestamp: "2026-10-12T12:00:00Z"),
+                assistantLine(id: "msg_01TESTYESTERDA", timestamp: "2026-10-20T12:00:00Z"),
+            ])
+        // The same old response again in a second recent file (a resumed session) does not bring it back either.
+        try scratch.write(
+            "-p/b.jsonl", lines: [assistantLine(id: "msg_01TESTNINEDAY1", timestamp: "2026-10-12T12:00:00Z")])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        #expect(messageIDs(await scanner.scan(now: scanNow)) == ["msg_01TESTYESTERDA"])
+        #expect(messageIDs(await scanner.scan(now: scanNow)) == ["msg_01TESTYESTERDA"])
+    }
+
+    // MARK: Files that did not change
+
+    @Test func anUnchangedFileIsNotOpenedAgain() async throws {
+        try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTSTILL01")])
+        try scratch.write("-q/b.jsonl", lines: [assistantLine(id: "msg_01TESTSTILL02")])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        let first = await scanner.scan(now: scanNow)
+        #expect(first.count == 2)
+        #expect(await scanner.filesOpenedByLastScan == 2)
+
+        #expect(await scanner.scan(now: scanNow) == first)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+
+        // Only the file that grew is opened, and only its new bytes are parsed.
+        try scratch.append(assistantLine(id: "msg_01TESTSTILL03") + "\n", to: "-p/a.jsonl")
+        #expect(await scanner.scan(now: scanNow).count == 3)
+        #expect(await scanner.filesOpenedByLastScan == 1)
+
+        #expect(await scanner.scan(now: scanNow).count == 3)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+    }
+
+    @Test func aFileEndingInAPartialLineIsOpenedAgainOnlyWhenItChanges() async throws {
+        let second = assistantLine(id: "msg_01TESTPARTIAL2")
+        let splitAt = second.index(second.startIndex, offsetBy: second.count / 2)
+        try scratch.write(
+            "-p/a.jsonl", text: assistantLine(id: "msg_01TESTPARTIAL1") + "\n" + String(second[..<splitAt]))
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        #expect(await scanner.scan(now: scanNow).count == 1)
+        #expect(await scanner.scan(now: scanNow).count == 1)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+
+        try scratch.append(String(second[splitAt...]) + "\n", to: "-p/a.jsonl")
+        #expect(await scanner.scan(now: scanNow).count == 2)
+        #expect(await scanner.filesOpenedByLastScan == 1)
+    }
+
+    @Test func aFileTouchedWithoutGrowingIsOpenedOnceAndReadNoFurther() async throws {
+        let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTTOUCH01")])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+        let first = await scanner.scan(now: scanNow)
+
+        try scratch.setModificationDate(try scratch.modificationDate(of: url).addingTimeInterval(60), of: url)
+
+        #expect(await scanner.scan(now: scanNow) == first)
+        #expect(await scanner.filesOpenedByLastScan == 1)
+        #expect(await scanner.scan(now: scanNow) == first)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+    }
+
+    @Test func aReplacedFileIsOpenedEvenWhenItLooksTheSame() async throws {
+        let url = try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTSAMEAS01", input: 111)])
+        let stamp = try scratch.modificationDate(of: url)
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+        #expect(await scanner.scan(now: scanNow).first?.tokens.input == 111)
+
+        // Same size, same modification time, but another file (another inode) with other numbers.
+        let replacement = scratch.file("-p/replacement.tmp")
+        try Data((assistantLine(id: "msg_01TESTSAMEAS01", input: 222) + "\n").utf8).write(to: replacement)
+        try scratch.setModificationDate(stamp, of: replacement)
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: replacement)
+        try scratch.setModificationDate(stamp, of: url)
+
+        #expect(await scanner.scan(now: scanNow).first?.tokens.input == 222)
+        #expect(await scanner.filesOpenedByLastScan == 1)
+    }
+
+    // MARK: Listing
+
+    @Test func listsSubdirectoriesAtAnyUsualDepth() async throws {
+        try scratch.write("a.jsonl", lines: [assistantLine(id: "msg_01TESTDEPTH000")])
+        try scratch.write("-p/s/subagents/deeper/b.jsonl", lines: [assistantLine(id: "msg_01TESTDEPTH004")])
+        try scratch.write("-p/.hidden/c.jsonl", lines: [assistantLine(id: "msg_01TESTDEPTH003")])
+        try scratch.write("-p/.d.jsonl", lines: [assistantLine(id: "msg_01TESTDEPTH002")])
+        try scratch.write("-p/.jsonl", lines: [assistantLine(id: "msg_01TESTDEPTH001")])
+
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
+
+        // Hidden folders and files are read; a file that is nothing but the extension is not a transcript.
+        #expect(
+            messageIDs(entries).sorted() == [
+                "msg_01TESTDEPTH000", "msg_01TESTDEPTH002", "msg_01TESTDEPTH003", "msg_01TESTDEPTH004",
+            ])
+    }
+
+    @Test func foldersNestedBeyondTheDepthLimitAreNotListed() async throws {
+        let levels = Array(repeating: "d", count: 33)
+        // 32 folders below the projects directory are listed, a 33rd is not.
+        try scratch.write(
+            levels.prefix(32).joined(separator: "/") + "/in.jsonl", lines: [assistantLine(id: "msg_01TESTLISTED01")])
+        try scratch.write(
+            levels.joined(separator: "/") + "/out.jsonl", lines: [assistantLine(id: "msg_01TESTSKIPPED1")])
+
+        let entries = await TranscriptScanner(projectsDirectory: scratch.url).scan(now: scanNow)
+
+        #expect(messageIDs(entries) == ["msg_01TESTLISTED01"])
+    }
+
+    // MARK: Cancellation
+
+    @Test func aCancelledTaskReadsNothingAndLosesNothing() async throws {
+        try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTCANCEL01")])
+        try scratch.write("-p/b.jsonl", lines: [assistantLine(id: "msg_01TESTCANCEL02")])
+        let scanner = TranscriptScanner(projectsDirectory: scratch.url)
+
+        let task = Task {
+            while !Task.isCancelled { await Task.yield() }
+            return await scanner.scan(now: scanNow)
+        }
+        task.cancel()
+
+        #expect(await task.value.isEmpty)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+        // The next scan is not held back by it.
+        #expect(await scanner.scan(now: scanNow).count == 2)
+        #expect(await scanner.filesOpenedByLastScan == 2)
+    }
+
+    @Test func cancellingBetweenFilesKeepsTheFilesAlreadyRead() async throws {
+        for name in ["a", "b", "c"] {
+            try scratch.write("-p/\(name).jsonl", lines: [assistantLine(id: "msg_01TESTBETWEEN\(name)")])
+        }
+        // The checks: two directories; then for the first file one before it, one before its chunk and one before
+        // looking for more. The next one, before "b", is the first to say stop.
+        let cancel = CancelAfter(allowedChecks: 5)
+        let scanner = TranscriptScanner(
+            projectsDirectory: scratch.url, maxLineBytes: 10_485_760, readChunkSize: 1 << 20,
+            isCancelled: { cancel.check() })
+
+        let partial = await scanner.scan(now: scanNow)
+        #expect(messageIDs(partial) == ["msg_01TESTBETWEENa"])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+
+        // The next scan goes on with the files not yet read, and does not open the first one again.
+        cancel.allow(.max)
+        #expect(
+            messageIDs(await scanner.scan(now: scanNow)) == [
+                "msg_01TESTBETWEENa", "msg_01TESTBETWEENb", "msg_01TESTBETWEENc",
+            ])
+        #expect(await scanner.filesOpenedByLastScan == 2)
+    }
+
+    @Test func cancellingBetweenChunksStopsInsideTheFileAndTheNextScanFinishesIt() async throws {
+        let lines = (1...3).map { assistantLine(id: "msg_01TESTCHUNKED0\($0)") }
+        try scratch.write("-p/a.jsonl", lines: lines)
+        let oneLine = lines[0].utf8.count + 1
+        // Two directories, the file, and the chunk with the first line: the check before the second chunk says stop.
+        let cancel = CancelAfter(allowedChecks: 4)
+        let scanner = TranscriptScanner(
+            projectsDirectory: scratch.url, maxLineBytes: 10_485_760, readChunkSize: oneLine,
+            isCancelled: { cancel.check() })
+
+        #expect(messageIDs(await scanner.scan(now: scanNow)) == ["msg_01TESTCHUNKED01"])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+
+        // The file is unchanged, but it was not read to its end, so it is opened again, from where it stopped.
+        cancel.allow(.max)
+        #expect(
+            messageIDs(await scanner.scan(now: scanNow)) == [
+                "msg_01TESTCHUNKED01", "msg_01TESTCHUNKED02", "msg_01TESTCHUNKED03",
+            ])
+        #expect(await scanner.filesOpenedByLastScan == 1)
+
+        #expect(await scanner.scan(now: scanNow).count == 3)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+    }
+
+    @Test func aScanCancelledWhileListingForgetsNothing() async throws {
+        try scratch.write("-p/a.jsonl", lines: [assistantLine(id: "msg_01TESTLISTING1")])
+        try scratch.write("-q/b.jsonl", lines: [assistantLine(id: "msg_01TESTLISTING2")])
+        let cancel = CancelAfter(allowedChecks: .max)
+        let scanner = TranscriptScanner(
+            projectsDirectory: scratch.url, maxLineBytes: 10_485_760, readChunkSize: 1 << 20,
+            isCancelled: { cancel.check() })
+        #expect(await scanner.scan(now: scanNow).count == 2)
+
+        // Stopped before the first directory was read: the listing is empty, which does not mean the files are gone.
+        cancel.allow(0)
+        _ = await scanner.scan(now: scanNow)
+        cancel.allow(.max)
+
+        #expect(await scanner.scan(now: scanNow).count == 2)
+        #expect(await scanner.filesOpenedByLastScan == 0)
+    }
+}
+
+private func messageIDs(_ entries: [TranscriptEntry]) -> [String] {
+    entries.map { String($0.dedupeKey.split(separator: "|")[0]) }
 }

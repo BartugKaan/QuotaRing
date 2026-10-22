@@ -6,28 +6,45 @@ import Foundation
 /// The transcripts are append-only logs that Claude Code writes while the scanner reads them, and one response is
 /// logged once per content block (and again in resumed sessions and sub-agent files). The scanner therefore:
 ///
+/// - lists the tree once per scan (`readdir` and one `fstatat` per file) and opens only the files that need it: a file
+///   whose device, inode, size and modification time are what the last pass left is not opened at all;
+/// - never opens a file last modified before the retention window: a log is append-only, so none of its lines can be
+///   newer than its modification time. Such a file is forgotten, and it is the bulk of a long history;
 /// - keeps, for every file, the offset just past the last newline it has processed and parses only the bytes that
 ///   were appended since; a trailing line without a newline yet is left for the next scan;
 /// - detects truncation (size below the offset) and replacement (different inode, or a modification time older than
 ///   the recorded one) and then re-reads that file from the start, replacing its entries;
 /// - skips a line longer than `maxLineBytes` without buffering it, even while that line is still being written;
 /// - merges lines with the same `TranscriptEntry.dedupeKey`, within a file and across files;
-/// - forgets entries older than `retention` (8 days by default: the 7-day chart plus a session window), so memory stays
-///   bounded however much history the transcripts hold.
+/// - never keeps an entry older than `retention` (8 days by default: the 7-day chart plus a session window), so
+///   memory stays bounded however much history the transcripts hold. Such a line is dropped as soon as it is parsed;
+/// - drains the Foundation objects a chunk creates before it reads the next one, so that the memory of a scan follows
+///   the size of a chunk, not the number of bytes read;
+/// - stops at the next file or chunk when the task that runs it is cancelled, and continues from there next time.
 ///
 /// Symbolic links below the projects directory are never followed.
 public actor TranscriptScanner {
     /// How long entries are kept by default: longer than the oldest range the app shows (7 local days).
     public static let defaultRetention: TimeInterval = 8 * 86_400
 
+    /// The deepest directory level that is listed (below the projects directory); deeper ones are ignored. Claude Code
+    /// nests three or four levels (`<project>/<session>/subagents`); the bound keeps open descriptors few.
+    private static let maxDirectoryDepth = 32
+
     private let projectsDirectory: URL
     private let maxLineBytes: Int
     private let readChunkSize: Int
     private let retention: TimeInterval
+    /// Whether the scan has been asked to stop. Tests replace it to cancel at an exact point.
+    private let isCancelled: @Sendable () -> Bool
 
     private var files: [String: FileState] = [:]
     /// The merged result of the last scan; `nil` when a file changed since.
     private var mergedEntries: [TranscriptEntry]?
+
+    /// How many files the most recent scan opened. A tree where nothing changed opens none, one that gained a few
+    /// lines opens just the files that hold them. For diagnostics and tests.
+    public private(set) var filesOpenedByLastScan = 0
 
     /// - Parameters:
     ///   - projectsDirectory: Claude Code's `projects` directory; it is searched recursively for `*.jsonl` files.
@@ -43,36 +60,51 @@ public actor TranscriptScanner {
             retention: retention)
     }
 
-    /// `readChunkSize` is exposed to tests so that small chunks can exercise lines that straddle reads.
+    /// `readChunkSize` is exposed to tests so that small chunks can exercise lines that straddle reads, and
+    /// `isCancelled` so that a test can cancel a scan at a chosen point.
     init(
         projectsDirectory: URL,
         maxLineBytes: Int,
         readChunkSize: Int,
-        retention: TimeInterval = TranscriptScanner.defaultRetention
+        retention: TimeInterval = TranscriptScanner.defaultRetention,
+        isCancelled: @escaping @Sendable () -> Bool = { Task.isCancelled }
     ) {
         self.projectsDirectory = projectsDirectory
         self.maxLineBytes = max(1, maxLineBytes)
         self.readChunkSize = max(1, readChunkSize)
         self.retention = retention.isNaN ? Self.defaultRetention : max(0, retention)
+        self.isCancelled = isCancelled
     }
 
     /// Brings every transcript up to date and returns each response of the last `retention` seconds before `now` once,
     /// oldest first. Older entries are forgotten, also by later scans.
+    ///
+    /// When the calling task is cancelled the scan stops at the next file or chunk and returns what it has so far,
+    /// which may be incomplete: the caller is expected to discard it. What was read is kept, and the next scan goes on
+    /// from there.
     public func scan(now: Date = Date()) -> [TranscriptEntry] {
-        let paths = Self.transcriptPaths(under: projectsDirectory)
+        filesOpenedByLastScan = 0
+        let cutoff = now.addingTimeInterval(-retention)
 
-        let present = Set(paths)
+        // A listing cut short by a cancellation says nothing about which files are gone, so nothing is forgotten.
+        guard let listing = Self.listTranscripts(under: projectsDirectory, isCancelled: isCancelled) else {
+            return mergedEntries ?? mergeFiles(inOrder: files.keys.sorted())
+        }
+
+        let present = Set(listing.map(\.path))
         for path in Array(files.keys) where !present.contains(path) {
             files[path] = nil
             mergedEntries = nil
         }
-        for path in paths {
-            refresh(path)
+        for file in listing {
+            guard !isCancelled(), refresh(file, cutoff: cutoff) else { break }
         }
-        dropEntries(before: now.addingTimeInterval(-retention))
+        dropEntries(before: cutoff)
 
+        // Also after a cancellation: this is the merge of what `files` holds, and whatever a later scan reads changes
+        // that and clears it.
         if let mergedEntries { return mergedEntries }
-        let merged = mergeFiles(inOrder: paths)
+        let merged = mergeFiles(inOrder: listing.map(\.path))
         mergedEntries = merged
         return merged
     }
@@ -85,6 +117,9 @@ public actor TranscriptScanner {
         var offset: UInt64 = 0
         /// Whether `offset` lies inside an oversized line whose end has not been seen yet.
         var isSkippingLine = false
+        /// Whether the last pass went on to the end of the file. A pass that ended early (a read error, a
+        /// cancellation) leaves this `false`, and the file is opened again even when it has not changed since.
+        var isFullyRead = false
         var entries: [String: TranscriptEntry] = [:]
 
         init(identity: FileIdentity) {
@@ -109,8 +144,8 @@ public actor TranscriptScanner {
         }
     }
 
-    /// What `fstat` says about an open file.
-    private struct FileIdentity {
+    /// What `stat` says about a file: from `fstat` on an open descriptor, or from `fstatat` when listing.
+    private struct FileIdentity: Equatable {
         var device: Int64
         var inode: UInt64
         var size: UInt64
@@ -123,33 +158,77 @@ public actor TranscriptScanner {
             modificationNanoseconds =
                 Int64(info.st_mtimespec.tv_sec) &* 1_000_000_000 &+ Int64(info.st_mtimespec.tv_nsec)
         }
+
+        /// The modification time as a `Date`, for comparing with the retention cutoff.
+        var modificationDate: Date {
+            Date(timeIntervalSince1970: TimeInterval(modificationNanoseconds) / 1e9)
+        }
     }
 
-    private func refresh(_ path: String) {
-        guard let (handle, identity) = Self.openRegularFile(atPath: path) else { return }
+    /// A transcript found by the directory walk.
+    private struct ListedFile {
+        var path: String
+        var identity: FileIdentity
+    }
+
+    /// Brings one listed file up to date. Returns `false` when it stopped early because the scan was cancelled.
+    private func refresh(_ file: ListedFile, cutoff: Date) -> Bool {
+        // A log is append-only, so none of its lines is newer than its modification time: a file untouched since
+        // before the cutoff holds nothing that is still wanted, and is not even opened.
+        if file.identity.modificationDate < cutoff {
+            if files.removeValue(forKey: file.path) != nil { mergedEntries = nil }
+            return true
+        }
+        // Nothing happened to it since the last pass, and that pass read it to the end: nothing to read.
+        if let known = files[file.path], known.isFullyRead, known.identity == file.identity {
+            return true
+        }
+
+        guard let (handle, identity) = Self.openRegularFile(atPath: file.path) else { return true }
         defer { try? handle.close() }
+        filesOpenedByLastScan += 1
 
         // Taken out of `files` while it is worked on, so that recording entries mutates it in place.
-        var state = files.removeValue(forKey: path) ?? FileState(identity: identity)
+        var state = files.removeValue(forKey: file.path) ?? FileState(identity: identity)
         if state.isOutdated(by: identity) {
             state = FileState(identity: identity)
             mergedEntries = nil
         }
         state.identity = identity
-        defer { files[path] = state }
+        state.isFullyRead = false
+        defer { files[file.path] = state }
 
-        guard identity.size > state.offset else { return }
+        guard identity.size > state.offset else {
+            state.isFullyRead = true
+            return true
+        }
 
         var assembler = LineAssembler(
             maxLineBytes: maxLineBytes, offset: state.offset, isSkippingLine: state.isSkippingLine)
         var didChange = false
+        var reachedEnd = false
+        var wasCancelled = false
         do {
             try handle.seek(toOffset: state.offset)
-            while let chunk = try handle.read(upToCount: readChunkSize), !chunk.isEmpty {
-                assembler.feed(chunk) { line in
-                    if let entry = TranscriptLineParser.parse(line), state.record(entry) {
-                        didChange = true
+            while true {
+                if isCancelled() {
+                    wasCancelled = true
+                    break
+                }
+                // The pool is drained after every chunk: the chunk and the parsed JSON trees are autoreleased, and
+                // without it they would pile up until the whole scan returns.
+                let hasMore = try autoreleasepool { () throws -> Bool in
+                    guard let chunk = try handle.read(upToCount: readChunkSize), !chunk.isEmpty else { return false }
+                    assembler.feed(chunk) { line in
+                        // A line older than the cutoff is not worth an entry that the next step would drop again.
+                        guard let entry = TranscriptLineParser.parse(line), entry.timestamp >= cutoff else { return }
+                        if state.record(entry) { didChange = true }
                     }
+                    return true
+                }
+                if !hasMore {
+                    reachedEnd = true
+                    break
                 }
             }
         } catch {
@@ -158,7 +237,9 @@ public actor TranscriptScanner {
         }
         state.offset = assembler.committedOffset
         state.isSkippingLine = assembler.isSkippingLine
+        state.isFullyRead = reachedEnd
         if didChange { mergedEntries = nil }
+        return !wasCancelled
     }
 
     // MARK: - Retention
@@ -190,32 +271,98 @@ public actor TranscriptScanner {
 
     // MARK: - File system
 
-    /// The paths of all `*.jsonl` regular files below `directory`, sorted. Symbolic links are skipped, both to
-    /// files and to directories; only `directory` itself may be a link.
-    private static func transcriptPaths(under directory: URL) -> [String] {
-        let root = directory.resolvingSymlinksInPath()
-        let keys: [URLResourceKey] = [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey]
-        let wanted = Set(keys)
+    /// All `*.jsonl` regular files below `directory` with what `fstatat` says about each, sorted by path, or `nil` when
+    /// `isCancelled` stopped the walk. Symbolic links are skipped, both to files and to directories; only `directory`
+    /// itself may be a link.
+    ///
+    /// One pass: every directory is read once and every transcript statted once, without Foundation objects. A
+    /// subdirectory is opened relative to its parent's descriptor with `O_NOFOLLOW`, so a directory that was swapped
+    /// for a link after it was read is not followed either.
+    private static func listTranscripts(under directory: URL, isCancelled: () -> Bool) -> [ListedFile]? {
+        let root = directory.resolvingSymlinksInPath().path
+        let descriptor = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard descriptor >= 0 else { return [] }
 
-        var found: [String] = []
-        var pending = [root]
-        while let current = pending.popLast() {
-            guard
-                let children = try? FileManager.default.contentsOfDirectory(
-                    at: current, includingPropertiesForKeys: keys, options: [])
-            else { continue }
-            for child in children {
-                guard let values = try? child.resourceValues(forKeys: wanted), values.isSymbolicLink != true else {
-                    continue
-                }
-                if values.isDirectory == true {
-                    pending.append(child)
-                } else if values.isRegularFile == true, child.pathExtension == "jsonl" {
-                    found.append(child.path)
+        var found: [ListedFile] = []
+        guard collect(from: descriptor, path: root, depth: 0, into: &found, isCancelled: isCancelled) else {
+            return nil
+        }
+        found.sort { $0.path < $1.path }
+        return found
+    }
+
+    /// Adds the transcripts of one directory, then those of its subdirectories, to `found`. Takes over `descriptor`,
+    /// which must be open on a directory, and closes it. Returns `false` when cancelled.
+    private static func collect(
+        from descriptor: Int32,
+        path: String,
+        depth: Int,
+        into found: inout [ListedFile],
+        isCancelled: () -> Bool
+    ) -> Bool {
+        guard let stream = fdopendir(descriptor) else {
+            close(descriptor)
+            return true
+        }
+        defer { closedir(stream) }
+        if isCancelled() { return false }
+        guard depth <= maxDirectoryDepth else { return true }
+
+        let directoryDescriptor = dirfd(stream)
+        var subdirectories: [String] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
                 }
             }
+            if name == "." || name == ".." { continue }
+
+            var kind = Int32(entry.pointee.d_type)
+            var info = stat()
+            var hasInfo = false
+            if kind == DT_UNKNOWN {
+                // A file system that does not say what an entry is: ask, without following a link.
+                guard fstatat(directoryDescriptor, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { continue }
+                hasInfo = true
+                switch info.st_mode & S_IFMT {
+                case S_IFDIR: kind = Int32(DT_DIR)
+                case S_IFREG: kind = Int32(DT_REG)
+                default: continue
+                }
+            }
+            switch kind {
+            case Int32(DT_DIR):
+                subdirectories.append(name)
+            case Int32(DT_REG):
+                guard isTranscriptName(name) else { continue }
+                if !hasInfo {
+                    guard fstatat(directoryDescriptor, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { continue }
+                }
+                guard (info.st_mode & S_IFMT) == S_IFREG else { continue }
+                found.append(ListedFile(path: join(path, name), identity: FileIdentity(info)))
+            default:
+                // Links (also to files and directories), pipes, sockets and devices are never followed or opened.
+                continue
+            }
         }
-        return found.sorted()
+
+        for name in subdirectories {
+            let child = openat(directoryDescriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard child >= 0 else { continue }
+            let completed = collect(
+                from: child, path: join(path, name), depth: depth + 1, into: &found, isCancelled: isCancelled)
+            if !completed { return false }
+        }
+        return true
+    }
+
+    private static func isTranscriptName(_ name: String) -> Bool {
+        name.hasSuffix(".jsonl") && name.utf8.count > ".jsonl".utf8.count
+    }
+
+    private static func join(_ directory: String, _ name: String) -> String {
+        directory.hasSuffix("/") ? directory + name : directory + "/" + name
     }
 
     /// Opens `path` read-only without following a symbolic link in its last component, and only if it is a regular
