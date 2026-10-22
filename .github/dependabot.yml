@@ -8,6 +8,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Propose a release only once it is a week old, so a just-published
+    # (possibly compromised) action version is not picked up at once.
+    # (github-actions supports only default-days, not the semver-* keys.)
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
