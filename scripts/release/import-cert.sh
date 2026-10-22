@@ -57,6 +57,13 @@ esac
 : "${DEVELOPER_ID_P12_BASE64:?DEVELOPER_ID_P12_BASE64 is not set}"
 : "${DEVELOPER_ID_P12_PASSWORD:?DEVELOPER_ID_P12_PASSWORD is not set}"
 
+# The workflow's first step only learns whether APPLE_TEAM_ID is set, not its
+# value, so its format is checked here, before anything is created. Later steps
+# pass it to xcodebuild and sed.
+if [[ -n "${APPLE_TEAM_ID:-}" && ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+    fail "APPLE_TEAM_ID must be the 10-character Apple team identifier"
+fi
+
 # Everything created below (keychain, decoded .p12) must be private to this user.
 umask 077
 
