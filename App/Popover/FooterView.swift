@@ -104,13 +104,18 @@ struct PopoverNotice: Identifiable {
         switch status {
         case .disabledForSafety:
             break
-        case .notFound, .notLoggedIn, .failed:
+        case .notFound, .unsupportedVersion, .notLoggedIn, .failed:
             guard isActive else { return nil }
         case .off, .ok, .running:
             return nil
         }
         guard let message = CLIRefreshText.statusMessage(status, now: now) else { return nil }
-        let action: Action? = status == .notFound || status == .disabledForSafety ? .openDataSettings : nil
+        // Problems Settings → Data can fix: choosing another tool, or turning the feature on again.
+        let action: Action?
+        switch status {
+        case .notFound, .unsupportedVersion, .disabledForSafety: action = .openDataSettings
+        default: action = nil
+        }
         return PopoverNotice(id: "autoRefresh", style: .warning, message: message, action: action)
     }
 

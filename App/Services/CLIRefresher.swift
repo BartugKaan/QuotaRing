@@ -109,6 +109,7 @@ extension CLIRefreshStatus {
         case .ok: "ok"
         case .running: "running"
         case .notFound: "notFound"
+        case .unsupportedVersion: "unsupportedVersion"
         case .notLoggedIn: "notLoggedIn"
         case .failed(let reason): "failed(\(reason.rawValue))"
         case .disabledForSafety: "disabledForSafety"

@@ -431,16 +431,31 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
 - Executes exactly the command above with a fixed argument array (no shell),
   `stdin` from `/dev/null`, a minimal environment (`HOME`, `USER`, `LOGNAME`,
   `LANG`, `PATH` = the binary's folder + `/usr/local/bin:/opt/homebrew/bin:
-  /usr/bin:/bin`, and `CLAUDE_CONFIG_DIR` when a custom config dir is set),
-  working directory `~/Library/Application Support/QuotaRing/cli` (0700),
-  30 s timeout (process killed), output capped at 256 KB and never logged.
+  /usr/bin:/bin`, `DISABLE_AUTOUPDATER=1`, and `CLAUDE_CONFIG_DIR` when a
+  custom config dir is set), working directory
+  `~/Library/Application Support/QuotaRing/cli` (0700), 30 s timeout (process
+  killed), output capped at 256 KB and never logged.
+- **Never auto-update** (fix round 1, 2026-10-22): the owner's npm Claude Code
+  updated itself (2.1.287 → 2.1.308) and the update broke the install, so every
+  run and check sets `DISABLE_AUTOUPDATER=1` (verified: cache refreshed in 2 s,
+  0 turns / 0 cost, npm untouched). `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
+  must **not** be set: verified, it makes `/usage` return the stale cached
+  numbers without a network call.
 - Binary discovery (GUI apps don't see the shell `PATH`): the user-chosen path,
-  else the first valid of `~/.local/bin/claude`, `~/.claude/local/claude`,
+  then the Claude desktop app's bundled, signed builds
+  `~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude`
+  (newest version first, numeric comparison, non-version folders ignored),
+  then `~/.local/bin/claude`, `~/.claude/local/claude`,
   `~/.npm-global/bin/claude`, `/opt/homebrew/bin/claude`,
   `/usr/local/bin/claude`. Valid = resolves (symlinks followed) to a regular,
-  executable file owned by the user or root and not group/world-writable, and
-  `--version` output contains "(Claude Code)". Settings shows the resolved
-  path and version.
+  executable file owned by the user or root and not group/world-writable.
+  Usable = valid, `--version` output contains "(Claude Code)", and `--help`
+  lists both `--safe-mode` and `--no-session-persistence` (same minimal env,
+  10 s limit each, cached per resolved path + file identity). Candidates that
+  are not usable are skipped; if a Claude Code was found but all are too old,
+  the status is "unsupported version" with its path and version, else "not
+  found". Settings shows the binary used and its version (the desktop app's
+  build as "Claude app (<version>)", full path as tooltip).
 - Safety net: the JSON result must be `type: result`, `is_error: false`,
   `num_turns: 0`, `total_cost_usd: 0`. If a future Claude Code sends `/usage`
   to the model instead (turns or cost > 0), the feature turns itself off and

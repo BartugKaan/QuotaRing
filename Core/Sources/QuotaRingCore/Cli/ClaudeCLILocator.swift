@@ -54,6 +54,19 @@ public struct CLIExecutable: Equatable, Sendable {
     }
 }
 
+/// Every candidate that may be executed, in order, and why the user's own choice was skipped, if it was.
+public struct CLISearch: Equatable, Sendable {
+    /// Distinct files (by resolved path) that passed ``ClaudeCLILocator/inspect(_:)``, in candidate order.
+    public var executables: [CLIExecutable]
+    /// Why the path chosen in Settings cannot be used; `nil` when none is chosen or it is fine.
+    public var customPathProblem: CLIValidationError?
+
+    public init(executables: [CLIExecutable], customPathProblem: CLIValidationError?) {
+        self.executables = executables
+        self.customPathProblem = customPathProblem
+    }
+}
+
 /// The result of looking for the tool: the first usable candidate, and why the user's own choice was skipped, if it
 /// was.
 public struct CLILocation: Equatable, Sendable {
@@ -73,15 +86,19 @@ public struct CLILocation: Equatable, Sendable {
 /// places its installers use. A file is only ever executed after ``validate(_:)`` accepted it. Nothing here executes
 /// anything; it only inspects file metadata.
 public enum ClaudeCLILocator {
-    /// The places Claude Code's installers put `claude`, after the user's own choice: the native installer
-    /// (`~/.local/bin`), the old local install (`~/.claude/local`), npm with a user prefix (`~/.npm-global/bin`), and
-    /// Homebrew or npm with the default prefix (`/opt/homebrew/bin`, `/usr/local/bin`).
+    /// The places to look for `claude`, in order: the user's own choice; the Claude Code builds bundled with the Claude
+    /// desktop app, newest version first (see ``desktopAppTools(home:)``); the native installer (`~/.local/bin`), the
+    /// old local install (`~/.claude/local`), npm with a user prefix (`~/.npm-global/bin`), and Homebrew or npm with
+    /// the default prefix (`/opt/homebrew/bin`, `/usr/local/bin`).
+    ///
+    /// Only the desktop app's folder is listed on disk to find its builds; nothing is executed.
     public static func candidates(home: URL, customPath: URL?) -> [URL] {
         let homePath = standardizedPath(home.path)
         var result: [URL] = []
         if let customPath {
             result.append(URL(fileURLWithPath: standardizedPath(customPath.path), isDirectory: false))
         }
+        result += desktopAppTools(home: home)
         for relative in [".local/bin/claude", ".claude/local/claude", ".npm-global/bin/claude"] {
             result.append(URL(fileURLWithPath: standardizedPath(homePath + "/" + relative), isDirectory: false))
         }
@@ -90,21 +107,87 @@ public enum ClaudeCLILocator {
         return result
     }
 
-    /// The first candidate that passes ``inspect(_:)``.
-    public static func locate(candidates: [URL], customPath: URL?) -> CLILocation {
+    /// The Claude Code builds the Claude desktop app keeps for itself:
+    /// `<home>/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude`,
+    /// newest version first (compared numerically), builds of one version by folder name. Folders whose name is not a
+    /// version number are ignored. Only folder listings are read.
+    public static func desktopAppTools(home: URL) -> [URL] {
+        let root = standardizedPath(home.path) + "/" + desktopAppToolsFolder
+        let fileManager = FileManager.default
+        guard let versions = try? fileManager.contentsOfDirectory(atPath: root) else { return [] }
+        let sorted = versions.filter(isVersionNumber).sorted { compareVersions($0, $1) == .orderedDescending }
+        var result: [URL] = []
+        for version in sorted {
+            let versionPath = root + "/" + version
+            guard let builds = try? fileManager.contentsOfDirectory(atPath: versionPath) else { continue }
+            for build in builds.filter({ !$0.hasPrefix(".") }).sorted() {
+                result.append(
+                    URL(fileURLWithPath: versionPath + "/" + build + "/" + desktopAppToolSuffix, isDirectory: false))
+            }
+        }
+        return result
+    }
+
+    /// The version folder of a tool inside the Claude desktop app's bundled Claude Code builds (for example `2.1.308`),
+    /// or `nil` when `path` is not one. Decided from the path alone.
+    public static func desktopAppVersion(of path: URL) -> String? {
+        let components = standardizedPath(path.path).split(separator: "/").map(String.init)
+        let folder = desktopAppToolsFolder.split(separator: "/").map(String.init)
+        let suffix = desktopAppToolSuffix.split(separator: "/").map(String.init)
+        // …/<folder…>/<version>/<build>/<suffix…>
+        guard components.count >= folder.count + 2 + suffix.count, Array(components.suffix(suffix.count)) == suffix
+        else { return nil }
+        let versionIndex = components.count - suffix.count - 2
+        guard Array(components[(versionIndex - folder.count)..<versionIndex]) == folder else { return nil }
+        let version = components[versionIndex]
+        return isVersionNumber(version) ? version : nil
+    }
+
+    /// Whether `text` is a plain version number: digits separated by single dots, such as `2.1.308`.
+    public static func isVersionNumber(_ text: String) -> Bool {
+        guard !text.isEmpty, text.count <= 32 else { return false }
+        return text.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { part in
+            !part.isEmpty && part.allSatisfy { $0.isASCII && $0.isNumber }
+        }
+    }
+
+    /// Compares two version numbers part by part as integers; a missing part counts as 0 (`2.1` equals `2.1.0`).
+    public static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let right = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        for index in 0..<max(left.count, right.count) {
+            let a = index < left.count ? left[index] : 0
+            let b = index < right.count ? right[index] : 0
+            if a != b { return a < b ? .orderedAscending : .orderedDescending }
+        }
+        return .orderedSame
+    }
+
+    /// Every candidate that passes ``inspect(_:)``, each resolved file once, in order.
+    public static func search(candidates: [URL], customPath: URL?) -> CLISearch {
         var customPathProblem: CLIValidationError?
         let custom = customPath.map { standardizedPath($0.path) }
+        var executables: [CLIExecutable] = []
+        var seen = Set<String>()
         for candidate in candidates {
             switch inspect(candidate) {
             case .success(let executable):
-                return CLILocation(executable: executable, customPathProblem: customPathProblem)
+                if seen.insert(executable.executable.path).inserted {
+                    executables.append(executable)
+                }
             case .failure(let error):
                 if standardizedPath(candidate.path) == custom, customPathProblem == nil {
                     customPathProblem = error
                 }
             }
         }
-        return CLILocation(executable: nil, customPathProblem: customPathProblem)
+        return CLISearch(executables: executables, customPathProblem: customPathProblem)
+    }
+
+    /// The first candidate that passes ``inspect(_:)``.
+    public static func locate(candidates: [URL], customPath: URL?) -> CLILocation {
+        let search = search(candidates: candidates, customPath: customPath)
+        return CLILocation(executable: search.executables.first, customPathProblem: search.customPathProblem)
     }
 
     /// The file `url` resolves to, when it may be executed as Claude Code's tool.
@@ -155,6 +238,9 @@ public enum ClaudeCLILocator {
                 identity: identity))
     }
 
+    private static let desktopAppToolsFolder = "Library/Application Support/Claude/claude-code"
+    private static let desktopAppToolSuffix = "claude.app/Contents/MacOS/claude"
+
     /// `path` with `.` and `..` resolved and repeated or trailing slashes removed, without touching the file system.
     /// (`URL.standardizedFileURL` would also drop a leading `/private`, which changes the path's identity.)
     static func standardizedPath(_ path: String) -> String {
@@ -170,6 +256,15 @@ public enum ClaudeCLILocator {
             }
         }
         return "/" + components.joined(separator: "/")
+    }
+
+    /// What a file can do, from its `--version` and `--help` output: Claude Code that knows every option of
+    /// ``CLIRefreshCommand/requiredFlags``, Claude Code too old for them, or something else.
+    public static func capability(versionOutput: String, helpOutput: String) -> CLIVersionCheck {
+        guard isClaudeCode(versionOutput: versionOutput) else { return .notClaudeCode }
+        let version = version(fromVersionOutput: versionOutput)
+        let knowsEveryFlag = CLIRefreshCommand.requiredFlags.allSatisfy { helpOutput.contains($0) }
+        return knowsEveryFlag ? .claudeCode(version: version) : .unsupported(version: version)
     }
 
     /// Whether `claude --version` printed Claude Code's signature, for example `2.1.287 (Claude Code)`.

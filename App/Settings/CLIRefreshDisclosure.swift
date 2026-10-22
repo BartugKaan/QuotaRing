@@ -56,8 +56,8 @@ struct CLIRefreshDisclosure: View {
             symbol: "tray",
             title: "Nothing saved",
             text: """
-                No session is saved, and no plugins, hooks or MCP servers start. It runs in an empty folder of \
-                QuotaRing's own.
+                No session is saved, Claude Code does not update itself, and no plugins, hooks or MCP servers \
+                start. It runs in an empty folder of QuotaRing's own.
                 """)
     }
 
@@ -134,6 +134,20 @@ struct CLIRefreshConsentSheet: View {
     }
 }
 
+/// How to name the `claude` tool in the UI.
+enum CLIToolName {
+    /// "Claude app (2.1.308)" for a Claude Code build bundled with the Claude desktop app, whose path is long and says
+    /// little; otherwise the path with `~` for the home folder.
+    static func display(_ path: URL) -> String {
+        if let version = ClaudeCLILocator.desktopAppVersion(of: path) {
+            return String(
+                localized: "Claude app (\(version))",
+                comment: "The Claude Code build bundled with the Claude desktop app; the argument is its version")
+        }
+        return (path.path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
 /// User-facing texts about auto-refresh, shared by Settings and the popover.
 enum CLIRefreshText {
     /// What a status means for the user; `nil` when there is nothing to say (off, or on and waiting for a first run).
@@ -149,6 +163,14 @@ enum CLIRefreshText {
         case .notFound:
             return
                 "Auto-refresh can't find Claude Code's command-line tool (`claude`). Install it, or choose it in Settings → Data."
+        case .unsupportedVersion(let path?, let version?):
+            let name = CLIToolName.display(URL(fileURLWithPath: path))
+            return "Claude Code \(version) at \(name) is too old for auto-refresh — update it or choose another."
+        case .unsupportedVersion(let path?, nil):
+            let name = CLIToolName.display(URL(fileURLWithPath: path))
+            return "Claude Code at \(name) is too old for auto-refresh — update it or choose another."
+        case .unsupportedVersion(nil, _):
+            return "The Claude Code found is too old for auto-refresh — update it or choose another."
         case .notLoggedIn:
             return "Auto-refresh: Claude Code is not signed in. Run `claude` once in Terminal and sign in."
         case .disabledForSafety:
@@ -162,7 +184,7 @@ enum CLIRefreshText {
     private static func failureMessage(_ reason: CLIRefreshFailure) -> LocalizedStringKey {
         switch reason {
         case .timedOut:
-            "Auto-refresh: Claude Code took longer than 30 seconds and was stopped. QuotaRing tries again later."
+            "Auto-refresh: Claude Code took too long and was stopped. QuotaRing tries again later."
         case .launchFailed:
             "Auto-refresh: Claude Code could not be started. QuotaRing tries again later."
         case .outputTooLarge:
@@ -173,7 +195,7 @@ enum CLIRefreshText {
             "Auto-refresh: Claude Code's answer was not in the expected format. QuotaRing tries again later."
         case .cacheNotUpdated:
             "Auto-refresh: Claude Code ran, but its usage numbers did not change. QuotaRing tries again later."
-        case .notFound, .notClaudeCode, .cancelled:
+        case .notFound, .notClaudeCode, .unsupportedVersion, .cancelled:
             "Auto-refresh could not run Claude Code. QuotaRing tries again later."
         }
     }

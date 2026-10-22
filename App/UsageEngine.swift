@@ -648,11 +648,11 @@ final class UsageEngine {
                 outcome = .failed(.cacheNotUpdated)
             }
         }
-        applyCLI(outcome, ranAt: started)
+        applyCLI(outcome, ranAt: started, binary: report.binary)
         return outcome
     }
 
-    private func applyCLI(_ outcome: CLIRefreshOutcome, ranAt: Date) {
+    private func applyCLI(_ outcome: CLIRefreshOutcome, ranAt: Date, binary: CLIBinaryState) {
         let policy = PollingPolicy(baseInterval: settings.refreshInterval)
         let retry = RefreshPlanner.cliRetry(
             after: outcome, consecutiveFailures: cliConsecutiveFailures, policy: policy, random: .random(in: 0...1))
@@ -666,7 +666,7 @@ final class UsageEngine {
             autoRefreshLog.error("Claude Code answered /usage with a model request; auto-refresh turned itself off")
             settings.disableCLIRefreshForSafety()
         }
-        setCLIStatus(RefreshPlanner.cliStatus(after: outcome, ranAt: ranAt))
+        setCLIStatus(RefreshPlanner.cliStatus(after: outcome, ranAt: ranAt, binary: binary))
     }
 
     private func setCLIStatus(_ status: CLIRefreshStatus) {

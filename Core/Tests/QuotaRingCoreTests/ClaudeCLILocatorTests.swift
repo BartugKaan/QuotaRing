@@ -211,4 +211,141 @@ struct CLIScratchDirectory {
         #expect(
             ClaudeCLILocator.version(fromVersionOutput: String(repeating: "1", count: 40) + " (Claude Code)") == nil)
     }
+
+    // MARK: - The Claude desktop app's bundled Claude Code
+
+    private static let appToolSuffix = "claude.app/Contents/MacOS/claude"
+
+    @Test func candidatesPutTheDesktopAppsBundledToolsNewestFirstAfterTheChoice() throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        let root = "home/Library/Application Support/Claude/claude-code"
+        for version in ["2.1.304", "2.1.308", "2.1.99", "2.2"] {
+            try scratch.file("\(root)/\(version)/a1b2c3/\(Self.appToolSuffix)")
+        }
+        // Not versions: ignored.
+        try scratch.file("\(root)/garbage/a1b2c3/\(Self.appToolSuffix)")
+        try scratch.file("\(root)/2.1.x/a1b2c3/\(Self.appToolSuffix)")
+        try scratch.file("\(root)/.DS_Store", mode: 0o644)
+
+        let home = scratch.url.appendingPathComponent("home", isDirectory: true)
+        let custom = URL(fileURLWithPath: "/Applications/Tools/claude")
+        let app = scratch.url.appendingPathComponent(root).path
+        #expect(
+            ClaudeCLILocator.candidates(home: home, customPath: custom).map(\.path) == [
+                "/Applications/Tools/claude",
+                "\(app)/2.2/a1b2c3/\(Self.appToolSuffix)",
+                "\(app)/2.1.308/a1b2c3/\(Self.appToolSuffix)",
+                "\(app)/2.1.304/a1b2c3/\(Self.appToolSuffix)",
+                "\(app)/2.1.99/a1b2c3/\(Self.appToolSuffix)",
+                home.path + "/.local/bin/claude",
+                home.path + "/.claude/local/claude",
+                home.path + "/.npm-global/bin/claude",
+                "/opt/homebrew/bin/claude",
+                "/usr/local/bin/claude",
+            ])
+    }
+
+    @Test func everyBuildFolderOfAVersionIsListed() throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        let root = "home/Library/Application Support/Claude/claude-code/2.1.308"
+        try scratch.file("\(root)/bbbb/\(Self.appToolSuffix)")
+        try scratch.file("\(root)/aaaa/\(Self.appToolSuffix)")
+
+        let tools = ClaudeCLILocator.desktopAppTools(home: scratch.url.appendingPathComponent("home"))
+        #expect(tools.map { $0.pathComponents.suffix(5).first } == ["aaaa", "bbbb"])
+    }
+
+    @Test func noDesktopAppMeansNoExtraCandidates() throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        #expect(ClaudeCLILocator.desktopAppTools(home: scratch.url).isEmpty)
+        #expect(ClaudeCLILocator.candidates(home: scratch.url, customPath: nil).count == 5)
+    }
+
+    @Test func versionsCompareNumerically() {
+        #expect(ClaudeCLILocator.isVersionNumber("2.1.308"))
+        #expect(ClaudeCLILocator.isVersionNumber("10"))
+        #expect(!ClaudeCLILocator.isVersionNumber("garbage"))
+        #expect(!ClaudeCLILocator.isVersionNumber("2.1.x"))
+        #expect(!ClaudeCLILocator.isVersionNumber("2..1"))
+        #expect(!ClaudeCLILocator.isVersionNumber(""))
+        #expect(!ClaudeCLILocator.isVersionNumber(".2.1"))
+
+        #expect(ClaudeCLILocator.compareVersions("2.1.308", "2.1.304") == .orderedDescending)
+        #expect(ClaudeCLILocator.compareVersions("2.1.99", "2.1.304") == .orderedAscending)
+        #expect(ClaudeCLILocator.compareVersions("2.2", "2.1.308") == .orderedDescending)
+        #expect(ClaudeCLILocator.compareVersions("2.1", "2.1.0") == .orderedSame)
+        #expect(ClaudeCLILocator.compareVersions("10.0", "9.9.9") == .orderedDescending)
+    }
+
+    @Test func recognizesTheDesktopAppsBundle() {
+        let bundled = URL(
+            fileURLWithPath:
+                "/Users/test/Library/Application Support/Claude/claude-code/2.1.308/a1b2c3/claude.app/Contents/MacOS/claude"
+        )
+        #expect(ClaudeCLILocator.desktopAppVersion(of: bundled) == "2.1.308")
+        #expect(ClaudeCLILocator.desktopAppVersion(of: URL(fileURLWithPath: "/usr/local/bin/claude")) == nil)
+        #expect(
+            ClaudeCLILocator.desktopAppVersion(
+                of: URL(fileURLWithPath: "/Users/test/Library/Application Support/Claude/claude-code/x/a/claude"))
+                == nil)
+        #expect(
+            ClaudeCLILocator.desktopAppVersion(
+                of: URL(
+                    fileURLWithPath:
+                        "/Users/test/Library/Application Support/Claude/claude-code/garbage/a1/claude.app/Contents/MacOS/claude"
+                )) == nil)
+    }
+
+    // MARK: - Capability
+
+    private func fixtureText(_ name: String) throws -> String {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Fixtures"))
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test func aCurrentClaudeCodeIsCapable() throws {
+        #expect(
+            ClaudeCLILocator.capability(
+                versionOutput: "2.1.308 (Claude Code)\n", helpOutput: try fixtureText("cli-help-current"))
+                == .claudeCode(version: "2.1.308"))
+    }
+
+    @Test func anOldClaudeCodeIsUnsupported() throws {
+        // 1.0.113 has neither --safe-mode nor --no-session-persistence.
+        #expect(
+            ClaudeCLILocator.capability(
+                versionOutput: "1.0.113 (Claude Code)\n", helpOutput: try fixtureText("cli-help-1.0.113"))
+                == .unsupported(version: "1.0.113"))
+        // Both flags are needed.
+        #expect(
+            ClaudeCLILocator.capability(versionOutput: "2.0.0 (Claude Code)", helpOutput: "  --safe-mode   Safe")
+                == .unsupported(version: "2.0.0"))
+        #expect(
+            ClaudeCLILocator.capability(versionOutput: "2.0.0 (Claude Code)", helpOutput: "")
+                == .unsupported(version: "2.0.0"))
+    }
+
+    @Test func somethingElseIsNotClaudeCode() throws {
+        #expect(
+            ClaudeCLILocator.capability(versionOutput: "1.0.0\n", helpOutput: try fixtureText("cli-help-current"))
+                == .notClaudeCode)
+    }
+
+    // MARK: - Search
+
+    @Test func searchListsEveryUsableCandidateOnceInOrder() throws {
+        let scratch = try CLIScratchDirectory()
+        defer { scratch.remove() }
+        let first = try scratch.file("a/claude")
+        let bad = try scratch.file("b/claude", mode: 0o666)
+        let second = try scratch.file("c/claude")
+        let linkToFirst = try scratch.symlink("d/claude", to: first)
+
+        let search = ClaudeCLILocator.search(candidates: [bad, first, linkToFirst, second], customPath: bad)
+        #expect(search.executables.map(\.executable) == [first, second])
+        #expect(search.customPathProblem == .writableByOthers)
+    }
 }

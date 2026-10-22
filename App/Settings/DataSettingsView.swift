@@ -203,13 +203,13 @@ struct DataSettingsView: View {
                     Text("Command-line tool")
                         .fontWeight(.semibold)
                     if let tool = foundTool {
-                        let path = Self.displayPath(tool.path)
-                        Text(verbatim: path)
-                            .font(.system(.callout, design: .monospaced))
+                        let isAppBuild = ClaudeCLILocator.desktopAppVersion(of: tool.path) != nil
+                        Text(verbatim: CLIToolName.display(tool.path))
+                            .font(isAppBuild ? .callout : .system(.callout, design: .monospaced))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
-                            .help(tool.executable.path)
+                            .help(Self.fullPath(of: tool))
                         Text(versionText)
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -252,12 +252,21 @@ struct DataSettingsView: View {
         }
     }
 
+    /// The tool's full path, and the file it leads to when that is another one.
+    private static func fullPath(of tool: CLIExecutable) -> String {
+        tool.path.path == tool.executable.path ? tool.path.path : tool.path.path + " → " + tool.executable.path
+    }
+
     private var versionText: LocalizedStringKey {
         switch model.cliBinary?.versionCheck {
         case .claudeCode(let version?):
             "Claude Code \(version)"
         case .claudeCode(nil):
             "Claude Code"
+        case .unsupported(let version?):
+            "Claude Code \(version), too old for auto-refresh"
+        case .unsupported(nil):
+            "Claude Code, too old for auto-refresh"
         case .notClaudeCode:
             "This file is not Claude Code, so it is never run with `/usage`."
         case nil:

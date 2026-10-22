@@ -10,6 +10,8 @@ public enum CLIRefreshStatus: Equatable, Sendable {
     case running
     /// No usable `claude` was found, or the file found is not Claude Code.
     case notFound
+    /// Claude Code was found at `path` (version `version`), but it is too old for auto-refresh, and no newer one was.
+    case unsupportedVersion(path: String?, version: String?)
     /// Claude Code is not signed in.
     case notLoggedIn
     /// The last run failed for this reason; it is retried with back-off.
@@ -21,7 +23,7 @@ public enum CLIRefreshStatus: Equatable, Sendable {
     public var needsAttention: Bool {
         switch self {
         case .off, .ok, .running: false
-        case .notFound, .notLoggedIn, .failed, .disabledForSafety: true
+        case .notFound, .unsupportedVersion, .notLoggedIn, .failed, .disabledForSafety: true
         }
     }
 }
@@ -129,13 +131,30 @@ extension RefreshPlanner {
     }
 
     /// The status to show after a run that started at `ranAt`.
-    public static func cliStatus(after outcome: CLIRefreshOutcome, ranAt: Date) -> CLIRefreshStatus {
+    ///
+    /// - Parameter binary: The tool the run used or found, from its report; it names a Claude Code that is too old.
+    public static func cliStatus(
+        after outcome: CLIRefreshOutcome,
+        ranAt: Date,
+        binary: CLIBinaryState? = nil
+    ) -> CLIRefreshStatus {
         switch outcome {
-        case .success: .ok(lastRun: ranAt)
-        case .modelCallDetected: .disabledForSafety
-        case .notLoggedIn: .notLoggedIn
-        case .failed(.notFound), .failed(.notClaudeCode): .notFound
-        case .failed(let reason): .failed(reason)
+        case .success:
+            return .ok(lastRun: ranAt)
+        case .modelCallDetected:
+            return .disabledForSafety
+        case .notLoggedIn:
+            return .notLoggedIn
+        case .failed(.notFound), .failed(.notClaudeCode):
+            return .notFound
+        case .failed(.unsupportedVersion):
+            var version: String?
+            if case .unsupported(let found) = binary?.versionCheck {
+                version = found
+            }
+            return .unsupportedVersion(path: binary?.location.executable?.path.path, version: version)
+        case .failed(let reason):
+            return .failed(reason)
         }
     }
 

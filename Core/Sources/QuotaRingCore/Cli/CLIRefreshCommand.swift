@@ -9,7 +9,10 @@ import Foundation
 /// own login for it; QuotaRing never sees a credential.
 ///
 /// Everything is fixed: the arguments are a constant array passed without a shell, and the environment is built from
-/// scratch instead of inheriting QuotaRing's.
+/// scratch instead of inheriting QuotaRing's. It turns off Claude Code's auto-updater (`DISABLE_AUTOUPDATER=1`): a
+/// background run must never update Claude Code, which once left an npm install broken mid-update. It deliberately
+/// does **not** set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: verified on the owner's Mac, with it `/usage` answers
+/// from the stale cache without asking Anthropic, which defeats the purpose.
 public enum CLIRefreshCommand {
     /// The arguments, exactly. `-p "/usage"` runs the slash command in print mode; `--safe-mode` starts no plugins,
     /// hooks or MCP servers; `--no-session-persistence` saves no transcript; `--output-format json` prints one result
@@ -20,6 +23,14 @@ public enum CLIRefreshCommand {
 
     /// The arguments of the check that a file is Claude Code (see ``ClaudeCLILocator/isClaudeCode(versionOutput:)``).
     public static let versionArguments = ["--version"]
+
+    /// The arguments of the check that this Claude Code knows ``requiredFlags``
+    /// (see ``ClaudeCLILocator/capability(versionOutput:helpOutput:)``).
+    public static let helpArguments = ["--help"]
+
+    /// The options of ``arguments`` that older Claude Code versions lack. Without them a run could start plugins, hooks
+    /// or MCP servers, or save a session, so a version whose `--help` does not list both is never run with `/usage`.
+    public static let requiredFlags = ["--safe-mode", "--no-session-persistence"]
 
     /// The folders after the tool's own on its `PATH`: enough for a `#!/usr/bin/env node` launcher to find Node and
     /// for Claude Code to find system tools such as `security`.
@@ -38,9 +49,12 @@ public enum CLIRefreshCommand {
     public static let maxOutputBytes = 262_144
     /// Output limit of the `--version` check.
     public static let maxVersionOutputBytes = 4_096
+    /// Output limit of the `--help` check.
+    public static let maxHelpOutputBytes = 262_144
 
-    /// The complete environment of the tool: `HOME`, `USER`, `LOGNAME`, `LANG` and `PATH`, plus `CLAUDE_CONFIG_DIR`
-    /// when a custom Claude config directory is set. Nothing is inherited from QuotaRing's own environment.
+    /// The complete environment of the tool, for `/usage` and for the checks alike: `HOME`, `USER`, `LOGNAME`, `LANG`,
+    /// `PATH` and `DISABLE_AUTOUPDATER=1`, plus `CLAUDE_CONFIG_DIR` when a custom Claude config directory is set.
+    /// Nothing is inherited from QuotaRing's own environment.
     ///
     /// - Parameters:
     ///   - lang: QuotaRing's `LANG`; ``defaultLanguage`` when `nil` or empty.
@@ -59,6 +73,7 @@ public enum CLIRefreshCommand {
             "LOGNAME": user,
             "LANG": lang.flatMap { $0.isEmpty ? nil : $0 } ?? defaultLanguage,
             "PATH": ClaudeCLILocator.standardizedPath(binaryDirectory.path) + ":" + standardPath,
+            "DISABLE_AUTOUPDATER": "1",
         ]
         if let customConfigDirectory {
             environment["CLAUDE_CONFIG_DIR"] =

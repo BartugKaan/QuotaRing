@@ -371,12 +371,12 @@
         }
       }
     },
-    "Auto-refresh: Claude Code took longer than 30 seconds and was stopped. QuotaRing tries again later." : {
+    "Auto-refresh: Claude Code took too long and was stopped. QuotaRing tries again later." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otomatik yenileme: Claude Code 30 saniyeden uzun sürdüğü için durduruldu. QuotaRing daha sonra yeniden dener."
+            "value" : "Otomatik yenileme: Claude Code çok uzun sürdüğü için durduruldu. QuotaRing daha sonra yeniden dener."
           }
         }
       }
@@ -484,6 +484,17 @@
         }
       }
     },
+    "Claude app (%@)" : {
+      "comment" : "The Claude Code build bundled with the Claude desktop app; the argument is its version",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude uygulaması (%@)"
+          }
+        }
+      }
+    },
     "Claude Code" : {
       "localizations" : {
         "tr" : {
@@ -516,6 +527,45 @@
         }
       }
     },
+    "Claude Code %@ at %@ is too old for auto-refresh — update it or choose another." : {
+      "comment" : "Auto-refresh status; the arguments are a version such as 1.0.113 and a path such as /usr/local/bin/claude",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code %1$@ at %2$@ is too old for auto-refresh — update it or choose another."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ konumundaki Claude Code %1$@, otomatik yenileme için çok eski — güncelleyin veya başka birini seçin."
+          }
+        }
+      }
+    },
+    "Claude Code %@, too old for auto-refresh" : {
+      "comment" : "The found command-line tool's version; the argument is a version number such as 1.0.113",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code %@, otomatik yenileme için çok eski"
+          }
+        }
+      }
+    },
+    "Claude Code at %@ is too old for auto-refresh — update it or choose another." : {
+      "comment" : "Auto-refresh status; the argument is a path such as /usr/local/bin/claude",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konumundaki Claude Code, otomatik yenileme için çok eski — güncelleyin veya başka birini seçin."
+          }
+        }
+      }
+    },
     "Claude Code uses and renews its own login. QuotaRing never reads, sees or stores your credentials." : {
       "localizations" : {
         "tr" : {
@@ -532,6 +582,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude Code kendi girişini kullanır; QuotaRing kimlik bilgilerinizi asla görmez. Yapay zekâ isteği yapılmaz, kullanım harcanmaz, oturum kaydedilmez."
+          }
+        }
+      }
+    },
+    "Claude Code, too old for auto-refresh" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code, otomatik yenileme için çok eski"
           }
         }
       }
@@ -1206,12 +1266,12 @@
         }
       }
     },
-    "No session is saved, and no plugins, hooks or MCP servers start. It runs in an empty folder of QuotaRing's own." : {
+    "No session is saved, Claude Code does not update itself, and no plugins, hooks or MCP servers start. It runs in an empty folder of QuotaRing's own." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oturum kaydedilmez; hiçbir eklenti, kanca (hook) veya MCP sunucusu başlatılmaz. QuotaRing’e ait boş bir klasörde çalışır."
+            "value" : "Oturum kaydedilmez, Claude Code kendini güncellemez; hiçbir eklenti, kanca (hook) veya MCP sunucusu başlatılmaz. QuotaRing’e ait boş bir klasörde çalışır."
           }
         }
       }
@@ -1917,6 +1977,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Seçilen öğe bir dosya değil."
+          }
+        }
+      }
+    },
+    "The Claude Code found is too old for auto-refresh — update it or choose another." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bulunan Claude Code, otomatik yenileme için çok eski — güncelleyin veya başka birini seçin."
           }
         }
       }

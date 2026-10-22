@@ -3,14 +3,17 @@ import Testing
 
 @testable import QuotaRingCore
 
-private func fixtureText(_ name: String) throws -> String {
-    let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
+private func fixtureText(_ name: String, extension: String = "json") throws -> String {
+    let url = try #require(Bundle.module.url(forResource: name, withExtension: `extension`, subdirectory: "Fixtures"))
     return try String(contentsOf: url, encoding: .utf8)
 }
 
-/// A fake `claude`: a shell script that answers `--version` and prints a canned result for anything else. It records
-/// each call's arguments, environment and working directory next to itself, because its environment is minimal and
-/// cannot carry paths in.
+private func currentHelp() throws -> String { try fixtureText("cli-help-current", extension: "txt") }
+private func oldHelp() throws -> String { try fixtureText("cli-help-1.0.113", extension: "txt") }
+
+/// A fake `claude`: a shell script that answers `--version` and `--help` and prints a canned result for anything else.
+/// It records each call's arguments, environment and working directory next to itself, because its environment is
+/// minimal and cannot carry paths in.
 private struct FakeClaude {
     let scratch: CLIScratchDirectory
     let tool: URL
@@ -22,7 +25,8 @@ private struct FakeClaude {
     }
 
     init(
-        version: String = "2.1.287 (Claude Code)",
+        version: String = "2.1.308 (Claude Code)",
+        help: String? = nil,
         result: String,
         exitStatus: Int = 0,
         sleepBeforeResult: Int = 0,
@@ -31,6 +35,8 @@ private struct FakeClaude {
         scratch = try CLIScratchDirectory("QuotaRingCLIExecutorTests")
         let resultFile = scratch.url.appendingPathComponent("result.json")
         try Data(result.utf8).write(to: resultFile)
+        let helpFile = scratch.url.appendingPathComponent("help.txt")
+        try Data((try help ?? currentHelp()).utf8).write(to: helpFile)
         let here = "$(dirname \"$0\")"
         tool = try scratch.file(
             relativePath,
@@ -38,7 +44,13 @@ private struct FakeClaude {
                 #!/bin/sh
                 echo "$*" >> "\(here)/calls.log"
                 if [ "$1" = "--version" ]; then
+                  /usr/bin/env > "\(here)/version-env.txt"
                   echo "\(version)"
+                  exit 0
+                fi
+                if [ "$1" = "--help" ]; then
+                  /usr/bin/env > "\(here)/help-env.txt"
+                  cat "\(helpFile.path)"
                   exit 0
                 fi
                 /usr/bin/env > "\(here)/env.txt"
@@ -49,8 +61,8 @@ private struct FakeClaude {
                 """)
     }
 
-    func recordedEnvironment() throws -> [String: String] {
-        let text = try String(contentsOf: folder.appendingPathComponent("env.txt"), encoding: .utf8)
+    func recordedEnvironment(_ file: String = "env.txt") throws -> [String: String] {
+        let text = try String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8)
         var environment: [String: String] = [:]
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
@@ -81,9 +93,10 @@ private struct FakeClaude {
 }
 
 private let usageCall = "-p /usage --safe-mode --no-session-persistence --output-format json"
+private let checks = ["--version", "--help"]
 
 @Suite struct CLIRefreshExecutorTests {
-    @Test func checksTheVersionOnceThenRunsUsage() async throws {
+    @Test func checksTheToolOnceThenRunsUsage() async throws {
         let fake = try FakeClaude(result: try fixtureText("cli-usage-success"))
         defer { fake.scratch.remove() }
         let executor = fake.executor()
@@ -91,15 +104,61 @@ private let usageCall = "-p /usage --safe-mode --no-session-persistence --output
 
         let first = await executor.run(context)
         #expect(first.outcome == .success)
-        #expect(first.binary.versionCheck == .claudeCode(version: "2.1.287"))
+        #expect(first.binary.versionCheck == .claudeCode(version: "2.1.308"))
         #expect(first.binary.location.executable?.executable == fake.tool)
 
         let second = await executor.run(context)
         #expect(second.outcome == .success)
-        #expect(fake.calls == ["--version", usageCall, usageCall])
+        #expect(fake.calls == checks + [usageCall, usageCall])
         // Settings sees the remembered answer without running anything.
-        #expect(await executor.locate(context).versionCheck == .claudeCode(version: "2.1.287"))
-        #expect(fake.calls.count == 3)
+        #expect(await executor.locate(context).versionCheck == .claudeCode(version: "2.1.308"))
+        #expect(fake.calls.count == 4)
+    }
+
+    @Test func anOldClaudeCodeIsSkippedForACapableOne() async throws {
+        let old = try FakeClaude(version: "1.0.113 (Claude Code)", help: try oldHelp(), result: "{}")
+        defer { old.scratch.remove() }
+        let current = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { current.scratch.remove() }
+
+        let report = await current.executor(candidates: [old.tool, current.tool]).run(try current.context())
+        #expect(report.outcome == .success)
+        #expect(report.binary.location.executable?.executable == current.tool)
+        // The old one was only asked what it is and what it can do, never run with `/usage`.
+        #expect(old.calls == checks)
+        #expect(current.calls == checks + [usageCall])
+    }
+
+    @Test func onlyAnOldClaudeCodeIsUnsupported() async throws {
+        let old = try FakeClaude(version: "1.0.113 (Claude Code)", help: try oldHelp(), result: "{}")
+        defer { old.scratch.remove() }
+        let executor = old.executor()
+        let context = try old.context()
+
+        let report = await executor.run(context)
+        #expect(report.outcome == .failed(.unsupportedVersion))
+        #expect(report.binary.location.executable?.executable == old.tool)
+        #expect(report.binary.versionCheck == .unsupported(version: "1.0.113"))
+        // Remembered: a second run asks nothing again, and Settings shows the same tool.
+        #expect(await executor.run(context).outcome == .failed(.unsupportedVersion))
+        #expect(old.calls == checks)
+        #expect(await executor.locate(context).versionCheck == .unsupported(version: "1.0.113"))
+    }
+
+    @Test func locatePrefersAKnownCapableToolOverKnownBadOnes() async throws {
+        let other = try FakeClaude(version: "1.0.0", result: "{}")
+        defer { other.scratch.remove() }
+        let current = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { current.scratch.remove() }
+        let executor = current.executor(candidates: [other.tool, current.tool])
+        let context = try current.context()
+
+        // Before any run nothing is known, so the first usable file is shown.
+        #expect(await executor.locate(context).location.executable?.executable == other.tool)
+        _ = await executor.run(context)
+        let state = await executor.locate(context)
+        #expect(state.location.executable?.executable == current.tool)
+        #expect(state.versionCheck == .claudeCode(version: "2.1.308"))
     }
 
     @Test func runsWithTheMinimalEnvironmentInItsOwnFolder() async throws {
@@ -115,7 +174,11 @@ private let usageCall = "-p /usage --safe-mode --no-session-persistence --output
                 "LOGNAME": "test",
                 "LANG": "en_US.UTF-8",
                 "PATH": fake.folder.path + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "DISABLE_AUTOUPDATER": "1",
             ])
+        // The checks run with exactly the same environment: no check may update Claude Code either.
+        #expect(try fake.recordedEnvironment("version-env.txt") == fake.recordedEnvironment())
+        #expect(try fake.recordedEnvironment("help-env.txt") == fake.recordedEnvironment())
         let pwd = try String(contentsOf: fake.folder.appendingPathComponent("pwd.txt"), encoding: .utf8)
         #expect(pwd == context.workingDirectory.path + "\n")
     }
@@ -158,11 +221,13 @@ private let usageCall = "-p /usage --safe-mode --no-session-persistence --output
         let executor = fake.executor()
         let context = try fake.context()
 
-        #expect(await executor.run(context).outcome == .failed(.notClaudeCode))
+        #expect(await executor.run(context).outcome == .failed(.notFound))
         let second = await executor.run(context)
-        #expect(second.outcome == .failed(.notClaudeCode))
+        #expect(second.outcome == .failed(.notFound))
+        // Settings can still say why the file found is not used.
+        #expect(second.binary.location.executable?.executable == fake.tool)
         #expect(second.binary.versionCheck == .notClaudeCode)
-        // Checked once, and `/usage` never ran.
+        // Checked once, never asked for `--help`, and `/usage` never ran.
         #expect(fake.calls == ["--version"])
     }
 
@@ -171,7 +236,7 @@ private let usageCall = "-p /usage --safe-mode --no-session-persistence --output
         defer { fake.scratch.remove() }
         let executor = fake.executor()
         let context = try fake.context()
-        #expect(await executor.run(context).outcome == .failed(.notClaudeCode))
+        #expect(await executor.run(context).outcome == .failed(.notFound))
 
         // An update replaces the file in place with Claude Code.
         let updated = try FakeClaude(result: try fixtureText("cli-usage-success"))

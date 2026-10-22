@@ -20,7 +20,7 @@ import Testing
         #expect(CLIRefreshCommand.maxOutputBytes == 256 * 1024)
     }
 
-    @Test func environmentHasOnlyTheFiveVariables() {
+    @Test func environmentHasOnlyTheFiveVariablesAndNoAutoUpdates() {
         let environment = CLIRefreshCommand.environment(
             home: home, user: "test", lang: "tr_TR.UTF-8",
             binaryDirectory: URL(fileURLWithPath: "/Users/test/.npm-global/bin", isDirectory: true),
@@ -32,6 +32,7 @@ import Testing
                 "LOGNAME": "test",
                 "LANG": "tr_TR.UTF-8",
                 "PATH": "/Users/test/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "DISABLE_AUTOUPDATER": "1",
             ])
     }
 
@@ -47,6 +48,7 @@ import Testing
                 "LOGNAME": "test",
                 "LANG": "en_US.UTF-8",
                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "DISABLE_AUTOUPDATER": "1",
                 "CLAUDE_CONFIG_DIR": "/Users/test/work-claude",
             ])
     }
@@ -56,5 +58,23 @@ import Testing
             home: home, user: "test", lang: "", binaryDirectory: URL(fileURLWithPath: "/usr/local/bin"),
             customConfigDirectory: nil)
         #expect(environment["LANG"] == "en_US.UTF-8")
+    }
+
+    @Test func nonessentialTrafficIsNeverDisabled() {
+        // Verified on the owner's Mac: with CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, `/usage` answers from the stale
+        // cache without asking Anthropic, so the whole run would be pointless.
+        for custom in [nil, URL(fileURLWithPath: "/Users/test/work-claude")] {
+            let environment = CLIRefreshCommand.environment(
+                home: home, user: "test", lang: nil, binaryDirectory: URL(fileURLWithPath: "/usr/local/bin"),
+                customConfigDirectory: custom)
+            #expect(environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == nil)
+            #expect(!environment.keys.contains { $0.contains("NONESSENTIAL") })
+            #expect(environment["DISABLE_AUTOUPDATER"] == "1")
+        }
+    }
+
+    @Test func helpAndVersionLimits() {
+        #expect(CLIRefreshCommand.helpArguments == ["--help"])
+        #expect(CLIRefreshCommand.requiredFlags == ["--safe-mode", "--no-session-persistence"])
     }
 }

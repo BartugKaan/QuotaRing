@@ -224,19 +224,26 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
   not while your Mac sleeps or is offline, and with the same back-off as Live mode after a failure (up to 30 minutes).
   The Refresh button also runs it, at most once a minute.
 - **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
-  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG` and `PATH` (the tool's folder, then
-  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. It
+  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then
+  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`) and `DISABLE_AUTOUPDATER=1`, plus `CLAUDE_CONFIG_DIR` when you set
+  a custom config directory. `DISABLE_AUTOUPDATER=1` means a background run **never updates Claude Code** (an update
+  started by Claude Code itself once left an npm install broken). `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is
+  deliberately not set: with it, `/usage` answers from the old cached numbers without asking Anthropic. It
   runs in an empty folder of QuotaRing's own, `~/Library/Application Support/QuotaRing/cli` (mode 700), so no project's
   settings apply. A run that takes longer than 30 seconds or prints more than 256 KB is stopped (`SIGTERM`, then
   `SIGKILL`, to the whole process group). The output is read in memory, checked, and dropped: it is never logged or
   saved, only the outcome's name ("success", "notLoggedIn" and so on).
 - **Which `claude`:** apps started from Finder or at login do not see your shell's `PATH`, so QuotaRing looks in fixed
-  places: the file you chose in Settings, then `~/.local/bin/claude`, `~/.claude/local/claude`,
-  `~/.npm-global/bin/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. It uses the first one that,
-  after following symbolic links, is a regular executable file owned by you or by root and not writable by other users,
-  and whose `--version` output says "(Claude Code)". The version check runs once per file. Settings shows the path and
-  version, and lets you choose another file or go back to looking. The chosen path and the consent are read from
-  QuotaRing's saved preferences only; command-line launch arguments cannot set them.
+  places: the file you chose in Settings; then the Claude Code builds that the Claude desktop app keeps for itself,
+  `~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude`, newest version
+  first; then `~/.local/bin/claude`, `~/.claude/local/claude`, `~/.npm-global/bin/claude`, `/opt/homebrew/bin/claude`
+  and `/usr/local/bin/claude`. A file is used only if, after following symbolic links, it is a regular executable file
+  owned by you or by root and not writable by other users, its `--version` output says "(Claude Code)", and its
+  `--help` lists both `--safe-mode` and `--no-session-persistence` (older versions lack them, and are skipped in favor
+  of the next candidate). These checks run once per file, with the same minimal environment. Settings shows which tool
+  is used and its version (the desktop app's build as "Claude app (2.1.308)", with the full path as a tooltip), says so
+  when the only Claude Code found is too old, and lets you choose another file or go back to looking. The chosen path
+  and the consent are read from QuotaRing's saved preferences only; command-line launch arguments cannot set them.
 - **Safety net:** a result only counts when it says `type: result`, `is_error: false`, `num_turns: 0` and
   `total_cost_usd: 0`. If a future Claude Code ever answers `/usage` with a model request instead (any turn, cost or
   token count), auto-refresh **turns itself off** and tells you why. Not logged in, not found, a timeout or an error
@@ -326,11 +333,12 @@ Code's command-line tool installed and signed in once (run `claude` in Terminal)
 Other options: run `claude` or `/usage` yourself now and then, or use Live mode, which stays fresh for about 8 hours
 after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
-**Auto-refresh says it can't find Claude Code, or that it is not signed in.**
-QuotaRing looks for `claude` in the usual install locations (see
+**Auto-refresh says it can't find Claude Code, that it is too old, or that it is not signed in.**
+QuotaRing looks for `claude` in the Claude desktop app's own copy and in the usual install locations (see
 [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage)). If yours is elsewhere, find it with `which claude` in
-Terminal and choose that file in Settings → Data. If it says Claude Code is not signed in, run `claude` once in Terminal
-and sign in.
+Terminal and choose that file in Settings → Data. "Too old" means the Claude Code found does not know `--safe-mode` and
+`--no-session-persistence`; update it, or choose a newer one. If it says Claude Code is not signed in, run `claude`
+once in Terminal and sign in.
 
 **Auto-refresh turned itself off "for safety". What happened?**
 A run of `/usage` came back with a model turn, a cost or a token count, which means that version of Claude Code sent

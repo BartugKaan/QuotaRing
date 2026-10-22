@@ -39,11 +39,14 @@ First public release, planned as 0.1.0.
   tool's path and version, lets you choose another `claude`, and shows the status. The popover's out-of-date notice
   offers "Turn on auto-refresh…" (it opens Settings, never switches anything on), and problems such as "not signed in"
   are shown there.
-- Auto-refresh safety: the tool is found in fixed install locations or the file you chose, and used only if it resolves
-  to a regular executable owned by you or root, not writable by others, whose `--version` says "(Claude Code)". It runs
-  without a shell, with a constant argument array, a from-scratch environment, `/dev/null` as input and its own empty
-  working folder, is stopped after 30 seconds or 256 KB of output, and its output is never logged or stored. Any sign of
-  a model request in the result (turns, cost or tokens) turns auto-refresh off and says why.
+- Auto-refresh safety: the tool is found in the file you chose, the Claude Code builds bundled with the Claude desktop
+  app (newest first) or the usual install locations, and used only if it resolves to a regular executable owned by you
+  or root, not writable by others, whose `--version` says "(Claude Code)" and whose `--help` lists `--safe-mode` and
+  `--no-session-persistence` (an older Claude Code is skipped, and reported as too old when it is the only one). It runs
+  without a shell, with a constant argument array, a from-scratch environment that turns Claude Code's auto-updater off
+  (`DISABLE_AUTOUPDATER=1`; a background run never updates Claude Code), `/dev/null` as input and its own empty working
+  folder, is stopped after 30 seconds or 256 KB of output, and its output is never logged or stored. Any sign of a model
+  request in the result (turns, cost or tokens) turns auto-refresh off and says why.
 - Live-mode consent: it is recorded as soon as you click "Enable Live mode"; in the first-run window only the first
   Keychain read waits for the notification prompt to settle (at most 15 seconds). The consent settings ignore
   command-line launch arguments. If you deny the Keychain prompt, Live mode stops there (no other Keychain item, no

@@ -159,6 +159,28 @@ import Testing
         #expect(RefreshPlanner.cliStatus(after: .failed(.cacheNotUpdated), ranAt: now) == .failed(.cacheNotUpdated))
     }
 
+    @Test func anOldClaudeCodeIsReportedWithItsPathAndVersion() throws {
+        let tool = URL(fileURLWithPath: "/usr/local/bin/claude")
+        let executable = CLIExecutable(
+            path: tool, executable: URL(fileURLWithPath: "/usr/local/lib/node_modules/claude/cli.js"),
+            identity: CLIFileIdentity(
+                path: "/usr/local/lib/node_modules/claude/cli.js", device: 1, inode: 2, size: 3,
+                modifiedNanoseconds: 4))
+        let binary = CLIBinaryState(
+            location: CLILocation(executable: executable, customPathProblem: nil),
+            versionCheck: .unsupported(version: "1.0.113"))
+        #expect(
+            RefreshPlanner.cliStatus(after: .failed(.unsupportedVersion), ranAt: now, binary: binary)
+                == .unsupportedVersion(path: "/usr/local/bin/claude", version: "1.0.113"))
+        // Without the tool's details there is still something true to say.
+        #expect(
+            RefreshPlanner.cliStatus(after: .failed(.unsupportedVersion), ranAt: now)
+                == .unsupportedVersion(path: nil, version: nil))
+        #expect(CLIRefreshStatus.unsupportedVersion(path: nil, version: nil).needsAttention)
+        // Other outcomes do not depend on the tool.
+        #expect(RefreshPlanner.cliStatus(after: .success, ranAt: now, binary: binary) == .ok(lastRun: now))
+    }
+
     @Test func onlyProblemsNeedAttention() {
         #expect(!CLIRefreshStatus.off.needsAttention)
         #expect(!CLIRefreshStatus.ok(lastRun: nil).needsAttention)

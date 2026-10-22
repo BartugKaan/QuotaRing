@@ -7,6 +7,9 @@ public enum CLIRefreshFailure: String, Error, Equatable, Sendable, CaseIterable 
     case notFound
     /// The file's `--version` output does not say "(Claude Code)".
     case notClaudeCode
+    /// Claude Code was found, but its `--help` does not list every option of ``CLIRefreshCommand/requiredFlags``: it
+    /// is too old to be run safely.
+    case unsupportedVersion
     /// The tool could not be started.
     case launchFailed
     /// It ran longer than allowed and was stopped.
