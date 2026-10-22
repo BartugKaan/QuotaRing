@@ -303,6 +303,50 @@ private func seconds(_ date: Date?) -> Double {
         #expect(extra.usedCreditsMinor == 1)
     }
 
+    @Test func limitsAreCappedInResponseOrder() throws {
+        // Unusable entries do not count towards the cap.
+        let entries = (0..<1_000).map { #"{"kind": "k\#($0)", "percent": \#($0 % 100)}"# }
+        let report = try decode(json: #"{"limits": ["junk", null, \#(entries.joined(separator: ","))]}"#)
+        #expect(report.limits.count == UsageResponseDecoder.maxLimits)
+        #expect(report.limits.map(\.id) == (0..<UsageResponseDecoder.maxLimits).map { "k\($0)" })
+        #expect(UsageResponseDecoder.maxLimits == 32)
+    }
+
+    @Test func breakdownRowsAreDeduplicatedByKeyKeepingTheFirst() throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "seven_day_breakdown": {"rows": [
+                    {"key": "chat", "display_name": "Chats", "percent": 10},
+                    {"key": "claude_code", "percent": 20},
+                    {"key": "chat", "display_name": "Impostor", "percent": 90},
+                    {"key": "claude_code", "percent": 70}
+                 ]}}
+                """
+        )
+        let rows = try #require(report.weeklyBreakdown).rows
+        #expect(rows.map(\.key) == ["chat", "claude_code"])
+        #expect(rows.map(\.displayName) == ["Chats", "claude_code"])
+        #expect(rows.map(\.percent) == [10, 20])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+    }
+
+    @Test func breakdownRowsAreCappedAfterDeduplication() throws {
+        // Duplicates of the first key do not use up the cap.
+        let duplicates = (0..<50).map { _ in #"{"key": "r0", "percent": 1}"# }
+        let distinct = (0..<1_000).map { #"{"key": "r\#($0)", "percent": 1}"# }
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "seven_day_breakdown": {"rows": [\((duplicates + distinct).joined(separator: ","))]}}
+                """
+        )
+        let rows = try #require(report.weeklyBreakdown).rows
+        #expect(rows.count == UsageResponseDecoder.maxBreakdownRows)
+        #expect(rows.map(\.key) == (0..<UsageResponseDecoder.maxBreakdownRows).map { "r\($0)" })
+        #expect(UsageResponseDecoder.maxBreakdownRows == 16)
+    }
+
     @Test func breakdownWithoutUsableRowsIsNil() throws {
         let report = try decode(
             json: """
