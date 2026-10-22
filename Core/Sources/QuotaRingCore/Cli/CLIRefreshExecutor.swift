@@ -68,10 +68,14 @@ public struct CLIRefreshContext: Equatable, Sendable {
 /// Finds a Claude Code that knows every option of the command, and runs ``CLIRefreshCommand`` with it.
 ///
 /// Every usable candidate is tried in order. Each is asked `--version` and, only if it is Claude Code, `--help`, with
-/// the same minimal environment as the run, so these checks cannot update Claude Code either. The answer is remembered
-/// for the file's ``CLIFileIdentity`` (its resolved path and metadata), so a replaced or updated file is checked again;
-/// a timeout or launch failure is not remembered. Something that is not Claude Code, or a Claude Code too old for the
-/// command's options, is skipped and the next candidate is tried.
+/// the same minimal environment as the run, so these checks cannot update Claude Code either. Only a definitive answer
+/// (the check exited with status 0) is remembered, for the file's ``CLIFileIdentity`` (its resolved path and metadata),
+/// so a replaced or updated file is checked again; a failed exit, a timeout or a launch failure is not remembered.
+/// Something that is not Claude Code, or a Claude Code too old for the command's options, is skipped and the next
+/// candidate is tried.
+///
+/// Right before every execution (each check and `/usage`) the file is inspected again and must still be the one
+/// validated (same resolved file, same identity); otherwise it is not executed (``CLIRefreshFailure/toolChanged``).
 public actor CLIRefreshExecutor {
     /// Where to look for the tool; the standard places in the app, temporary files in tests.
     public typealias Candidates = @Sendable (_ home: URL, _ customPath: URL?) -> [URL]
@@ -120,13 +124,14 @@ public actor CLIRefreshExecutor {
     /// One refresh: find the first capable Claude Code (checking each candidate once per file), run `/usage` with it,
     /// read the result.
     ///
-    /// When no candidate is capable, the outcome describes the first problem in candidate order: a check that could not
-    /// finish (a timeout or launch failure) or a Claude Code that is too old
-    /// (``CLIRefreshFailure/unsupportedVersion``). Files that are not Claude Code are skipped silently; with nothing
-    /// else, the outcome is ``CLIRefreshFailure/notFound``.
+    /// When no candidate is capable, the outcome is, in this order: the first Claude Code that is too old
+    /// (``CLIRefreshFailure/unsupportedVersion``), else the first check that gave no definitive answer (a failed exit,
+    /// a timeout, a launch failure, a file that changed), else ``CLIRefreshFailure/notFound``. Files that are not Claude
+    /// Code are skipped silently.
     public func run(_ context: CLIRefreshContext) async -> CLIRunReport {
         let search = search(context)
-        var firstProblem: CLIRunReport?
+        var firstTooOld: CLIRunReport?
+        var firstUnanswered: CLIRunReport?
         var notClaudeCode: CLIBinaryState?
         for executable in search.executables {
             let environment = environment(for: executable, context: context)
@@ -141,8 +146,8 @@ public actor CLIRefreshExecutor {
                 case .failure(.cancelled):
                     return CLIRunReport(outcome: .failed(.cancelled), binary: Self.state(executable, nil, search))
                 case .failure(let failure):
-                    if firstProblem == nil {
-                        firstProblem = CLIRunReport(
+                    if firstUnanswered == nil {
+                        firstUnanswered = CLIRunReport(
                             outcome: .failed(failure), binary: Self.state(executable, nil, search))
                     }
                     continue
@@ -153,15 +158,15 @@ public actor CLIRefreshExecutor {
                 let outcome = await runUsage(executable, environment: environment, context: context)
                 return CLIRunReport(outcome: outcome, binary: Self.state(executable, check, search))
             case .unsupported:
-                if firstProblem == nil {
-                    firstProblem = CLIRunReport(
+                if firstTooOld == nil {
+                    firstTooOld = CLIRunReport(
                         outcome: .failed(.unsupportedVersion), binary: Self.state(executable, check, search))
                 }
             case .notClaudeCode:
                 if notClaudeCode == nil { notClaudeCode = Self.state(executable, check, search) }
             }
         }
-        return firstProblem
+        return firstTooOld ?? firstUnanswered
             ?? CLIRunReport(outcome: .failed(.notFound), binary: notClaudeCode ?? Self.state(nil, nil, search))
     }
 
@@ -210,11 +215,19 @@ public actor CLIRefreshExecutor {
         )
     }
 
+    /// Whether the file `executable` was found at is, right now, still the very file that was validated: the same
+    /// resolved path, the same identity, and still passing ``ClaudeCLILocator/inspect(_:)``.
+    private static func isUnchanged(_ executable: CLIExecutable) -> Bool {
+        guard case .success(let current) = ClaudeCLILocator.inspect(executable.path) else { return false }
+        return current.executable == executable.executable && current.identity == executable.identity
+    }
+
     private func runUsage(
         _ executable: CLIExecutable,
         environment: [String: String],
         context: CLIRefreshContext
     ) async -> CLIRefreshOutcome {
+        guard Self.isUnchanged(executable) else { return .failed(.toolChanged) }
         let output = await BoundedProcess.run(
             executable: executable.executable,
             arguments: CLIRefreshCommand.arguments,
@@ -228,47 +241,46 @@ public actor CLIRefreshExecutor {
     }
 
     /// `--version`, then, only for Claude Code, `--help`; see
-    /// ``ClaudeCLILocator/capability(versionOutput:helpOutput:)``.
+    /// ``ClaudeCLILocator/capability(versionOutput:helpOutput:)``. A success is a definitive answer, to be remembered;
+    /// a failure is a check that gave none.
     private func checkCapability(
         _ executable: CLIExecutable,
         environment: [String: String],
         context: CLIRefreshContext
     ) async -> Result<CLIVersionCheck, CLIRefreshFailure> {
-        let version = await check(
+        let versionText: String
+        switch await check(
             executable, arguments: CLIRefreshCommand.versionArguments,
             maxOutputBytes: CLIRefreshCommand.maxVersionOutputBytes, environment: environment, context: context)
-        let versionText: String
-        switch version {
-        case .success(let text?):
+        {
+        case .success(let text):
             versionText = text
-        case .success(nil):
-            return .success(.notClaudeCode)
         case .failure(let failure):
             return .failure(failure)
         }
         guard ClaudeCLILocator.isClaudeCode(versionOutput: versionText) else { return .success(.notClaudeCode) }
 
-        let help = await check(
+        switch await check(
             executable, arguments: CLIRefreshCommand.helpArguments,
             maxOutputBytes: CLIRefreshCommand.maxHelpOutputBytes, environment: environment, context: context)
-        switch help {
-        case .success(let text):
-            // A `--help` that fails or prints too much proves nothing: it counts as lacking the options.
-            return .success(ClaudeCLILocator.capability(versionOutput: versionText, helpOutput: text ?? ""))
+        {
+        case .success(let helpText):
+            return .success(ClaudeCLILocator.capability(versionOutput: versionText, helpOutput: helpText))
         case .failure(let failure):
             return .failure(failure)
         }
     }
 
-    /// Runs one check. Its text when it exited with status 0; `nil` when it exited otherwise or printed too much (an
-    /// answer, just not a useful one); a failure when it could not finish.
+    /// Runs one check, after making sure the file is still the one validated. Its output when it exited with status 0;
+    /// otherwise why it gave no answer: a failed exit, too much output, a timeout, a launch failure, or a changed file.
     private func check(
         _ executable: CLIExecutable,
         arguments: [String],
         maxOutputBytes: Int,
         environment: [String: String],
         context: CLIRefreshContext
-    ) async -> Result<String?, CLIRefreshFailure> {
+    ) async -> Result<String, CLIRefreshFailure> {
+        guard Self.isUnchanged(executable) else { return .failure(.toolChanged) }
         let output = await BoundedProcess.run(
             executable: executable.executable,
             arguments: arguments,
@@ -279,12 +291,12 @@ public actor CLIRefreshExecutor {
             maxOutputBytes: maxOutputBytes
         )
         switch output.termination {
-        case .exited(let status):
-            return .success(status == 0 ? String(decoding: output.stdout, as: UTF8.self) : nil)
-        case .outputLimitExceeded:
-            return .success(nil)
-        case .signaled:
+        case .exited(0):
+            return .success(String(decoding: output.stdout, as: UTF8.self))
+        case .exited, .signaled:
             return .failure(.exitStatus)
+        case .outputLimitExceeded:
+            return .failure(.outputTooLarge)
         case .timedOut:
             return .failure(.timedOut)
         case .cancelled:

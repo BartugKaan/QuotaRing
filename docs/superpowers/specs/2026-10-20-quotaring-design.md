@@ -453,10 +453,14 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
   executable file owned by the user or root and not group/world-writable.
   Usable = valid, `--version` output contains "(Claude Code)", and `--help`
   lists both `--safe-mode` and `--no-session-persistence` (same minimal env,
-  10 s limit each, cached per resolved path + file identity). Candidates that
+  10 s limit each; only definitive exit-0 answers are cached, per resolved path
+  + file identity; the file is re-inspected right before every execution, the
+  `/usage` run included, and refused if its identity changed). Candidates that
   are not usable are skipped; if a Claude Code was found but all are too old,
-  the status is "unsupported version" with its path and version, else "not
-  found". Settings shows the binary used and its version (the desktop app's
+  the status is "unsupported version" with its path and version (even when an
+  earlier candidate's check failed), else that check failure, else "not
+  found". Only the file's owner and permission bits are checked, not ACLs or
+  parent folders. Settings shows the binary used and its version (the desktop app's
   build as "Claude app (<version>)", full path as tooltip).
 - Safety net: the JSON result must be `type: result`, `is_error: false`,
   `num_turns: 0`, `total_cost_usd: 0`. If a future Claude Code sends `/usage`

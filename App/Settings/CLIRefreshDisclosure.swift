@@ -190,6 +190,8 @@ enum CLIRefreshText {
             "Auto-refresh: Claude Code took too long and was stopped. QuotaRing tries again later."
         case .launchFailed:
             "Auto-refresh: Claude Code could not be started. QuotaRing tries again later."
+        case .toolChanged:
+            "Auto-refresh: Claude Code's file changed while it was being checked, so it was not run. QuotaRing tries again later."
         case .outputTooLarge:
             "Auto-refresh: Claude Code printed far more than expected and was stopped. QuotaRing tries again later."
         case .exitStatus, .reportedError:

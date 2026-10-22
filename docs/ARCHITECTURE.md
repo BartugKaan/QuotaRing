@@ -133,9 +133,11 @@ UsageEngine (auto-refresh loop, MainActor)
                  (~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude,
                  newest version first), then ~/.local/bin, ~/.claude/local, ~/.npm-global/bin, /opt/homebrew/bin,
                  /usr/local/bin; resolved through symlinks; regular, executable, owner = user or root, mode & 0o022 == 0
-              2. for each usable file, in order (answers cached per file identity, 10 s limit each):
+              2. for each usable file, in order (definitive answers cached per file identity, 10 s limit each; the file is
+                 inspected again right before every execution and must not have changed):
                  `--version` contains "(Claude Code)", and `--help` lists --safe-mode and --no-session-persistence;
-                 not Claude Code or too old → try the next (none left: notFound or unsupportedVersion)
+                 not Claude Code or too old → try the next (none left: unsupportedVersion, else the first check
+                 without an answer, else notFound)
               3. BoundedProcess: CLIRefreshCommand.arguments, minimal environment (auto-updater, telemetry and error
                  reporting off),
                  stdin /dev/null, stderr discarded, 30 s limit, 256 KB output limit, SIGTERM then SIGKILL to the

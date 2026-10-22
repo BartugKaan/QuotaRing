@@ -26,7 +26,11 @@ private struct FakeClaude {
 
     init(
         version: String = "2.1.308 (Claude Code)",
+        versionExit: Int = 0,
         help: String? = nil,
+        helpExit: Int = 0,
+        onVersion: String = "",
+        onHelp: String = "",
         result: String,
         exitStatus: Int = 0,
         sleepBeforeResult: Int = 0,
@@ -45,13 +49,15 @@ private struct FakeClaude {
                 echo "$*" >> "\(here)/calls.log"
                 if [ "$1" = "--version" ]; then
                   /usr/bin/env > "\(here)/version-env.txt"
+                  \(onVersion)
                   echo "\(version)"
-                  exit 0
+                  exit \(versionExit)
                 fi
                 if [ "$1" = "--help" ]; then
                   /usr/bin/env > "\(here)/help-env.txt"
+                  \(onHelp)
                   cat "\(helpFile.path)"
-                  exit 0
+                  exit \(helpExit)
                 fi
                 /usr/bin/env > "\(here)/env.txt"
                 pwd -P > "\(here)/pwd.txt"
@@ -313,5 +319,76 @@ private let checks = ["--version", "--help"]
         #expect(
             CLIRefreshExecutor.outcome(of: ProcessOutput(termination: .launchFailed, stdout: Data()))
                 == .failed(.launchFailed))
+    }
+
+    // MARK: - Only definitive answers are remembered
+
+    @Test func aFailingVersionCheckIsNotRemembered() async throws {
+        let fake = try FakeClaude(versionExit: 1, result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        // Asked again on the second run, never asked for `--help`, never run with `/usage`.
+        #expect(fake.calls == ["--version", "--version"])
+        #expect(await executor.locate(context).versionCheck == nil)
+    }
+
+    @Test func aFailingHelpCheckIsNotRemembered() async throws {
+        let fake = try FakeClaude(helpExit: 2, result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(await executor.run(context).outcome == .failed(.exitStatus))
+        #expect(fake.calls == checks + checks)
+    }
+
+    // MARK: - Which problem is reported
+
+    @Test func aTooOldClaudeCodeIsReportedBeforeAnEarlierCheckFailure() async throws {
+        let failing = try FakeClaude(versionExit: 1, result: "{}")
+        defer { failing.scratch.remove() }
+        let old = try FakeClaude(version: "1.0.113 (Claude Code)", help: try oldHelp(), result: "{}")
+        defer { old.scratch.remove() }
+
+        let report = await old.executor(candidates: [failing.tool, old.tool]).run(try old.context())
+        #expect(report.outcome == .failed(.unsupportedVersion))
+        #expect(report.binary.location.executable?.executable == old.tool)
+        #expect(report.binary.versionCheck == .unsupported(version: "1.0.113"))
+    }
+
+    // MARK: - The file is checked again right before each execution
+
+    @Test func aToolReplacedAfterTheSearchIsNotRun() async throws {
+        let target = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { target.scratch.remove() }
+        // The first candidate, when asked `--version`, changes the second one after the search validated it.
+        let changer = try FakeClaude(
+            version: "1.0.0", onVersion: "echo '# changed' >> \"\(target.tool.path)\"", result: "{}")
+        defer { changer.scratch.remove() }
+
+        let report = await target.executor(candidates: [changer.tool, target.tool]).run(try target.context())
+        #expect(report.outcome == .failed(.toolChanged))
+        #expect(changer.calls == ["--version"])
+        #expect(target.calls.isEmpty)
+    }
+
+    @Test func aToolThatChangesAfterItsChecksIsNotRunWithUsage() async throws {
+        // Its `--help` rewrites the file itself, so the identity checked before `/usage` no longer matches.
+        let fake = try FakeClaude(onHelp: "echo '# changed' >> \"$0\"", result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.toolChanged))
+        #expect(fake.calls == checks)
+        // The next run sees a new file and checks it again: the answers it has are for the old one. (Its `--help`
+        // changes it once more, so it is refused again.)
+        #expect(await executor.run(context).outcome == .failed(.toolChanged))
+        #expect(fake.calls == checks + checks)
     }
 }

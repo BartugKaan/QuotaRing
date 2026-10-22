@@ -411,6 +411,16 @@
         }
       }
     },
+    "Auto-refresh: Claude Code's file changed while it was being checked, so it was not run. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code’un dosyası kontrol edilirken değiştiği için çalıştırılmadı. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
     "By default, QuotaRing works entirely on this Mac:" : {
       "localizations" : {
         "tr" : {

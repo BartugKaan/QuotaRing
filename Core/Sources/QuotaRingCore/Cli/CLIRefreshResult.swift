@@ -12,6 +12,8 @@ public enum CLIRefreshFailure: String, Error, Equatable, Sendable, CaseIterable 
     case unsupportedVersion
     /// The tool could not be started.
     case launchFailed
+    /// The file changed (or a link now leads elsewhere) between its validation and its execution, so it was not run.
+    case toolChanged
     /// It ran longer than allowed and was stopped.
     case timedOut
     /// It printed more than allowed and was stopped.

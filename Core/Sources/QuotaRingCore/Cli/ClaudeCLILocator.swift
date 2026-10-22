@@ -193,8 +193,9 @@ public enum ClaudeCLILocator {
     /// The file `url` resolves to, when it may be executed as Claude Code's tool.
     ///
     /// Symbolic links are followed. The target must be a regular file the current user can execute, owned by the
-    /// current user or by root, and not writable by its group or by others (`mode & 0o022 == 0`), so that no other
-    /// account can change what QuotaRing runs.
+    /// current user or by root, whose permission bits do not let its group or others write it (`mode & 0o022 == 0`).
+    /// Only the file's owner and permission bits are checked: access control lists and the permissions of the folders
+    /// above it are not, so another account that can write to such a folder could still replace the file.
     public static func validate(_ url: URL) -> Result<URL, CLIValidationError> {
         inspect(url).map(\.executable)
     }
