@@ -151,7 +151,7 @@ import Testing
 
     @Test func statusAfterEachOutcome() {
         #expect(RefreshPlanner.cliStatus(after: .success, ranAt: now) == .ok(lastRun: now))
-        #expect(RefreshPlanner.cliStatus(after: .modelCallDetected, ranAt: now) == .disabledForSafety)
+        #expect(RefreshPlanner.cliStatus(after: .modelCallDetected, ranAt: now) == .disabledForSafety(.modelCall))
         #expect(RefreshPlanner.cliStatus(after: .notLoggedIn, ranAt: now) == .notLoggedIn)
         #expect(RefreshPlanner.cliStatus(after: .failed(.notFound), ranAt: now) == .notFound)
         #expect(RefreshPlanner.cliStatus(after: .failed(.notClaudeCode), ranAt: now) == .notFound)
@@ -188,7 +188,8 @@ import Testing
         #expect(CLIRefreshStatus.notFound.needsAttention)
         #expect(CLIRefreshStatus.notLoggedIn.needsAttention)
         #expect(CLIRefreshStatus.failed(.exitStatus).needsAttention)
-        #expect(CLIRefreshStatus.disabledForSafety.needsAttention)
+        #expect(CLIRefreshStatus.disabledForSafety(.modelCall).needsAttention)
+        #expect(CLIRefreshStatus.disabledForSafety(.unverifiableOutput).needsAttention)
     }
 
     // MARK: - Did the run help?
@@ -207,5 +208,98 @@ import Testing
             !RefreshPlanner.cliRunRefreshedCache(
                 cachedFetchedAt: started.addingTimeInterval(-121), runStartedAt: started))
         #expect(!RefreshPlanner.cliRunRefreshedCache(cachedFetchedAt: nil, runStartedAt: started))
+    }
+
+    // MARK: - Resolving a finished run
+
+    private func resolve(
+        _ outcome: CLIRefreshOutcome, abandoned: Bool = false, cacheRead: CLICacheReadResult? = nil
+    ) -> CLIRunResolution {
+        RefreshPlanner.resolveCLIRun(outcome: outcome, abandoned: abandoned, cacheRead: cacheRead, runStartedAt: now)
+    }
+
+    @Test func onlyAFinishedSuccessNeedsTheCacheRead() {
+        #expect(RefreshPlanner.cliRunNeedsCacheRead(outcome: .success, abandoned: false))
+        #expect(!RefreshPlanner.cliRunNeedsCacheRead(outcome: .success, abandoned: true))
+        #expect(!RefreshPlanner.cliRunNeedsCacheRead(outcome: .notLoggedIn, abandoned: false))
+        #expect(!RefreshPlanner.cliRunNeedsCacheRead(outcome: .modelCallDetected, abandoned: false))
+    }
+
+    @Test func aSuccessCountsOnlyWhenTheCacheGotNewer() {
+        #expect(resolve(.success, cacheRead: .read(fetchedAt: now.addingTimeInterval(1))) == .apply(.success))
+        #expect(resolve(.success, cacheRead: .read(fetchedAt: now.addingTimeInterval(-60))) == .apply(.success))
+        #expect(
+            resolve(.success, cacheRead: .read(fetchedAt: now.addingTimeInterval(-3_600)))
+                == .apply(.failed(.cacheNotUpdated)))
+        #expect(resolve(.success, cacheRead: .read(fetchedAt: nil)) == .apply(.failed(.cacheNotUpdated)))
+    }
+
+    @Test func aSuccessWhoseCacheCannotBeReadIsAFailure() {
+        for error: CacheReadError in [.malformed, .unreadable, .fileTooLarge, .accountMismatch] {
+            #expect(resolve(.success, cacheRead: .failed(error)) == .apply(.failed(.cacheUnreadable)))
+        }
+        // No read result at all is no proof either.
+        #expect(resolve(.success, cacheRead: nil) == .apply(.failed(.cacheUnreadable)))
+    }
+
+    @Test func aConfigDirectoryChangedDuringTheReadAbandonsTheRun() {
+        #expect(resolve(.success, cacheRead: .configDirectoryChanged) == .abandon)
+    }
+
+    @Test func anAbandonedRunIsDroppedUnlessItCalledTheModel() {
+        for outcome: CLIRefreshOutcome in [.success, .notLoggedIn, .failed(.timedOut), .failed(.unparsable)] {
+            #expect(resolve(outcome, abandoned: true) == .abandon)
+        }
+        // The process finished and spent usage: the switch-off must happen even after sleep, a toggle or a change.
+        #expect(resolve(.modelCallDetected, abandoned: true) == .apply(.modelCallDetected))
+        #expect(resolve(.modelCallDetected) == .apply(.modelCallDetected))
+    }
+
+    @Test func otherOutcomesApplyAsTheyAre() {
+        for outcome: CLIRefreshOutcome in [.notLoggedIn, .failed(.timedOut), .failed(.unsupportedVersion)] {
+            #expect(resolve(outcome) == .apply(outcome))
+        }
+    }
+
+    // MARK: - Safety counter
+
+    private func safetyRun(_ outcomes: [CLIRefreshOutcome], start: Int = 0) -> [CLISafetyCheck] {
+        var count = start
+        return outcomes.map { outcome in
+            let check = RefreshPlanner.cliSafety(after: outcome, unverifiedRuns: count)
+            count = check.unverifiedRuns
+            return check
+        }
+    }
+
+    @Test func threeUnverifiableRunsInARowStopAutoRefresh() {
+        #expect(RefreshPlanner.unverifiedRunLimit == 3)
+        let checks = safetyRun([.failed(.unparsable), .failed(.unexpectedOutput), .failed(.unparsable)])
+        #expect(checks.map(\.stop) == [nil, nil, .unverifiableOutput])
+        #expect(checks.map(\.unverifiedRuns) == [1, 2, 0])
+    }
+
+    @Test func timeoutsAndFailedExitsNeitherCountNorReset() {
+        let checks = safetyRun([
+            .failed(.unparsable), .failed(.timedOut), .failed(.exitStatus), .failed(.outputTooLarge),
+            .failed(.unexpectedOutput), .failed(.launchFailed), .failed(.unparsable),
+        ])
+        #expect(checks.map(\.unverifiedRuns) == [1, 1, 1, 1, 2, 2, 0])
+        #expect(checks.last?.stop == .unverifiableOutput)
+    }
+
+    @Test func aVerifiedAnswerResetsTheCount() {
+        for verified: CLIRefreshOutcome in [
+            .success, .notLoggedIn, .failed(.reportedError), .failed(.cacheNotUpdated), .failed(.cacheUnreadable),
+        ] {
+            let checks = safetyRun([.failed(.unparsable), .failed(.unparsable), verified, .failed(.unparsable)])
+            #expect(checks.map(\.unverifiedRuns) == [1, 2, 0, 1])
+            #expect(checks.allSatisfy { $0.stop == nil })
+        }
+    }
+
+    @Test func aModelCallStopsAtOnce() {
+        let check = RefreshPlanner.cliSafety(after: .modelCallDetected, unverifiedRuns: 2)
+        #expect(check == CLISafetyCheck(unverifiedRuns: 0, stop: .modelCall))
     }
 }

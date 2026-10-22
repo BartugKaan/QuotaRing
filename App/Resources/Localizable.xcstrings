@@ -321,6 +321,16 @@
         }
       }
     },
+    "Auto-refresh turned itself off: QuotaRing couldn't confirm that Claude Code's last runs were free, because their answers were not in the expected format." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme kendini kapattı: Claude Code’un son çalıştırmalarının yanıtları beklenen biçimde olmadığı için QuotaRing bunların ücretsiz olduğunu doğrulayamadı."
+          }
+        }
+      }
+    },
     "Auto-refresh: Claude Code could not be started. QuotaRing tries again later." : {
       "localizations" : {
         "tr" : {
@@ -357,6 +367,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otomatik yenileme: Claude Code çalıştı ama kullanım değerleri değişmedi. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Auto-refresh: Claude Code ran, but QuotaRing couldn't read its usage numbers afterwards. QuotaRing tries again later." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik yenileme: Claude Code çalıştı ama QuotaRing ardından kullanım değerlerini okuyamadı. QuotaRing daha sonra yeniden dener."
           }
         }
       }

@@ -246,9 +246,12 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
   when the only Claude Code found is too old, and lets you choose another file or go back to looking. The chosen path
   and the consent are read from QuotaRing's saved preferences only; command-line launch arguments cannot set them.
 - **Safety net:** a result only counts when it says `type: result`, `is_error: false`, `num_turns: 0` and
-  `total_cost_usd: 0`. If a future Claude Code ever answers `/usage` with a model request instead (any turn, cost or
-  token count), auto-refresh **turns itself off** and tells you why. Not logged in, not found, a timeout or an error
-  are shown in Settings and the popover, and retried with back-off.
+  `total_cost_usd: 0`, and when Claude Code's cache can be read afterwards and is newer. If a future Claude Code ever
+  answers `/usage` with a model request instead (any turn, cost or token count), auto-refresh **turns itself off** and
+  tells you why, even if the run finished after your Mac went to sleep or you changed a setting. It also turns itself
+  off after 3 runs in a row that exited normally with an answer QuotaRing could not check, because it then cannot
+  confirm the runs are free. Not logged in, not found, a timeout or an error are shown in Settings and the popover, and
+  retried with back-off.
 
 While auto-refresh runs, the `claude` process talks to Anthropic as any Claude Code run does. QuotaRing itself still
 sends nothing.

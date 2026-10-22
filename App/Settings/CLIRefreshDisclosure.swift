@@ -173,9 +173,12 @@ enum CLIRefreshText {
             return "The Claude Code found is too old for auto-refresh — update it or choose another."
         case .notLoggedIn:
             return "Auto-refresh: Claude Code is not signed in. Run `claude` once in Terminal and sign in."
-        case .disabledForSafety:
+        case .disabledForSafety(.modelCall):
             return
                 "Auto-refresh turned itself off: Claude Code answered `/usage` with a model request, which would use your limits."
+        case .disabledForSafety(.unverifiableOutput):
+            return
+                "Auto-refresh turned itself off: QuotaRing couldn't confirm that Claude Code's last runs were free, because their answers were not in the expected format."
         case .failed(let reason):
             return failureMessage(reason)
         }
@@ -195,6 +198,8 @@ enum CLIRefreshText {
             "Auto-refresh: Claude Code's answer was not in the expected format. QuotaRing tries again later."
         case .cacheNotUpdated:
             "Auto-refresh: Claude Code ran, but its usage numbers did not change. QuotaRing tries again later."
+        case .cacheUnreadable:
+            "Auto-refresh: Claude Code ran, but QuotaRing couldn't read its usage numbers afterwards. QuotaRing tries again later."
         case .notFound, .notClaudeCode, .unsupportedVersion, .cancelled:
             "Auto-refresh could not run Claude Code. QuotaRing tries again later."
         }

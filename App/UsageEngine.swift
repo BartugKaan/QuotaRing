@@ -89,6 +89,8 @@ final class UsageEngine {
     private var lastCLISuccessAt: Date?
     private var cliCycleInterval: TimeInterval
     private var isCLIRunInFlight = false
+    /// Runs in a row that exited normally with output that could not be checked (see ``RefreshPlanner/cliSafety``).
+    private var cliUnverifiedRuns = 0
 
     // System state.
     private var isStarted = false
@@ -376,16 +378,24 @@ final class UsageEngine {
 
     // MARK: - Claude Code cache
 
+    /// What one look at the cache came to, for callers that need to know.
+    private enum CacheCheck {
+        case unchanged
+        case read(UsageSnapshot?)
+        case failed(CacheReadError)
+        /// Another config directory was chosen while the file was read; the result was dropped.
+        case directoryChanged
+    }
+
     private enum CacheOutcome: Sendable {
         case unchanged
         case read(FileFingerprint?, UsageSnapshot?)
         case failed(FileFingerprint?, CacheReadError)
     }
 
-    /// Reads Claude Code's cache (only when it changed, unless `force`). Returns whether the file was read and parsed
-    /// (with or without a usage entry).
+    /// Reads Claude Code's cache (only when it changed, unless `force`).
     @discardableResult
-    private func checkCache(force: Bool) async -> Bool {
+    private func checkCache(force: Bool) async -> CacheCheck {
         let reader = cacheReader
         let previous = cacheFingerprint
         let compare = hasReadCache && !force
@@ -394,14 +404,14 @@ final class UsageEngine {
         }.value
 
         // The config directory may have changed while the read was running.
-        guard reader.fileURL == cacheReader.fileURL else { return false }
+        guard reader.fileURL == cacheReader.fileURL else { return .directoryChanged }
 
-        var didRead = false
+        let check: CacheCheck
         switch outcome {
         case .unchanged:
-            break
+            check = .unchanged
         case .read(let fingerprint, let snapshot):
-            didRead = true
+            check = .read(snapshot)
             cacheFingerprint = fingerprint
             hasReadCache = true
             cacheHealth.recordSuccess()
@@ -409,6 +419,7 @@ final class UsageEngine {
                 reselect()
             }
         case .failed(let fingerprint, .accountMismatch):
+            check = .failed(.accountMismatch)
             cacheFingerprint = fingerprint
             hasReadCache = true
             cacheHealth.recordFailure(.accountMismatch, at: Date())
@@ -426,6 +437,7 @@ final class UsageEngine {
                 restartLiveLoop()
             }
         case .failed(let fingerprint, let error):
+            check = .failed(error)
             // Torn reads are expected while Claude Code rewrites the file: keep the previous snapshot and try again
             // when the file changes next. One that lasts is shown (see `CacheReadHealth`).
             cacheFingerprint = fingerprint
@@ -434,7 +446,7 @@ final class UsageEngine {
             cacheLog.notice("Cache read failed (\(error.logName, privacy: .public)); keeping the previous snapshot")
         }
         reportCacheProblem()
-        return didRead
+        return check
     }
 
     private func reportCacheProblem() {
@@ -590,7 +602,7 @@ final class UsageEngine {
         if settings.isCLIRefreshActive {
             return .ok(lastRun: lastCLISuccessAt)
         }
-        return settings.cliRefreshDisabledForSafety ? .disabledForSafety : .off
+        return settings.cliRefreshSafetyStop.map { .disabledForSafety($0) } ?? .off
     }
 
     private var cliSettings: CLIRefresher.Settings {
@@ -625,10 +637,20 @@ final class UsageEngine {
         let requestPaths = paths
         let request = cliSettings
         let report = await cliRefresher.run(request)
+        /// Whether the run no longer applies: cancelled, turned off, asleep, or run with settings no longer chosen.
+        func isAbandoned() -> Bool {
+            Task.isCancelled || report.outcome == .failed(.cancelled) || !settings.isCLIRefreshActive || isAsleep
+                || requestPaths != paths || request != cliSettings
+        }
 
-        guard !Task.isCancelled, report.outcome != .failed(.cancelled), settings.isCLIRefreshActive, !isAsleep,
-            requestPaths == paths, request == cliSettings
-        else {
+        var cacheRead: CLICacheReadResult?
+        if RefreshPlanner.cliRunNeedsCacheRead(outcome: report.outcome, abandoned: isAbandoned()) {
+            // Do not wait for the cache loop's next look: the file was just rewritten.
+            cacheRead = await readCacheAfterCLIRun()
+        }
+        let resolution = RefreshPlanner.resolveCLIRun(
+            outcome: report.outcome, abandoned: isAbandoned(), cacheRead: cacheRead, runStartedAt: started)
+        guard case .apply(let outcome) = resolution else {
             // Abandoned: the result says nothing about Claude Code.
             if cliStatus == .running {
                 setCLIStatus(settings.isCLIRefreshActive ? statusBefore : idleCLIStatus)
@@ -636,23 +658,28 @@ final class UsageEngine {
             return nil
         }
         onEvent(.cliBinary(report.binary))
-
-        var outcome = report.outcome
-        if outcome == .success {
-            // Do not wait for the cache loop's next look: the file was just rewritten.
-            let didRead = await checkCache(force: true)
-            if didRead,
-                !RefreshPlanner.cliRunRefreshedCache(
-                    cachedFetchedAt: candidates.cached?.fetchedAt, runStartedAt: started)
-            {
-                outcome = .failed(.cacheNotUpdated)
-            }
-        }
         applyCLI(outcome, ranAt: started, binary: report.binary)
         return outcome
     }
 
+    /// Reads the cache at once after a run that reported success, for ``RefreshPlanner/resolveCLIRun``.
+    private func readCacheAfterCLIRun() async -> CLICacheReadResult {
+        switch await checkCache(force: true) {
+        case .read(let snapshot):
+            return .read(fetchedAt: snapshot?.fetchedAt)
+        case .unchanged:
+            // Not expected from a forced read; the entry held is then the latest.
+            return .read(fetchedAt: candidates.cached?.fetchedAt)
+        case .failed(let error):
+            return .failed(error)
+        case .directoryChanged:
+            return .configDirectoryChanged
+        }
+    }
+
     private func applyCLI(_ outcome: CLIRefreshOutcome, ranAt: Date, binary: CLIBinaryState) {
+        let safety = RefreshPlanner.cliSafety(after: outcome, unverifiedRuns: cliUnverifiedRuns)
+        cliUnverifiedRuns = safety.unverifiedRuns
         let policy = PollingPolicy(baseInterval: settings.refreshInterval)
         let retry = RefreshPlanner.cliRetry(
             after: outcome, consecutiveFailures: cliConsecutiveFailures, policy: policy, random: .random(in: 0...1))
@@ -662,9 +689,11 @@ final class UsageEngine {
         if outcome == .success {
             lastCLISuccessAt = ranAt
         }
-        if outcome == .modelCallDetected {
-            autoRefreshLog.error("Claude Code answered /usage with a model request; auto-refresh turned itself off")
-            settings.disableCLIRefreshForSafety()
+        if let stop = safety.stop {
+            autoRefreshLog.error("Auto-refresh turned itself off for safety (\(stop.rawValue, privacy: .public))")
+            settings.stopCLIRefreshForSafety(stop)
+            setCLIStatus(.disabledForSafety(stop))
+            return
         }
         setCLIStatus(RefreshPlanner.cliStatus(after: outcome, ranAt: ranAt, binary: binary))
     }

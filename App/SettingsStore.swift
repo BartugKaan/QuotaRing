@@ -64,20 +64,33 @@ final class SettingsStore {
 
     /// The user's consent to refresh through Claude Code ("auto-refresh"): running `claude -p "/usage" …` in the
     /// background (see ``CLIRefreshCommand``). Off unless chosen in onboarding or Settings. Read only from the app's
-    /// saved preferences, never from launch arguments. Turning it on clears ``cliRefreshDisabledForSafety``.
+    /// saved preferences, never from launch arguments. Turning it on clears ``cliRefreshSafetyStop``.
     var cliRefreshEnabled: Bool {
         didSet {
             defaults.set(cliRefreshEnabled, forKey: Key.cliRefreshEnabled)
-            if cliRefreshEnabled, cliRefreshDisabledForSafety {
-                cliRefreshDisabledForSafety = false
+            if cliRefreshEnabled, cliRefreshSafetyStop != nil {
+                cliRefreshSafetyStop = nil
             }
         }
     }
 
-    /// Whether auto-refresh turned itself off because Claude Code answered `/usage` with a model request, so the app
-    /// can say why it is off, also after a relaunch.
-    private(set) var cliRefreshDisabledForSafety: Bool {
-        didSet { defaults.set(cliRefreshDisabledForSafety, forKey: Key.cliRefreshDisabledForSafety) }
+    /// Why auto-refresh turned itself off (see ``CLISafetyStop``), so the app can say so, also after a relaunch; `nil`
+    /// when it did not.
+    private(set) var cliRefreshSafetyStop: CLISafetyStop? {
+        get { CLISafetyStop(rawValue: cliSafetyStopValue) }
+        set { cliSafetyStopValue = newValue?.rawValue ?? "" }
+    }
+
+    /// Backing store of ``cliRefreshSafetyStop``; empty for none. Not optional, for the same reason as
+    /// `customConfigPath`.
+    private var cliSafetyStopValue: String {
+        didSet {
+            if cliSafetyStopValue.isEmpty {
+                defaults.removeObject(forKey: Key.cliRefreshSafetyStop)
+            } else {
+                defaults.set(cliSafetyStopValue, forKey: Key.cliRefreshSafetyStop)
+            }
+        }
     }
 
     /// The `claude` tool chosen in Settings, or `nil` to look in the standard places. Only a file that passes
@@ -135,10 +148,10 @@ final class SettingsStore {
         cliRefreshEnabled && hasCompletedOnboarding
     }
 
-    /// Turns auto-refresh off after Claude Code answered `/usage` with a model request, and remembers why.
-    func disableCLIRefreshForSafety() {
+    /// Turns auto-refresh off for `reason` and remembers it until the user turns auto-refresh on again.
+    func stopCLIRefreshForSafety(_ reason: CLISafetyStop) {
         cliRefreshEnabled = false
-        cliRefreshDisabledForSafety = true
+        cliRefreshSafetyStop = reason
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -171,7 +184,14 @@ final class SettingsStore {
         hasCompletedOnboarding = saved[Key.hasCompletedOnboarding] as? Bool ?? false
         // Running a program is consent too, and which program runs must not come from the command line either.
         cliRefreshEnabled = saved[Key.cliRefreshEnabled] as? Bool ?? false
-        cliRefreshDisabledForSafety = saved[Key.cliRefreshDisabledForSafety] as? Bool ?? false
+        if let stop = (saved[Key.cliRefreshSafetyStop] as? String).flatMap(CLISafetyStop.init(rawValue:)) {
+            cliSafetyStopValue = stop.rawValue
+        } else if saved[Key.legacyCLIRefreshDisabledForSafety] as? Bool == true {
+            // Development builds before the reason was kept only knew one: a model request.
+            cliSafetyStopValue = CLISafetyStop.modelCall.rawValue
+        } else {
+            cliSafetyStopValue = ""
+        }
         if let path = saved[Key.customCLIPath] as? String, path.hasPrefix("/") {
             customCLIPathValue = path
         } else {
@@ -198,7 +218,8 @@ final class SettingsStore {
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let customConfigDirectory = "customConfigDirectory"
         static let cliRefreshEnabled = "cliRefreshEnabled"
-        static let cliRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
+        static let cliRefreshSafetyStop = "cliRefreshSafetyStop"
+        static let legacyCLIRefreshDisabledForSafety = "cliRefreshDisabledForSafety"
         static let customCLIPath = "customCLIPath"
     }
 }

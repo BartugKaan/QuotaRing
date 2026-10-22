@@ -112,7 +112,7 @@ extension CLIRefreshStatus {
         case .unsupportedVersion: "unsupportedVersion"
         case .notLoggedIn: "notLoggedIn"
         case .failed(let reason): "failed(\(reason.rawValue))"
-        case .disabledForSafety: "disabledForSafety"
+        case .disabledForSafety(let reason): "disabledForSafety(\(reason.rawValue))"
         }
     }
 }

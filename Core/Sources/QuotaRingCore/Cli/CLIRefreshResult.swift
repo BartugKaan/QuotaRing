@@ -26,6 +26,9 @@ public enum CLIRefreshFailure: String, Error, Equatable, Sendable, CaseIterable 
     case unexpectedOutput
     /// It reported success, but Claude Code's cache did not get any newer.
     case cacheNotUpdated
+    /// It reported success, but Claude Code's cache could not be read afterwards (malformed, unreadable, too large, or
+    /// another account's), so nothing shows that the run helped.
+    case cacheUnreadable
     /// The run was abandoned (QuotaRing stopped it because the Mac went to sleep or the feature was turned off). Never
     /// shown: the result of an abandoned run is dropped.
     case cancelled

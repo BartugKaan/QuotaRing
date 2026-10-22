@@ -141,9 +141,11 @@ UsageEngine (auto-refresh loop, MainActor)
                  stdin /dev/null, stderr discarded, 30 s limit, 256 KB output limit, SIGTERM then SIGKILL to the
                  process group
               4. CLIRefreshResult.parse → success | modelCallDetected | notLoggedIn | failed(reason)
-  └─ on success: read the cache now; if its entry did not get newer, count the run as failed (cacheNotUpdated)
+  └─ RefreshPlanner.resolveCLIRun: on success read the cache now; an entry that did not get newer is cacheNotUpdated,
+     a cache that cannot be read is cacheUnreadable; an abandoned run is dropped unless it detected a model call
   └─ RefreshPlanner.cliRetry (back-off as Live mode) and cliStatus → AppModel.cliStatus → Settings and popover
-  └─ modelCallDetected: SettingsStore.disableCLIRefreshForSafety() (feature off, reason remembered)
+  └─ RefreshPlanner.cliSafety: modelCallDetected, or 3 exit-0 runs in a row with unverifiable output →
+     SettingsStore.stopCLIRefreshForSafety(reason) (feature off, reason remembered until turned on again)
 ```
 
 - **Consent.** `cliRefreshEnabled` and `customCLIPath` are read from the app's saved preferences only (like Live mode's

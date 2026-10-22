@@ -1,5 +1,44 @@
 import Foundation
 
+/// Why auto-refresh turned itself off. Remembered until the user turns it on again.
+public enum CLISafetyStop: String, Equatable, Sendable, CaseIterable {
+    /// A run's result reported model turns, cost or tokens: `/usage` went to the model and spent usage.
+    case modelCall
+    /// ``RefreshPlanner/unverifiedRunLimit`` runs in a row exited normally with output QuotaRing could not check, so
+    /// it could not confirm the runs were free.
+    case unverifiableOutput
+}
+
+/// What QuotaRing found when it read Claude Code's cache right after a run that reported success.
+public enum CLICacheReadResult: Equatable, Sendable {
+    /// The file was read; `fetchedAt` is when its usage entry was fetched, `nil` when it has none.
+    case read(fetchedAt: Date?)
+    /// The file could not be used.
+    case failed(CacheReadError)
+    /// Another Claude config directory was chosen while it was read: the run no longer applies.
+    case configDirectoryChanged
+}
+
+/// What to do with a finished run.
+public enum CLIRunResolution: Equatable, Sendable {
+    /// Record this outcome: back-off, status and, if it calls for it, the safety switch-off.
+    case apply(CLIRefreshOutcome)
+    /// Drop the run: it says nothing about Claude Code any more.
+    case abandon
+}
+
+/// The safety switch-off after a run, and the updated count of unverifiable runs in a row.
+public struct CLISafetyCheck: Equatable, Sendable {
+    public var unverifiedRuns: Int
+    /// Set when auto-refresh must turn itself off.
+    public var stop: CLISafetyStop?
+
+    public init(unverifiedRuns: Int, stop: CLISafetyStop?) {
+        self.unverifiedRuns = unverifiedRuns
+        self.stop = stop
+    }
+}
+
 /// What the UI shows about refreshing through Claude Code ("auto-refresh").
 public enum CLIRefreshStatus: Equatable, Sendable {
     /// Turned off (the default), or the app runs in demo mode.
@@ -16,8 +55,8 @@ public enum CLIRefreshStatus: Equatable, Sendable {
     case notLoggedIn
     /// The last run failed for this reason; it is retried with back-off.
     case failed(CLIRefreshFailure)
-    /// Claude Code answered `/usage` with a model request, so the feature turned itself off.
-    case disabledForSafety
+    /// The feature turned itself off for this reason (see ``CLISafetyStop``).
+    case disabledForSafety(CLISafetyStop)
 
     /// Whether the user should be told something is wrong.
     public var needsAttention: Bool {
@@ -142,7 +181,7 @@ extension RefreshPlanner {
         case .success:
             return .ok(lastRun: ranAt)
         case .modelCallDetected:
-            return .disabledForSafety
+            return .disabledForSafety(.modelCall)
         case .notLoggedIn:
             return .notLoggedIn
         case .failed(.notFound), .failed(.notClaudeCode):
@@ -155,6 +194,75 @@ extension RefreshPlanner {
             return .unsupportedVersion(path: binary?.location.executable?.path.path, version: version)
         case .failed(let reason):
             return .failed(reason)
+        }
+    }
+
+    /// Whether a run must be followed by a forced read of Claude Code's cache before it can be resolved: only a
+    /// success that was not abandoned.
+    public static func cliRunNeedsCacheRead(outcome: CLIRefreshOutcome, abandoned: Bool) -> Bool {
+        outcome == .success && !abandoned
+    }
+
+    /// What to do with a finished run.
+    ///
+    /// - A detected model request is always applied, even when the run was abandoned (the Mac went to sleep, the
+    ///   feature was turned off, the settings changed): the process finished and spent usage, so the feature must turn
+    ///   itself off.
+    /// - Anything else from an abandoned run is dropped.
+    /// - A success counts only when the cache read afterwards shows a fresh entry (see
+    ///   ``cliRunRefreshedCache(cachedFetchedAt:runStartedAt:)``). An entry that did not get newer is
+    ///   ``CLIRefreshFailure/cacheNotUpdated``; a cache that could not be read at all (malformed, unreadable, too large,
+    ///   another account's) or no read result is ``CLIRefreshFailure/cacheUnreadable``. A config directory changed
+    ///   during the read abandons the run.
+    public static func resolveCLIRun(
+        outcome: CLIRefreshOutcome,
+        abandoned: Bool,
+        cacheRead: CLICacheReadResult?,
+        runStartedAt: Date
+    ) -> CLIRunResolution {
+        if outcome == .modelCallDetected {
+            return .apply(.modelCallDetected)
+        }
+        guard !abandoned else { return .abandon }
+        guard outcome == .success else { return .apply(outcome) }
+        switch cacheRead {
+        case .read(let fetchedAt):
+            return cliRunRefreshedCache(cachedFetchedAt: fetchedAt, runStartedAt: runStartedAt)
+                ? .apply(.success) : .apply(.failed(.cacheNotUpdated))
+        case .failed, nil:
+            return .apply(.failed(.cacheUnreadable))
+        case .configDirectoryChanged:
+            return .abandon
+        }
+    }
+
+    /// How many runs in a row may exit normally with output that cannot be checked before auto-refresh turns itself
+    /// off (``CLISafetyStop/unverifiableOutput``).
+    public static let unverifiedRunLimit = 3
+
+    /// The safety switch-off after `outcome`.
+    ///
+    /// - A detected model request stops at once.
+    /// - A run that exited with status 0 but whose output could not be verified (``CLIRefreshFailure/unparsable``,
+    ///   ``CLIRefreshFailure/unexpectedOutput``) counts; the ``unverifiedRunLimit``-th in a row stops.
+    /// - An answer whose shape was checked (success, not logged in, a reported error, a success whose cache did not
+    ///   help) resets the count.
+    /// - Runs that did not exit normally (timeouts, failed exits, launch failures, too much output) and runs that never
+    ///   happened (nothing found, too old) neither count nor reset it.
+    public static func cliSafety(after outcome: CLIRefreshOutcome, unverifiedRuns: Int) -> CLISafetyCheck {
+        let count = max(0, unverifiedRuns)
+        switch outcome {
+        case .modelCallDetected:
+            return CLISafetyCheck(unverifiedRuns: 0, stop: .modelCall)
+        case .failed(.unparsable), .failed(.unexpectedOutput):
+            let next = count + 1
+            return next >= unverifiedRunLimit
+                ? CLISafetyCheck(unverifiedRuns: 0, stop: .unverifiableOutput)
+                : CLISafetyCheck(unverifiedRuns: next, stop: nil)
+        case .success, .notLoggedIn, .failed(.reportedError), .failed(.cacheNotUpdated), .failed(.cacheUnreadable):
+            return CLISafetyCheck(unverifiedRuns: 0, stop: nil)
+        case .failed:
+            return CLISafetyCheck(unverifiedRuns: count, stop: nil)
         }
     }
 

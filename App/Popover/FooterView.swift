@@ -78,7 +78,7 @@ struct PopoverNotice: Identifiable {
                     PopoverNotice(
                         id: "stale", style: .info,
                         message: "Data is out of date. Auto-refresh updates it the next time it can run Claude Code."))
-            } else if cliStatus == .disabledForSafety {
+            } else if case .disabledForSafety = cliStatus {
                 notices.append(
                     PopoverNotice(
                         id: "stale", style: .info,
@@ -348,7 +348,8 @@ private struct FooterIconButtonStyle: ButtonStyle {
                     liveStatus: .keychainDenied, cliStatus: .notLoggedIn, isCLIRefreshActive: true,
                     cacheProblem: .malformed, isStale: false, now: .now)
                 + PopoverNotice.notices(
-                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)), cliStatus: .disabledForSafety,
+                    liveStatus: .rateLimited(until: .now.addingTimeInterval(240)),
+                    cliStatus: .disabledForSafety(.modelCall),
                     isCLIRefreshActive: false, cacheProblem: nil, isStale: false, now: .now)
                 + PopoverNotice.notices(
                     liveStatus: .off, cliStatus: .off, isCLIRefreshActive: false, cacheProblem: nil, isStale: true,

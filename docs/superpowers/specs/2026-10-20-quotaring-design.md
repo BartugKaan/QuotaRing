@@ -461,7 +461,12 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
 - Safety net: the JSON result must be `type: result`, `is_error: false`,
   `num_turns: 0`, `total_cost_usd: 0`. If a future Claude Code sends `/usage`
   to the model instead (turns or cost > 0), the feature turns itself off and
-  says why. Not logged in / not found / timeout / error → a clear status and
-  back-off.
+  says why, also when the run was abandoned after the process finished (R53).
+  Three exit-0 runs in a row whose output cannot be verified (unparsable or
+  unexpected shape) also turn it off ("couldn't confirm the runs are free");
+  timeouts and non-zero exits do not count. A success whose forced cache
+  re-read fails (malformed, unreadable, too large, another account) counts as
+  failed (R51). Not logged in / not found / timeout / error → a clear status
+  and back-off.
 - Supersedes the §3 non-goal "Launching the `claude` CLI": the side effects
   that ruled it out do not occur with this invocation.
