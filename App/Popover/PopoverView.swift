@@ -323,16 +323,17 @@ struct NoDataSection: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
 
-            if needsOnboarding {
+            switch offer {
+            case .welcomeWindow:
                 // Settings' switches wait for the welcome window, so pointing there would lead to switches that are off.
                 Button("Show Welcome Window", action: showWelcomeWindow)
                     .controlSize(.large)
                     .help("Bring the welcome window to the front")
-            } else if !isLiveModeActive && !isCLIRefreshActive {
+            case .turnOn(let includingAutoRefresh):
                 VStack(spacing: 8) {
                     // After a safety switch-off the notice above explains it and links to Settings; turning it back on
                     // is not suggested here.
-                    if !cliStatus.isSafetyStop {
+                    if includingAutoRefresh {
                         Button("Turn on auto-refresh…", action: openDataSettings)
                             .controlSize(.large)
                             .help("Open Settings, where auto-refresh is explained and can be turned on")
@@ -341,9 +342,11 @@ struct NoDataSection: View {
                         .buttonStyle(.link)
                         .help("Open Settings, where Live mode is explained and can be turned on")
                 }
-            } else if !needsAttention {
+            case .waiting:
                 ProgressView()
                     .controlSize(.small)
+            case .nothing:
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity)
@@ -351,13 +354,37 @@ struct NoDataSection: View {
         .padding(.vertical, 24)
     }
 
+    /// What the section offers under its text.
+    enum Offer: Equatable {
+        /// The welcome window is not finished: bring it to the front (and nothing else, see ``needsOnboarding``).
+        case welcomeWindow
+        /// Neither way of getting numbers is on: lead to Settings. `includingAutoRefresh` is `false` after a safety
+        /// switch-off, which the notice above explains.
+        case turnOn(includingAutoRefresh: Bool)
+        /// Live mode or auto-refresh is on and working; the first reading is on its way.
+        case waiting
+        /// Something is on but cannot deliver; the text says what.
+        case nothing
+    }
+
+    /// Decided here rather than in `body` so that it can be tested without rendering the view.
+    var offer: Offer {
+        if needsOnboarding {
+            return .welcomeWindow
+        }
+        if !isLiveModeActive && !isCLIRefreshActive {
+            return .turnOn(includingAutoRefresh: !cliStatus.isSafetyStop)
+        }
+        return needsAttention ? .nothing : .waiting
+    }
+
     /// Whether this section is about auto-refresh: it is on and Live mode is not.
-    private var showsAutoRefresh: Bool {
+    var showsAutoRefresh: Bool {
         isCLIRefreshActive && !isLiveModeActive
     }
 
     /// Whether Live mode (or, without it, auto-refresh) is on but cannot deliver, so waiting is not the right message.
-    private var needsAttention: Bool {
+    var needsAttention: Bool {
         if showsAutoRefresh {
             return cliStatus.needsAttention
         }
