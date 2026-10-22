@@ -341,7 +341,8 @@ out-of-date notice offers "Turn on auto-refresh…", which opens Settings → Da
 Turn on auto-refresh (in the first-run window, or Settings → Data → "Refresh with Claude Code"). QuotaRing then runs
 Claude Code's own `/usage` in the background whenever the numbers are older than your refresh interval. It uses the
 Claude Code build the desktop app keeps for itself (shown in Settings as "Claude app (version)"), or a `claude` you
-installed. Claude Code must be signed in once: in the Claude app's Code tab, or by running `claude` in Terminal.
+installed. Claude Code must be signed in on this Mac: run `claude` in Terminal once and sign in (install Claude Code first if
+you don't have it).
 Other options: run `claude` or `/usage` yourself now and then, or use Live mode, which stays fresh for about 8 hours
 after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
@@ -349,8 +350,8 @@ after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numb
 QuotaRing looks for `claude` in the Claude desktop app's own copy and in the usual install locations (see
 [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage)). If yours is elsewhere, find it with `which claude` in
 Terminal and choose that file in Settings → Data. "Too old" means the Claude Code found does not know `--safe-mode` and
-`--no-session-persistence`; update it, or choose a newer one. If it says Claude Code is not signed in, sign in to
-Claude Code once: in the Claude app's Code tab, or by running `claude` in Terminal.
+`--no-session-persistence`; update it, or choose a newer one. If it says Claude Code is not signed in, run `claude` in
+Terminal once and sign in (install Claude Code first if you don't have it).
 
 **Auto-refresh turned itself off "for safety". What happened?**
 A run of `/usage` came back with a model turn, a cost or a token count, which means that version of Claude Code sent

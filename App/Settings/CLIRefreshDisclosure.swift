@@ -185,7 +185,7 @@ enum CLIRefreshText {
             return "The Claude Code found is too old for auto-refresh — update it or choose another."
         case .notLoggedIn:
             return
-                "Auto-refresh: Claude Code is not signed in. Sign in to Claude Code once (in the Claude app's Code tab, or with `claude` in Terminal)."
+                "Auto-refresh: Claude Code is not signed in. Run `claude` in Terminal once and sign in (install Claude Code first if you don't have it)."
         case .disabledForSafety(.modelCall):
             return
                 "Auto-refresh turned itself off: Claude Code answered `/usage` with a model request, which would use your limits."
