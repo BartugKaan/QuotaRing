@@ -232,7 +232,8 @@ import Testing
         for _ in 0..<600 where !FileManager.default.fileExists(atPath: exited.path) {
             try await Task.sleep(for: .milliseconds(50))
         }
-        try await Task.sleep(for: .seconds(1))
+        // Time for Process to report the exit even on a busy CI machine; the cancellation must land after it.
+        try await Task.sleep(for: .seconds(3))
         let cancelled = Date()
         task.cancel()
         let output = await task.value

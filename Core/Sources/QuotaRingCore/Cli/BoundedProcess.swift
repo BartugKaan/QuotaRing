@@ -231,8 +231,13 @@ public enum BoundedProcess {
                     kill(pid, signal)
                 }
             } else if exit != nil, !reachedEndOfOutput {
-                // The program exited, but its output is still open: a helper in its process group is alive, so the
-                // group (named after the program) still exists and cannot belong to anything else.
+                // The program exited, but something still holds its output open: normally a helper it started, which
+                // is still in its process group (numbered after the program's pid), so the group still exists, and
+                // POSIX does not reuse a pid while a group with that number exists. A helper could also have left the
+                // group (setsid) and hold the pipe from elsewhere; then the group may be empty, `kill` fails with ESRCH,
+                // and that helper is not reached. Only then could the number in theory belong to a new group: it would
+                // need the pid to be recycled and become a group leader within the few seconds this run still lasts,
+                // and a process of this user only, since nothing else can be signalled. That risk is negligible.
                 kill(-pid, signal)
             }
         }
@@ -289,7 +294,8 @@ public enum BoundedProcess {
                 lock.unlock()
                 return
             }
-            // Helpers that still hold the output open when the run ends do not outlive it.
+            // Helpers that still hold the output open when the run ends do not outlive it. The group is signalled under the
+            // same reasoning as in `signal(_:)`: it normally still exists because they are in it.
             if exit != nil, !reachedEndOfOutput, isLaunched {
                 let pid = process.processIdentifier
                 if pid > 0 { kill(-pid, SIGKILL) }
