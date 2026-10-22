@@ -141,6 +141,15 @@ public enum RefreshPlanner {
         }
     }
 
+    /// Whether the loops that ask Anthropic (Live mode) or run Claude Code (auto-refresh) may run at all: the Mac is
+    /// awake and online and somebody can look at the numbers (see ``UserPresence``). Not about consent or what is due;
+    /// the loops decide that. The local cache check is not held back by this, it costs a `stat`.
+    ///
+    /// When this turns `true` again, the loops start with an immediate check of what is due, the same as after a wake.
+    public static func automaticRequestsMayRun(isAsleep: Bool, isOnline: Bool, presence: UserPresence) -> Bool {
+        !isAsleep && isOnline && !presence.isAway
+    }
+
     /// Seconds until an automatic Live request could next be due: when the freshest snapshot reaches
     /// `refreshInterval` of age, or when the back-off ends, whichever is later. Clamped with ``clampDelay(_:)``.
     ///
