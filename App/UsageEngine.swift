@@ -94,6 +94,7 @@ final class UsageEngine {
 
     // System state.
     private var isStarted = false
+    private var isShutDown = false
     private var isAsleep = false
     private var isOnline = true
     private var isPopoverOpen = false
@@ -167,6 +168,7 @@ final class UsageEngine {
     func shutDown() {
         guard isStarted else { return }
         engineLog.info("Shutting down")
+        isShutDown = true
         pauseAll()
         cooldownTask?.cancel()
         cooldownTask = nil
@@ -202,10 +204,12 @@ final class UsageEngine {
             refreshedThroughCLI = outcome == .success
         }
 
+        var liftedLiveSuspension = false
         if userInitiated, settings.isLiveModeActive {
             if isLiveSuspended {
                 // Refresh is how the user says "ask again" after refusing Keychain access.
                 isLiveSuspended = false
+                liftedLiveSuspension = true
                 liveLog.info("Keychain refusal lifted by a manual refresh")
             }
             let manualAllowedAt = manualLiveAllowedAt()
@@ -228,6 +232,12 @@ final class UsageEngine {
                     manualLiveTask = nil
                 }
             }
+        }
+        // While suspended, the Live loop sleeps for the longest wait. Wake it now that automatic requests are allowed
+        // again, but only after the manual request: it has either settled the matter or suspended them again, and the
+        // loop does not start a second request next to it.
+        if liftedLiveSuspension, !isShutDown {
+            restartLiveLoop()
         }
         if isPopoverOpen {
             await scanTranscripts()
@@ -330,11 +340,14 @@ final class UsageEngine {
                 await performLiveFetch()
             }
             guard !Task.isCancelled else { return }
+            // After a Keychain refusal nothing can become due by itself: sleep long instead of waking every second. The
+            // loop is restarted where the suspension is lifted.
             let delay = RefreshPlanner.nextCheckDelay(
                 freshest: selected,
                 now: Date(),
                 refreshInterval: cycleInterval,
-                nextAllowedLiveAt: liveNotBefore
+                nextAllowedLiveAt: liveNotBefore,
+                isSuspended: isLiveSuspended
             )
             try? await Task.sleep(for: .seconds(delay))
         }
