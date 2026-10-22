@@ -50,6 +50,9 @@ final class AppModel {
 
     /// Gets threshold events after each new snapshot.
     @ObservationIgnored var notifier: (any UsageNotifier)?
+    /// Opens the first-run window, or brings it to the front; does nothing once onboarding is finished. Set by the app
+    /// delegate.
+    @ObservationIgnored var showWelcomeWindow: (() -> Void)?
 
     /// Whether the Refresh button should be enabled.
     var canRefreshNow: Bool {

@@ -2415,6 +2415,56 @@
           }
         }
       }
+    },
+    "Show Welcome Window" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Karşılama Penceresini Göster"
+          }
+        }
+      }
+    },
+    "Bring the welcome window to the front; the switches turn on once you have finished it there" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Karşılama penceresini öne getirir; oradaki adımı tamamladığınızda bu anahtarlar açılabilir"
+          }
+        }
+      }
+    },
+    "Bring the welcome window to the front" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Karşılama penceresini öne getirir"
+          }
+        }
+      }
+    },
+    "Finish setting up QuotaRing" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing kurulumunu tamamlayın"
+          }
+        }
+      }
+    },
+    "Choose in the welcome window how QuotaRing keeps its numbers fresh." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QuotaRing’in sayıları nasıl güncel tutacağını karşılama penceresinde seçin."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

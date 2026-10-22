@@ -99,8 +99,10 @@ struct PopoverView: View {
                 liveStatus: liveStatus,
                 isCLIRefreshActive: isCLIRefreshActive,
                 cliStatus: cliStatus,
+                needsOnboarding: !model.isDemo && !model.settings.hasCompletedOnboarding,
                 now: now,
-                openDataSettings: showDataSettings
+                openDataSettings: showDataSettings,
+                showWelcomeWindow: { model.showWelcomeWindow?() }
             )
             // Local transcripts need no consent, so their activity can be shown even before any limit is known.
             if model.activity.values.contains(where: { $0.total.total > 0 }) {
@@ -296,9 +298,13 @@ struct NoDataSection: View {
     let isCLIRefreshActive: Bool
     /// Auto-refresh's status; `.off` when it is not in use.
     let cliStatus: CLIRefreshStatus
+    /// The welcome window has not been finished yet, so Live mode and auto-refresh cannot be turned on in Settings.
+    var needsOnboarding = false
     let now: Date
     /// Opens Settings on the Data tab; nothing is switched on from here.
     let openDataSettings: () -> Void
+    /// Brings the welcome window to the front.
+    var showWelcomeWindow: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 12) {
@@ -317,7 +323,12 @@ struct NoDataSection: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
 
-            if !isLiveModeActive && !isCLIRefreshActive {
+            if needsOnboarding {
+                // Settings' switches wait for the welcome window, so pointing there would lead to switches that are off.
+                Button("Show Welcome Window", action: showWelcomeWindow)
+                    .controlSize(.large)
+                    .help("Bring the welcome window to the front")
+            } else if !isLiveModeActive && !isCLIRefreshActive {
                 VStack(spacing: 8) {
                     // After a safety switch-off the notice above explains it and links to Settings; turning it back on
                     // is not suggested here.
@@ -359,7 +370,9 @@ struct NoDataSection: View {
 
     @ViewBuilder
     private var title: some View {
-        if showsAutoRefresh {
+        if needsOnboarding {
+            Text("Finish setting up QuotaRing")
+        } else if showsAutoRefresh {
             Text("No usage data yet")
         } else if isLiveModeActive {
             switch liveStatus {
@@ -383,7 +396,9 @@ struct NoDataSection: View {
 
     @ViewBuilder
     private var messages: some View {
-        if showsAutoRefresh {
+        if needsOnboarding {
+            Text("Choose in the welcome window how QuotaRing keeps its numbers fresh.")
+        } else if showsAutoRefresh {
             if let message = cliStatus.needsAttention ? CLIRefreshText.statusMessage(cliStatus, now: now) : nil {
                 Text(message)
             } else {
@@ -455,6 +470,14 @@ struct NoDataSection: View {
 
     #Preview("No data") {
         PopoverView(model: PopoverPreviewSupport.emptyModel())
+    }
+
+    #Preview("No data, welcome window not finished") {
+        NoDataSection(
+            isLiveModeActive: false, liveStatus: .off, isCLIRefreshActive: false, cliStatus: .off,
+            needsOnboarding: true, now: Date(), openDataSettings: {}
+        )
+        .frame(width: PopoverMetrics.width)
     }
 
     #Preview("No data, Live mode states") {
