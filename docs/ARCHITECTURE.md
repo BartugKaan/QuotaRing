@@ -236,7 +236,7 @@ over time:
 | Live interval | 300 s by default; options 180, 300, 600, 900 s; +/-10% jitter |
 | Back-off | Doubles per consecutive failure, capped at 1800 s; `Retry-After` (seconds or HTTP date) is honored but never shortens the base interval |
 | Status codes | 200 decode; 401/403 "needs re-login" state; 429 rate-limited back-off; 5xx and network errors back off and keep stale data |
-| Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing. Meanwhile the Live loop sleeps for the longest wait (6 h, `RefreshPlanner.nextCheckDelay` with `isSuspended`) instead of checking every second, and is restarted when the suspension is lifted |
+| Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing. Meanwhile the Live loop sleeps for the longest wait (6 h, `RefreshPlanner.nextCheckDelay` with `isSuspended`) instead of checking every second, and is restarted when the suspension is lifted. A refusal counts also when it arrives after the request was cancelled (for example the screen locked while the prompt stayed open and the user clicked Deny on return); a credential granted after the cancellation sends nothing |
 | Auto-refresh (opt-in) | Runs Claude Code's `/usage` when the freshest snapshot is older than the refresh interval (+/-10% jitter), at most every 120 s; back-off as Live mode after failures; paused while asleep, offline or away (see System state) |
 | Manual refresh | Re-reads the cache immediately; with auto-refresh on, runs it once (at most once per 60 s); in Live mode also makes one request (never with an expired token, skipped when auto-refresh just succeeded), at most once per 60 s |
 | System state | Pauses everything on system sleep, and the Live and auto-refresh loops also while offline or *away*: all displays asleep (`NSWorkspace` `screensDidSleep`/`screensDidWake`), the user's session in the background (`sessionDidResignActive`/`sessionDidBecomeActive`) or the screen locked (the distributed `com.apple.screenIsLocked`/`screenIsUnlocked`, which are undocumented; nothing depends on them alone). The decision is `UserPresence` in Core. The 30 s cache check goes on, it costs a `stat`. On wake, reconnect and return the loops start again with an immediate check of what is due, respecting cooldown and back-off. Opening the popover or pressing Refresh counts as being back, so a missed wake or unlock cannot leave them paused |
@@ -358,9 +358,14 @@ Live gate), the text and ring of the menu bar item and which parts of the button
 popover's no-data section offers, `AppModel`'s derived state and notifications, `UsageEngine`'s cache, snapshot-saving,
 transcript and presence handling, the ring renderer, the demo data and the notification texts. The test bundle is **hostless**: the app is never started, because that would read the
 user's real Claude files and preferences. The app's sources are compiled into the bundle (all but `QuotaRingApp.swift`,
-which has `@main`), and every test works in its own temporary folder and its own preferences file. Not covered, because
-they have no seam without a real Keychain, network or program: the Live request and the auto-refresh run inside
-`UsageEngine`, `CLIRefresher`, and the part of `NotificationService` that talks to `UNUserNotificationCenter`.
+which has `@main`), and every test works in its own temporary folder and its own preferences file. `UsageEngine` takes
+the credential read, the HTTP transport and the auto-refresh runner as parameters (the defaults are the real ones), so
+its Live and auto-refresh loops are tested against fakes that count their calls: pausing while away, a Keychain refusal
+that arrives after a cancellation, the restart after Refresh lifts a suspension. Nothing in a test reads the Keychain,
+reaches the network or starts Claude Code. Not covered, because they have no seam without the real thing: the real
+Keychain read, the real HTTP request and the real run of Claude Code (`CLIRefresher` itself), the system notifications
+that report sleep, displays, session and lock screen, and the part of `NotificationService` that talks to
+`UNUserNotificationCenter`.
 
 CI (`.github/workflows/ci.yml`) runs Core's tests and `make lint`, builds unsigned and runs the app's tests on the newest
 Xcode on the runner, and runs Core's tests, the unsigned build and the app's tests again on Xcode 16.4 exactly, the
