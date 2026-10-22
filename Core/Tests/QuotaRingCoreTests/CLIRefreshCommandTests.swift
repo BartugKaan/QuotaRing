@@ -20,6 +20,18 @@ import Testing
         #expect(CLIRefreshCommand.maxOutputBytes == 256 * 1024)
     }
 
+    /// Package-manager folders may belong to another account on a shared Mac; they must not shadow system tools such as
+    /// `security`.
+    @Test func systemFoldersComeBeforePackageManagerFolders() throws {
+        let folders = CLIRefreshCommand.standardPath.split(separator: ":").map(String.init)
+        #expect(folders == ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/opt/homebrew/bin"])
+        let system: Set = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        let packageManagers: Set = ["/usr/local/bin", "/opt/homebrew/bin"]
+        let lastSystem = try #require(folders.lastIndex { system.contains($0) })
+        let firstPackageManager = try #require(folders.firstIndex { packageManagers.contains($0) })
+        #expect(lastSystem < firstPackageManager)
+    }
+
     @Test func environmentIsMinimalAndTurnsOffUpdatesAndReporting() {
         let environment = CLIRefreshCommand.environment(
             home: home, user: "test", lang: "tr_TR.UTF-8",
@@ -31,7 +43,7 @@ import Testing
                 "USER": "test",
                 "LOGNAME": "test",
                 "LANG": "tr_TR.UTF-8",
-                "PATH": "/Users/test/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "PATH": "/Users/test/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin",
                 "DISABLE_AUTOUPDATER": "1",
                 "DISABLE_TELEMETRY": "1",
                 "DISABLE_ERROR_REPORTING": "1",
@@ -49,7 +61,7 @@ import Testing
                 "USER": "test",
                 "LOGNAME": "test",
                 "LANG": "en_US.UTF-8",
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin",
                 "DISABLE_AUTOUPDATER": "1",
                 "DISABLE_TELEMETRY": "1",
                 "DISABLE_ERROR_REPORTING": "1",

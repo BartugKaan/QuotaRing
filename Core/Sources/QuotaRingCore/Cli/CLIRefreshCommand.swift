@@ -35,8 +35,12 @@ public enum CLIRefreshCommand {
     public static let requiredFlags = ["--safe-mode", "--no-session-persistence"]
 
     /// The folders after the tool's own on its `PATH`: enough for a `#!/usr/bin/env node` launcher to find Node and
-    /// for Claude Code to find system tools such as `security`.
-    public static let standardPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+    /// for Claude Code to find system tools such as `security`. The system folders come first, so a file in a
+    /// package-manager folder (which on a shared Mac may belong to another account) cannot shadow a system tool.
+    ///
+    /// The interpreter of a script-based install (for example `node` for a `#!/usr/bin/env node` launcher) is looked
+    /// up on this `PATH` and is not checked the way the tool itself is (owner, permission bits); see SECURITY.md.
+    public static let standardPath = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
 
     /// The variables that turn Claude Code's auto-updater off and ask it not to send telemetry or error reports, in the
     /// order shown to the user. Part of every ``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``.

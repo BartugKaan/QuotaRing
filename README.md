@@ -231,8 +231,9 @@ telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
   not while your Mac sleeps or is offline, and with the same back-off as Live mode after a failure (up to 30 minutes).
   The Refresh button also runs it, at most once a minute.
 - **How:** with a fixed argument array and no shell, standard input from `/dev/null`, and an environment built from
-  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then
-  `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
+  scratch with only `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the tool's folder, then the system folders
+  `/usr/bin:/bin:/usr/sbin:/sbin`, then `/usr/local/bin:/opt/homebrew/bin`, so nothing installed there can stand in
+  for a system tool), `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
   `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR` when you set a custom config directory. So a background run
   **never updates Claude Code** (an update started by Claude Code itself once left an npm install broken), and Claude
   Code is asked not to send telemetry or error reports (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); whether it
@@ -249,7 +250,10 @@ telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
   and `/usr/local/bin/claude`. A file is used only if, after following symbolic links, it is a regular executable file
   owned by you or by root and not writable by other users, its `--version` output says "(Claude Code)", and its
   `--help` lists both `--safe-mode` and `--no-session-persistence` (older versions lack them, and are skipped in favor
-  of the next candidate). These checks run once per file, with the same minimal environment. Settings shows which tool
+  of the next candidate). These checks run once per file, with the same minimal environment. Only the `claude` file
+  itself is checked: if it is a script, such as an npm install's `#!/usr/bin/env node` launcher, the interpreter it
+  names (`node`) is looked up on the `PATH` above, and its owner and permissions are not checked (see
+  [SECURITY.md](SECURITY.md)). Settings shows which tool
   is used and its version (the desktop app's build as "Claude app (2.1.308)", with the full path as a tooltip), says so
   when the only Claude Code found is too old, and lets you choose another file or go back to looking. The chosen path
   and the consent, like the Claude config directory, are read from QuotaRing's saved preferences only; command-line
