@@ -42,10 +42,10 @@ ring shows what remains (100 minus used) by default; you can switch it to show w
 ## Requirements
 
 - macOS 14 Sonoma or later (Apple silicon or Intel)
-- A Claude subscription and Claude Code's command-line tool (`claude`). In the default mode QuotaRing reads the usage
-  cache that **only the `claude` command-line tool updates** (a session or `/usage`); the Claude desktop app does not
-  (verified on 2026-10-21). If you mostly use the desktop app, turn on auto-refresh, or read
-  [Keeping the numbers fresh](#keeping-the-numbers-fresh).
+- A Claude subscription and Claude Code. In the default mode QuotaRing reads the usage cache that **only Claude Code's
+  `claude` program updates** (a session or `/usage`); the Claude desktop app's own windows do not (verified on
+  2026-10-21). If you mostly use the desktop app, turn on auto-refresh, which can use the copy of Claude Code the
+  desktop app keeps for itself, or read [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
 ## Install
 
@@ -215,6 +215,11 @@ What runs, exactly:
 claude -p "/usage" --safe-mode --no-session-persistence --output-format json
 ```
 
+Before the first run, each `claude` QuotaRing tries is also asked `claude --version` and `claude --help` once (so with
+several candidates, more than one program may run once), to make sure it is Claude Code and knows these options. Every
+run and check has Claude Code's auto-updater, telemetry and error reporting turned off (`DISABLE_AUTOUPDATER=1`,
+`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
+
 - `-p "/usage"` runs the `/usage` slash command without a terminal. Verified with Claude Code 2.1.287: it makes **no
   model request** (`num_turns: 0`, `total_cost_usd: 0`, zero tokens), so it spends none of your usage, and it rewrites
   `cachedUsageUtilization` in `~/.claude.json`. `--safe-mode` starts no plugins, hooks or MCP servers;
@@ -334,8 +339,9 @@ out-of-date notice offers "Turn on auto-refresh…", which opens Settings → Da
 
 **I use the Claude desktop app. How do I keep the numbers fresh?**
 Turn on auto-refresh (in the first-run window, or Settings → Data → "Refresh with Claude Code"). QuotaRing then runs
-Claude Code's own `/usage` in the background whenever the numbers are older than your refresh interval. You need Claude
-Code's command-line tool installed and signed in once (run `claude` in Terminal); the desktop app alone is not enough.
+Claude Code's own `/usage` in the background whenever the numbers are older than your refresh interval. It uses the
+Claude Code build the desktop app keeps for itself (shown in Settings as "Claude app (version)"), or a `claude` you
+installed. Claude Code must be signed in once: in the Claude app's Code tab, or by running `claude` in Terminal.
 Other options: run `claude` or `/usage` yourself now and then, or use Live mode, which stays fresh for about 8 hours
 after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numbers-fresh).
 
@@ -343,8 +349,8 @@ after the CLI last ran. Details in [Keeping the numbers fresh](#keeping-the-numb
 QuotaRing looks for `claude` in the Claude desktop app's own copy and in the usual install locations (see
 [Auto-refresh](#auto-refresh-opt-in-runs-claude-codes-own-usage)). If yours is elsewhere, find it with `which claude` in
 Terminal and choose that file in Settings → Data. "Too old" means the Claude Code found does not know `--safe-mode` and
-`--no-session-persistence`; update it, or choose a newer one. If it says Claude Code is not signed in, run `claude`
-once in Terminal and sign in.
+`--no-session-persistence`; update it, or choose a newer one. If it says Claude Code is not signed in, sign in to
+Claude Code once: in the Claude app's Code tab, or by running `claude` in Terminal.
 
 **Auto-refresh turned itself off "for safety". What happened?**
 A run of `/usage` came back with a model turn, a cost or a token count, which means that version of Claude Code sent

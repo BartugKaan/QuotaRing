@@ -38,6 +38,12 @@ public enum CLIRefreshCommand {
     /// for Claude Code to find system tools such as `security`.
     public static let standardPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
 
+    /// The variables that switch off Claude Code's auto-updater, telemetry and error reporting, in the order shown to
+    /// the user. Part of every ``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``.
+    public static let switchedOffFeatures: [(name: String, value: String)] = [
+        ("DISABLE_AUTOUPDATER", "1"), ("DISABLE_TELEMETRY", "1"), ("DISABLE_ERROR_REPORTING", "1"),
+    ]
+
     /// `LANG` when QuotaRing itself has none (apps started by launchd usually do not).
     public static let defaultLanguage = "en_US.UTF-8"
 
@@ -76,10 +82,10 @@ public enum CLIRefreshCommand {
             "LOGNAME": user,
             "LANG": lang.flatMap { $0.isEmpty ? nil : $0 } ?? defaultLanguage,
             "PATH": ClaudeCLILocator.standardizedPath(binaryDirectory.path) + ":" + standardPath,
-            "DISABLE_AUTOUPDATER": "1",
-            "DISABLE_TELEMETRY": "1",
-            "DISABLE_ERROR_REPORTING": "1",
         ]
+        for feature in switchedOffFeatures {
+            environment[feature.name] = feature.value
+        }
         if let customConfigDirectory {
             environment["CLAUDE_CONFIG_DIR"] =
                 ClaudePaths(customConfigDirectory: customConfigDirectory)

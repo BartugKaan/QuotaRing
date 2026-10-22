@@ -30,6 +30,13 @@ struct CLIRefreshDisclosure: View {
                 text: "Claude Code's own `/usage` command, in the background, exactly like this:")
             CLICommandLine(toolPath: toolPath)
                 .padding(.leading, 32)
+            Text(
+                "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater, telemetry and error reporting: `\(CLICommandLine.switchedOffFeatures)`."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 32)
         }
         InfoRow(
             symbol: "clock",
@@ -91,6 +98,11 @@ struct CLICommandLine: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    /// `DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1`, from ``CLIRefreshCommand``.
+    static var switchedOffFeatures: String {
+        CLIRefreshCommand.switchedOffFeatures.map { "\($0.name)=\($0.value)" }.joined(separator: " ")
     }
 
     /// For example `claude -p "/usage" --safe-mode --no-session-persistence --output-format json`.
@@ -172,7 +184,8 @@ enum CLIRefreshText {
         case .unsupportedVersion(nil, _):
             return "The Claude Code found is too old for auto-refresh — update it or choose another."
         case .notLoggedIn:
-            return "Auto-refresh: Claude Code is not signed in. Run `claude` once in Terminal and sign in."
+            return
+                "Auto-refresh: Claude Code is not signed in. Sign in to Claude Code once (in the Claude app's Code tab, or with `claude` in Terminal)."
         case .disabledForSafety(.modelCall):
             return
                 "Auto-refresh turned itself off: Claude Code answered `/usage` with a model request, which would use your limits."

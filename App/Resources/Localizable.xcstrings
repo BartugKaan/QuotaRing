@@ -341,12 +341,12 @@
         }
       }
     },
-    "Auto-refresh: Claude Code is not signed in. Run `claude` once in Terminal and sign in." : {
+    "Auto-refresh: Claude Code is not signed in. Sign in to Claude Code once (in the Claude app's Code tab, or with `claude` in Terminal)." : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otomatik yenileme: Claude Code’da oturum açılmamış. Terminal’de `claude` komutunu bir kez çalıştırıp giriş yapın."
+            "value" : "Otomatik yenileme: Claude Code’da oturum açılmamış. Claude Code’da bir kez oturum açın (Claude uygulamasının Code sekmesinde veya Terminal’de `claude` ile)."
           }
         }
       }
@@ -417,6 +417,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otomatik yenileme: Claude Code’un dosyası kontrol edilirken değiştiği için çalıştırılmadı. QuotaRing daha sonra yeniden dener."
+          }
+        }
+      }
+    },
+    "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater, telemetry and error reporting: `%@`." : {
+      "comment" : "Auto-refresh consent sheet; the argument is the environment variables set, such as DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bundan önce, Claude Code olduğundan ve bu seçenekleri bildiğinden emin olmak için bulunan her `claude` programına `--version` ve `--help` sorulabilir (yani birden fazlası bir kez çalışabilir). Her çalıştırma ve kontrolde Claude Code’un otomatik güncelleyicisi, telemetrisi ve hata raporlaması kapatılır: `%@`."
           }
         }
       }

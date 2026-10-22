@@ -84,8 +84,8 @@ First public release, planned as 0.1.0.
 
 - Only the `claude` command-line tool updates the usage cache that the default mode reads (a session or `/usage`). The
   Claude desktop app does not (verified on 2026-10-21), so if you use only the desktop app, turn on auto-refresh (it
-  needs Claude Code's command-line tool installed and signed in once). Without it, run `claude` or `/usage` now and
-  then, or use Live mode, which stays fresh for roughly as long as Claude Code's login token is valid (about 8 hours
+  uses the Claude Code build bundled with the desktop app, or a `claude` you installed, signed in once). Without it,
+  run `claude` or `/usage` now and then, or use Live mode, which stays fresh for roughly as long as Claude Code's login token is valid (about 8 hours
   after the CLI last ran).
 
 ### Security

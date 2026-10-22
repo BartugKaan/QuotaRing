@@ -79,6 +79,13 @@ import Testing
         }
     }
 
+    @Test func theSwitchedOffFeaturesAreTheOnesShown() {
+        #expect(
+            CLIRefreshCommand.switchedOffFeatures.map { "\($0.name)=\($0.value)" } == [
+                "DISABLE_AUTOUPDATER=1", "DISABLE_TELEMETRY=1", "DISABLE_ERROR_REPORTING=1",
+            ])
+    }
+
     @Test func helpAndVersionLimits() {
         #expect(CLIRefreshCommand.helpArguments == ["--help"])
         #expect(CLIRefreshCommand.requiredFlags == ["--safe-mode", "--no-session-persistence"])
