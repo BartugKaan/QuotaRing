@@ -81,3 +81,57 @@ func eventually(
     }
     return condition()
 }
+
+/// The two accounts of the file fixtures.
+enum TestAccounts {
+    static let a = "00000000-0000-4000-8000-0000000000a1"
+    static let b = "00000000-0000-4000-8000-0000000000b2"
+}
+
+extension TestSandbox {
+    /// A config directory for the engine and the model: Claude Code's data is looked for here and nowhere else.
+    func claudeConfigDirectory() throws -> URL {
+        try folder("claude-config")
+    }
+
+    /// Writes Claude Code's `.claude.json` into `configDirectory` with a session limit and a weekly limit.
+    func writeClaudeJSON(
+        in configDirectory: URL, fetchedAt: Date, sessionUsed: Double, resetsAt: Date,
+        cacheAccount: String = TestAccounts.a, signedInAccount: String = TestAccounts.a
+    ) throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let root: [String: Any] = [
+            "oauthAccount": ["accountUuid": signedInAccount],
+            "cachedUsageUtilization": [
+                "fetchedAtMs": fetchedAt.timeIntervalSince1970 * 1000,
+                "accountUuid": cacheAccount,
+                "utilization": [
+                    "five_hour": ["utilization": sessionUsed, "resets_at": formatter.string(from: resetsAt)],
+                    "seven_day": [
+                        "utilization": 18.0, "resets_at": formatter.string(from: resetsAt.addingTimeInterval(86_400)),
+                    ],
+                ],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root).write(
+            to: configDirectory.appendingPathComponent(".claude.json"))
+    }
+
+    /// One assistant line of a transcript, written below `configDirectory/projects`.
+    func writeTranscript(
+        in configDirectory: URL, at timestamp: Date, input: Int, output: Int, project: String = "alpha"
+    ) throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let line =
+            "{\"type\":\"assistant\",\"timestamp\":\"\(formatter.string(from: timestamp))\","
+            + "\"cwd\":\"/Users/test/dev/\(project)\",\"requestId\":\"req_TEST1\",\"message\":{\"id\":\"msg_TEST1\","
+            + "\"role\":\"assistant\",\"model\":\"claude-opus-4-8\",\"usage\":{\"input_tokens\":\(input),"
+            + "\"output_tokens\":\(output),\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0}}}\n"
+        let url = configDirectory.appendingPathComponent("projects/-p/session.jsonl")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(line.utf8).write(to: url)
+    }
+}

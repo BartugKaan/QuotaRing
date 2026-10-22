@@ -63,7 +63,11 @@ final class AppModel {
     @ObservationIgnored private var thresholdTracker: ThresholdTracker
     @ObservationIgnored private let defaults: UserDefaults
 
-    init(settings: SettingsStore, isDemo: Bool, defaults: UserDefaults = .standard) {
+    /// - Parameter snapshotStore: Where the engine saves the last good snapshot; tests pass a temporary one.
+    init(
+        settings: SettingsStore, isDemo: Bool, defaults: UserDefaults = .standard,
+        snapshotStore: LastSnapshotStore? = .standard()
+    ) {
         self.settings = settings
         self.isDemo = isDemo
         self.defaults = defaults
@@ -75,7 +79,7 @@ final class AppModel {
             activity = DemoData.activity(now: now)
             daily = DemoData.daily(now: now, calendar: .current)
         } else {
-            let engine = UsageEngine(settings: settings)
+            let engine = UsageEngine(settings: settings, snapshotStore: snapshotStore)
             engine.onEvent = { [weak self] event in self?.handle(event) }
             self.engine = engine
         }
@@ -142,7 +146,8 @@ final class AppModel {
 
     // MARK: - Engine events
 
-    private func handle(_ event: UsageEngine.Event) {
+    /// Applies one event of the engine. Not private so that tests can feed events without an engine running.
+    func handle(_ event: UsageEngine.Event) {
         switch event {
         case .snapshot(let newSnapshot, let isNew):
             snapshot = newSnapshot

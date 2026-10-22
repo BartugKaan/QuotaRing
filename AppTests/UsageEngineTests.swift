@@ -12,9 +12,6 @@ import Testing
 /// program) have no seam, so they are not covered here.
 @MainActor
 private final class EngineRig {
-    static let accountA = "00000000-0000-4000-8000-0000000000a1"
-    static let accountB = "00000000-0000-4000-8000-0000000000b2"
-
     let sandbox: TestSandbox
     let settings: SettingsStore
     let configDirectory: URL
@@ -26,7 +23,7 @@ private final class EngineRig {
 
     init() throws {
         sandbox = try TestSandbox()
-        configDirectory = try sandbox.folder("claude-config")
+        configDirectory = try sandbox.claudeConfigDirectory()
         settings = sandbox.makeSettings()
         settings.customConfigDirectory = configDirectory
         // Nothing may run or reach out: consent is off.
@@ -79,39 +76,18 @@ private final class EngineRig {
 
     // MARK: Files
 
-    /// Writes Claude Code's `.claude.json` with a session limit.
     func writeCache(
-        fetchedAt: Date, sessionUsed: Double, resetsAt: Date, cacheAccount: String = accountA,
-        signedInAccount: String = accountA
+        fetchedAt: Date, sessionUsed: Double, resetsAt: Date, cacheAccount: String = TestAccounts.a,
+        signedInAccount: String = TestAccounts.a
     ) throws {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let root: [String: Any] = [
-            "oauthAccount": ["accountUuid": signedInAccount],
-            "cachedUsageUtilization": [
-                "fetchedAtMs": fetchedAt.timeIntervalSince1970 * 1000,
-                "accountUuid": cacheAccount,
-                "utilization": [
-                    "five_hour": ["utilization": sessionUsed, "resets_at": formatter.string(from: resetsAt)],
-                    "seven_day": [
-                        "utilization": 18.0, "resets_at": formatter.string(from: resetsAt.addingTimeInterval(86_400)),
-                    ],
-                ],
-            ],
-        ]
-        try JSONSerialization.data(withJSONObject: root).write(to: cacheFile)
+        try sandbox.writeClaudeJSON(
+            in: configDirectory, fetchedAt: fetchedAt, sessionUsed: sessionUsed, resetsAt: resetsAt,
+            cacheAccount: cacheAccount, signedInAccount: signedInAccount)
     }
 
-    /// One assistant line of a transcript, written below the config directory's `projects` folder.
     func writeTranscript(at timestamp: Date, input: Int, output: Int, project: String = "alpha") throws {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let line =
-            "{\"type\":\"assistant\",\"timestamp\":\"\(formatter.string(from: timestamp))\","
-            + "\"cwd\":\"/Users/test/dev/\(project)\",\"requestId\":\"req_TEST1\",\"message\":{\"id\":\"msg_TEST1\","
-            + "\"role\":\"assistant\",\"model\":\"claude-opus-4-8\",\"usage\":{\"input_tokens\":\(input),"
-            + "\"output_tokens\":\(output),\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0}}}\n"
-        try sandbox.write("claude-config/projects/-p/session.jsonl", line)
+        try sandbox.writeTranscript(
+            in: configDirectory, at: timestamp, input: input, output: output, project: project)
     }
 
     /// Waits until the background saves and deletes of the snapshot have caught up with the last announced snapshot,
@@ -292,7 +268,7 @@ private final class EngineRig {
         // The signed-in account changed; the cache still holds the previous account's numbers.
         try rig.writeCache(
             fetchedAt: now.addingTimeInterval(-5), sessionUsed: 71, resetsAt: now.addingTimeInterval(3_000),
-            cacheAccount: EngineRig.accountA, signedInAccount: EngineRig.accountB)
+            cacheAccount: TestAccounts.a, signedInAccount: TestAccounts.b)
         await rig.engine.refresh(userInitiated: false)
 
         // Announced as "nothing to show", as a new state, and removed from disk.
@@ -309,7 +285,7 @@ private final class EngineRig {
         // Once the cache is the signed-in account's again, its numbers show.
         try rig.writeCache(
             fetchedAt: now, sessionUsed: 3, resetsAt: now.addingTimeInterval(3_000),
-            cacheAccount: EngineRig.accountB, signedInAccount: EngineRig.accountB)
+            cacheAccount: TestAccounts.b, signedInAccount: TestAccounts.b)
         await rig.engine.refresh(userInitiated: false)
         #expect(rig.snapshots.last??.report.session?.percentUsed == 3)
         await rig.finish()
