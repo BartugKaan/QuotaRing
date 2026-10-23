@@ -12,7 +12,7 @@ Pushing a version tag such as `v0.1.0` starts the **Release** workflow
    (each of these fails within seconds instead of after the long build);
 2. installs the pinned XcodeGen (see "Updating the pinned XcodeGen" below),
    generates the Xcode project and checks that the tag equals `MARKETING_VERSION`
-   in `project.yml`;
+   in `Configs/Base.xcconfig`;
 3. imports your Developer ID certificate into a temporary keychain;
 4. archives and exports the app with Developer ID signing and the Hardened Runtime;
 5. notarizes the app with Apple (`notarytool`) and staples the ticket;
@@ -153,8 +153,8 @@ cannot start a signed release by itself.
 
 1. Make sure CI (and, once the repository is public, CodeQL) is green on `main`.
 2. In a branch, bump the version and the changelog:
-   - set `MARKETING_VERSION` in `project.yml` to `0.1.0` (and bump
-     `CURRENT_PROJECT_VERSION`, the build number, if `project.yml` defines one);
+   - set `MARKETING_VERSION` in `Configs/Base.xcconfig` to the new version and
+     bump `CURRENT_PROJECT_VERSION` (the build number) in the same file;
    - in `CHANGELOG.md` move the `Unreleased` entries under
      `## [0.1.0] - YYYY-MM-DD`. The workflow copies that section into the draft
      release notes.
@@ -242,7 +242,7 @@ The release job fails early and with a readable message in most cases.
 | `NOTARY_TIMEOUT '...' must be a number followed by s, m or h` | Fix the `NOTARY_TIMEOUT` environment variable, for example `90m` or `2h`. |
 | `Notarization did not succeed (status: unknown ...)` after a long wait | Apple did not answer within `NOTARY_TIMEOUT` (see the note on new accounts above). Re-run the failed job; consider a larger `NOTARY_TIMEOUT`. |
 | `XcodeGen ... checksum mismatch` | The download does not match the SHA-256 pinned in `scripts/ci/install-xcodegen.sh`, and nothing was installed. Re-run once. If it fails again, compare the hash with the one shown for that asset on XcodeGen's GitHub release page before you change anything; never just paste in the hash from the error message. |
-| `Tag ... does not match MARKETING_VERSION` | Bump `MARKETING_VERSION` in `project.yml`, merge, and re-tag (see below). |
+| `Tag ... does not match MARKETING_VERSION` | Bump `MARKETING_VERSION` in `Configs/Base.xcconfig`, merge, and re-tag (see below). |
 | `DEVELOPER_ID_P12_BASE64 is not valid base64` | Re-create the value with `base64 -i DeveloperID.p12`. |
 | `MAC verification failed` while importing | `DEVELOPER_ID_P12_PASSWORD` does not match the password used for the export. |
 | `no valid 'Developer ID Application' identity` | Wrong certificate type, expired, or exported without its private key. Export again from **My Certificates**. |
