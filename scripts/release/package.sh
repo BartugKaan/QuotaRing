@@ -63,6 +63,23 @@ require_app() {
     [[ -d "$app_path" ]] || fail "app bundle not found at ${app_path}"
 }
 
+# `stapler validate` asks Apple's ticket service (CloudKit) over the network. A connection the runner drops fails it
+# with error 68 even though the ticket is stapled, which once failed a whole release after both notarization rounds.
+# Try a few times before calling the artifact unstapled; a real failure still fails after the last attempt.
+stapler_validate() {
+    local attempt
+    for attempt in 1 2 3 4; do
+        if xcrun stapler validate "$1"; then
+            return 0
+        fi
+        if ((attempt < 4)); then
+            echo "stapler validate failed for $1 (attempt ${attempt} of 4); retrying in $((attempt * 15)) s" >&2
+            sleep $((attempt * 15))
+        fi
+    done
+    return 1
+}
+
 check_app() {
     require_app
     local info="${app_path}/Contents/Info.plist"
@@ -157,7 +174,7 @@ make_dmg() {
 
 make_zip() {
     require_app
-    if ! xcrun stapler validate "$app_path" >/dev/null; then
+    if ! stapler_validate "$app_path" >/dev/null; then
         fail "${app_path} is not stapled; notarize and staple the app before zipping it"
     fi
     mkdir -p "$dist_dir"
@@ -184,18 +201,18 @@ verify_all() {
     echo "Verifying the app..."
     codesign --verify --deep --strict --verbose=2 "$app_path"
     spctl --assess --type execute --verbose=2 "$app_path"
-    xcrun stapler validate "$app_path"
+    stapler_validate "$app_path" || fail "${app_path} failed stapler validation"
 
     echo "Verifying the disk image..."
     codesign --verify --verbose=2 "$dmg_path"
     spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg_path"
-    xcrun stapler validate "$dmg_path"
+    stapler_validate "$dmg_path" || fail "${dmg_path} failed stapler validation"
 
     echo "Verifying the app inside the zip..."
     scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/package.XXXXXX")"
     ditto -x -k "$zip_path" "$scratch"
     codesign --verify --deep --strict --verbose=2 "${scratch}/${app_name}.app"
-    xcrun stapler validate "${scratch}/${app_name}.app"
+    stapler_validate "${scratch}/${app_name}.app" || fail "the app inside ${zip_path} failed stapler validation"
     echo "All release artifacts verified."
 }
 
