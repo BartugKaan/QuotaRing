@@ -88,6 +88,12 @@ package (`QuotaRingCore`) and is tested with `swift test`. The AppKit and SwiftU
    `app`, `ci`. Breaking or privacy-relevant changes should say so in the commit body.
 4. Run `make format`, `make lint` and `make test-all` before pushing.
 5. Open a pull request against `main` and fill in the template.
+6. CI starts once a maintainer approves the run. This is required for every outside contributor, because the macOS
+   runners execute the pull request's code. Changes to `.github/`, `scripts/`, `Makefile`, `project.yml` and `Configs/`
+   get extra scrutiny for the same reason.
+7. `main` is protected: a pull request is squash-merged once the Test, Lint, Build (unsigned) and Xcode 16.4 checks
+   pass, CodeQL reports no high-severity alert and every review conversation is resolved. Keep the pull request title
+   a Conventional Commit, because it becomes the commit message on `main`.
 
 ## Tests
 
