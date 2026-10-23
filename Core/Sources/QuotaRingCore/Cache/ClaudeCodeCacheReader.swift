@@ -62,45 +62,68 @@ public struct ClaudeCodeCacheReader: Sendable {
     ///   usage decoder cannot use), and ``CacheReadError/accountMismatch`` when the entry and `oauthAccount` both name
     ///   an account and the two differ (the cache belongs to someone else).
     public func read(now: Date = Date()) throws -> UsageSnapshot? {
-        let path = resolvedPath
-        let attributes: [FileAttributeKey: Any]
-        do {
-            attributes = try FileManager.default.attributesOfItem(atPath: path)
-        } catch {
-            if Self.isFileNotFound(error) { return nil }
-            throw CacheReadError.unreadable
-        }
-        // Symlinks are already resolved, so anything but a regular file is a directory, FIFO, socket or device. Those
-        // can block a read or report a size of 0 and so slip past the size cap.
-        guard
-            attributes[.type] as? FileAttributeType == .typeRegular,
-            let size = Self.fingerprint(from: attributes)?.size
-        else {
-            throw CacheReadError.unreadable
-        }
-        guard size <= maxFileSize else {
-            throw CacheReadError.fileTooLarge
-        }
-
-        let data: Data
-        do {
-            data = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
-        } catch {
-            if Self.isFileNotFound(error) { return nil }
-            throw CacheReadError.unreadable
-        }
-        // The file may have grown between the size check and the read.
-        guard Int64(data.count) <= maxFileSize else {
-            throw CacheReadError.fileTooLarge
-        }
-
+        guard let data = try readContents() else { return nil }
         return try Self.extractSnapshot(from: data, now: now)
+    }
+
+    /// Reads the file through one descriptor: it is opened once, checked with `fstat` on that descriptor and read from
+    /// it, so it cannot be swapped between the check and the read (the same pattern as ``FileCredentialSource``).
+    ///
+    /// Symbolic links are followed, because a symlinked `~/.claude.json` is a common dotfile-manager setup; the checks
+    /// apply to the file the link points to. `O_NONBLOCK` keeps a FIFO from making `open(2)` wait for a writer (it has
+    /// no effect on a regular file), and the `fstat` check then refuses it. Anything but a regular file (a directory,
+    /// FIFO, socket or device) is refused, because it can block a read or report a size of 0 and so slip past the cap.
+    ///
+    /// - Returns: The contents, or `nil` when nothing exists at the path.
+    private func readContents() throws(CacheReadError) -> Data? {
+        let path = fileURL.path
+        var descriptor: Int32 = -1
+        var openError: Int32 = 0
+        for _ in 0..<3 {
+            descriptor = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+            openError = descriptor < 0 ? errno : 0
+            if openError != EINTR { break }
+        }
+        guard descriptor >= 0 else {
+            // A symlink whose target is gone also fails with ENOENT. The path itself exists then, so it is reported as
+            // unreadable rather than as "no cache", as it was when the file was inspected by path.
+            var linkInfo = stat()
+            if openError == ENOENT, lstat(path, &linkInfo) != 0 { return nil }
+            throw .unreadable
+        }
+        defer { close(descriptor) }
+
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            throw .unreadable
+        }
+        guard Int64(info.st_size) <= maxFileSize else {
+            throw .fileTooLarge
+        }
+        return try Self.readAll(descriptor, capacity: Int(info.st_size), limit: maxFileSize)
+    }
+
+    /// Reads to end of file, refusing to go past `limit` bytes if the file grew after `fstat`. (Not private so that
+    /// tests can feed it a descriptor that yields more than `fstat` promised, or one that fails.)
+    static func readAll(_ descriptor: Int32, capacity: Int, limit: Int64) throws(CacheReadError) -> Data {
+        var data = Data(capacity: max(0, capacity))
+        var chunk = [UInt8](repeating: 0, count: 65_536)
+        while true {
+            let count = Darwin.read(descriptor, &chunk, chunk.count)
+            if count == 0 { return data }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw .unreadable
+            }
+            data.append(contentsOf: chunk[0..<count])
+            guard Int64(data.count) <= limit else { throw .fileTooLarge }
+        }
     }
 
     // MARK: - Private
 
-    /// `attributesOfItem` describes a symbolic link itself rather than its target, which would make both the size
-    /// limit and the fingerprint meaningless for a symlinked `~/.claude.json` (a common dotfile-manager setup).
+    /// `attributesOfItem` describes a symbolic link itself rather than its target, which would make the fingerprint
+    /// meaningless for a symlinked `~/.claude.json` (a common dotfile-manager setup).
     private var resolvedPath: String {
         fileURL.resolvingSymlinksInPath().path
     }
@@ -111,17 +134,6 @@ public struct ClaudeCodeCacheReader: Sendable {
             let modified = attributes[.modificationDate] as? Date
         else { return nil }
         return FileFingerprint(size: size, modified: modified)
-    }
-
-    private static func isFileNotFound(_ error: any Error) -> Bool {
-        let nsError = error as NSError
-        if nsError.domain == NSCocoaErrorDomain {
-            return nsError.code == NSFileNoSuchFileError || nsError.code == NSFileReadNoSuchFileError
-        }
-        if nsError.domain == NSPOSIXErrorDomain {
-            return nsError.code == Int(ENOENT)
-        }
-        return false
     }
 
     /// Parses the document, keeps only the cache entry (and the account UUIDs needed to vet it) and lets the rest of

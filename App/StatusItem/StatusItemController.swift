@@ -19,6 +19,11 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private var openSettingsAction: OpenSettingsAction?
     /// `systemUptime` when the popover last started closing.
     private var popoverCloseStartedAt: TimeInterval?
+    /// What the button shows, so that `render()` touches it only for what changed.
+    private var buttonState = StatusButtonState()
+    /// Whether all displays are asleep: nobody can see the item, so it is not redrawn until they wake.
+    private var screensAreAsleep = false
+    private var screenObservers: [any NSObjectProtocol] = []
 
     init(model: AppModel) {
         self.model = model
@@ -28,6 +33,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         configureButton()
         configurePopover()
         configureMenu()
+        observeScreens()
         observeModel()
         startTicking()
     }
@@ -58,9 +64,18 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
+        // No content yet: the SwiftUI hierarchy is made when the popover opens and dropped when it has closed (see
+        // `makePopoverContent()`).
+    }
+
+    /// The popover's content, made anew each time it opens. While it exists, SwiftUI keeps the whole view tree alive
+    /// and its `TimelineView` keeps refreshing it every 30 s, closed or not: after the first opening that cost 18 MiB
+    /// and about three times the idle CPU for as long as the app ran. Whatever must survive the next opening (the
+    /// Activity range) lives in ``AppModel``.
+    private func makePopoverContent() -> NSViewController {
         let hosting = NSHostingController(rootView: PopoverView(model: model))
         hosting.sizingOptions = .preferredContentSize
-        popover.contentViewController = hosting
+        return hosting
     }
 
     private func configureMenu() {
@@ -117,32 +132,80 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.tickInterval)
+                // The model still notices a session reset while the displays sleep; only the drawing waits.
                 self?.model.timeDidPass()
-                self?.render()
+                self?.renderUnlessScreensSleep()
             }
         }
     }
 
+    /// The displays going to sleep and waking up: nothing is drawn for an item nobody can see, and the first thing
+    /// after waking is one render, which brings it up to date.
+    private func observeScreens() {
+        let center = NSWorkspace.shared.notificationCenter
+        screenObservers = [
+            center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.screensAreAsleep = true }
+            },
+            center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.screensAreAsleep = false
+                    self?.render()
+                }
+            },
+        ]
+    }
+
+    private func renderUnlessScreensSleep() {
+        guard !screensAreAsleep else { return }
+        render()
+    }
+
+    /// The item was clicked or its popover shown, so a display is awake whatever a missed wake notification says.
+    /// Without this a lost `screensDidWake` would leave the item undrawn until the next restart.
+    private func screensAreEvidentlyAwake() {
+        guard screensAreAsleep else { return }
+        screensAreAsleep = false
+        render()
+    }
+
+    /// Brings the button up to date with the model, touching only what changed (see ``StatusButtonState``).
+    ///
+    /// The presentation is always computed, also while the displays sleep: reading the model is what makes
+    /// ``observeModel()`` notice the next change, and it costs microseconds.
     private func render() {
         guard let button = statusItem.button else { return }
         let presentation = StatusPresentation(model: model, now: Date())
-        button.image = RingImageRenderer.image(fraction: presentation.fraction, style: presentation.style)
-        if let text = presentation.text, presentation.isTextDimmed {
-            // Old numbers must not look as current as fresh ones.
-            let font = button.font ?? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            button.attributedTitle = NSAttributedString(
-                string: text, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
-        } else {
-            button.title = presentation.text ?? ""
+        guard !screensAreAsleep else { return }
+
+        let changes = buttonState.update(to: presentation)
+        if changes.contains(.image) {
+            button.image = RingImageRenderer.image(fraction: presentation.fraction, style: presentation.style)
         }
-        button.imagePosition = presentation.text == nil ? .imageOnly : .imageLeading
-        button.setAccessibilityLabel(presentation.accessibilityLabel)
-        button.toolTip = presentation.accessibilityLabel
+        if changes.contains(.title) {
+            if let text = presentation.text, presentation.isTextDimmed {
+                // Old numbers must not look as current as fresh ones.
+                let font =
+                    button.font ?? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+                button.attributedTitle = NSAttributedString(
+                    string: text, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+            } else {
+                button.title = presentation.text ?? ""
+            }
+            button.imagePosition = presentation.text == nil ? .imageOnly : .imageLeading
+        }
+        if changes.contains(.accessibility) {
+            button.setAccessibilityLabel(presentation.accessibilityLabel)
+            button.toolTip = presentation.accessibilityLabel
+        }
     }
 
     // MARK: - Clicks
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        screensAreEvidentlyAwake()
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showMenu()
@@ -166,6 +229,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
             return
         }
         NSApp.activate()
+        popover.contentViewController = makePopoverContent()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
@@ -188,6 +252,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        screensAreEvidentlyAwake()
         model.popoverDidOpen()
     }
 
@@ -196,6 +261,11 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        // Drops the SwiftUI hierarchy and everything that keeps it running (see `makePopoverContent()`), unless the
+        // popover has been opened again already.
+        if !popover.isShown {
+            popover.contentViewController = nil
+        }
         model.popoverDidClose()
     }
 
@@ -237,6 +307,14 @@ struct StatusPresentation {
     /// Whether `text` is drawn in the secondary label color (the data is out of date).
     var isTextDimmed = false
     var accessibilityLabel: String
+
+    init(fraction: Double?, style: RingStyle, text: String?, isTextDimmed: Bool = false, accessibilityLabel: String) {
+        self.fraction = fraction
+        self.style = style
+        self.text = text
+        self.isTextDimmed = isTextDimmed
+        self.accessibilityLabel = accessibilityLabel
+    }
 
     @MainActor
     init(model: AppModel, now: Date) {

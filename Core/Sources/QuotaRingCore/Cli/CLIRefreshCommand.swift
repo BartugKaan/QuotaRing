@@ -16,6 +16,14 @@ import Foundation
 /// does **not** set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: verified on the owner's Mac, with it `/usage` answers
 /// from the stale cache without asking Anthropic, which defeats the purpose.
 public enum CLIRefreshCommand {
+    /// The version of what the user agrees to when turning on auto-refresh. The app records it with the consent, and a
+    /// consent recorded for another version does not count, so the user is asked again.
+    ///
+    /// Bump it whenever what auto-refresh runs changes in a way the user agreed to: the command (``arguments``, or the
+    /// arguments of the checks), the environment (``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``,
+    /// including ``standardPath`` and ``switchedOffFeatures``), which programs may be run, or the data it reads.
+    public static let consentVersion = 1
+
     /// The arguments, exactly. `-p "/usage"` runs the slash command in print mode; `--safe-mode` starts no plugins,
     /// hooks or MCP servers; `--no-session-persistence` saves no transcript; `--output-format json` prints one result
     /// object that ``CLIRefreshResult/parse(stdout:exitCode:)`` checks.
@@ -35,8 +43,12 @@ public enum CLIRefreshCommand {
     public static let requiredFlags = ["--safe-mode", "--no-session-persistence"]
 
     /// The folders after the tool's own on its `PATH`: enough for a `#!/usr/bin/env node` launcher to find Node and
-    /// for Claude Code to find system tools such as `security`.
-    public static let standardPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+    /// for Claude Code to find system tools such as `security`. The system folders come first, so a file in a
+    /// package-manager folder (which on a shared Mac may belong to another account) cannot shadow a system tool.
+    ///
+    /// The interpreter of a script-based install (for example `node` for a `#!/usr/bin/env node` launcher) is looked
+    /// up on this `PATH` and is not checked the way the tool itself is (owner, permission bits); see SECURITY.md.
+    public static let standardPath = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
 
     /// The variables that turn Claude Code's auto-updater off and ask it not to send telemetry or error reports, in the
     /// order shown to the user. Part of every ``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``.

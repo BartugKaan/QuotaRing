@@ -11,7 +11,8 @@
 #
 # Stages, in the order the release workflow runs them:
 #   check       sanity-check the exported app (version, signature, hardened
-#               runtime, secure timestamp, universal binary) before notarizing
+#               runtime, secure timestamp, no entitlements, universal binary)
+#               before notarizing
 #   dmg         create the disk image from the (already stapled) app and sign it
 #   zip         create the zip from the (already stapled) app
 #   checksums   write dist/SHA256SUMS; run this after the DMG has been stapled,
@@ -88,6 +89,7 @@ check_app() {
     if [[ -n "${APPLE_TEAM_ID:-}" ]] && ! grep -qx "TeamIdentifier=${APPLE_TEAM_ID}" <<<"$details"; then
         fail "the app is signed by a different team than APPLE_TEAM_ID"
     fi
+    check_no_entitlements
 
     local executable archs
     executable="$(plutil -extract CFBundleExecutable raw -o - "$info")"
@@ -96,7 +98,27 @@ check_app() {
         fail "expected a universal binary (arm64 and x86_64), found: ${archs}"
     fi
 
-    echo "App checks passed: version ${bundle_version}, Developer ID, Hardened Runtime, timestamp, ${archs}."
+    echo "App checks passed: version ${bundle_version}, Developer ID, Hardened Runtime, timestamp, no entitlements, ${archs}."
+}
+
+# The app is signed with no entitlements at all (App/Resources/QuotaRing.entitlements
+# is an empty dictionary). Anything else, such as `get-task-allow` or a Hardened
+# Runtime exception (`com.apple.security.cs.*`), fails the build before it is
+# notarized. An entitlements blob that holds an empty dictionary counts as none.
+check_no_entitlements() {
+    local entitlements as_json
+    if ! entitlements="$(codesign -d --entitlements - --xml "$app_path" 2>/dev/null)"; then
+        fail "could not read the entitlements of ${app_path}"
+    fi
+    if [[ -z "${entitlements//[[:space:]]/}" ]]; then
+        return 0
+    fi
+    if ! as_json="$(plutil -convert json -o - - <<<"$entitlements" 2>/dev/null)"; then
+        fail "could not parse the entitlements of ${app_path}"
+    fi
+    if [[ "$as_json" != "{}" ]]; then
+        fail "${app_path} is signed with entitlements, expected none: ${as_json}"
+    fi
 }
 
 make_dmg() {

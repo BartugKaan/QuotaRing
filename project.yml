@@ -31,3 +31,48 @@ targets:
     scheme:
       commandLineArguments:
         "--demo": false
+      testTargets:
+        - QuotaRingAppTests
+
+  # Unit tests of the app's own logic. A HOSTLESS bundle on purpose: no TEST_HOST and no BUNDLE_LOADER, so running the
+  # tests never starts QuotaRing, which would read the real Claude files, the Keychain and the user's preferences. The
+  # app's sources are compiled straight into the bundle instead; only the `@main` file and the resources are left out
+  # (the tests need neither). Every test works in its own temporary folders and a throwaway preferences file.
+  QuotaRingAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AppTests
+      - path: App
+        excludes:
+          - QuotaRingApp.swift
+          - Resources/**
+    dependencies:
+      - package: QuotaRingCore
+        product: QuotaRingCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.bartugkaan.QuotaRing.AppTests
+        GENERATE_INFOPLIST_FILE: YES
+        SDKROOT: macosx
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        # Ad-hoc signed, like the app; no account needed.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        # Hostless, see above.
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+
+schemes:
+  QuotaRingAppTests:
+    build:
+      targets:
+        QuotaRingAppTests: [test]
+    test:
+      targets:
+        - QuotaRingAppTests

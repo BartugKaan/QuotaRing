@@ -251,6 +251,37 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
         }
     }
 
+    @Test func aFileTheUserCannotReadThrowsUnreadable() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = try sandbox.write(fixtureData())
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+
+        // Its size and date can still be seen, so the fingerprint works; reading the bytes is what is refused.
+        let reader = ClaudeCodeCacheReader(fileURL: url)
+        #expect(reader.fingerprint() != nil)
+        #expect(throws: CacheReadError.unreadable) {
+            try reader.read()
+        }
+    }
+
+    @Test func aPathBelowARegularFileIsNoCacheAndNeverASnapshot() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let file = try sandbox.write(Data("{}".utf8), named: "not-a-folder")
+        let url = file.appendingPathComponent(".claude.json")
+
+        // Whatever the system calls it, it must come back as "no cache" or "unreadable", never a crash or a snapshot.
+        let reader = ClaudeCodeCacheReader(fileURL: url)
+        #expect(reader.fingerprint() == nil)
+        do {
+            #expect(try reader.read() == nil)
+        } catch {
+            #expect(error as? CacheReadError == .unreadable)
+        }
+    }
+
     @Test func deviceFileThrowsUnreadable() throws {
         // A character device has size 0 (so it passes any size cap) and reads as an empty file.
         #expect(throws: CacheReadError.unreadable) {
@@ -271,6 +302,83 @@ private func edit(_ root: inout [String: Any], cache change: ([String: Any]) -> 
 
         #expect(throws: CacheReadError.unreadable) {
             try ClaudeCodeCacheReader(fileURL: url).read()
+        }
+    }
+
+    /// No writer at all: an `open(2)` without `O_NONBLOCK` would wait for one forever. The reader checks the open
+    /// descriptor, not the path, so it is the open itself that must not block.
+    @Test func fifoNamedLikeTheConfigFileDoesNotBlock() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = sandbox.directory.appendingPathComponent(".claude.json")
+        try #require(mkfifo(url.path, 0o600) == 0)
+        // If the reader wrongly blocks in open(2), a writer that appears and goes away after a moment lets it continue,
+        // so the test fails on the elapsed time below instead of hanging the whole run.
+        let path = url.path
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+            let writer = open(path, O_RDWR | O_NONBLOCK)
+            if writer >= 0 { close(writer) }
+        }
+
+        let started = Date()
+        #expect(throws: CacheReadError.unreadable) {
+            try ClaudeCodeCacheReader(fileURL: url).read()
+        }
+        #expect(Date().timeIntervalSince(started) < 2)
+    }
+
+    @Test func danglingSymlinkIsUnreadableNotMissing() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let link = sandbox.directory.appendingPathComponent(".claude.json")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "gone.json")
+
+        #expect(throws: CacheReadError.unreadable) {
+            try ClaudeCodeCacheReader(fileURL: link).read()
+        }
+    }
+
+    /// `readAll` runs on a descriptor that already passed `fstat`; the file may have grown after that.
+    @Test func aFileThatGrewPastTheLimitAfterTheCheckIsRefused() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let limit: Int64 = 100_000
+        // Larger than one read chunk, so the limit is crossed in the middle of the loop.
+        let grown = try sandbox.write(Data(count: Int(limit) + 1), named: "grown.json")
+        let descriptor = open(grown.path, O_RDONLY)
+        try #require(descriptor >= 0)
+        defer { close(descriptor) }
+
+        // The caller believed the file was empty (capacity 0) when it checked.
+        #expect(throws: CacheReadError.fileTooLarge) {
+            try ClaudeCodeCacheReader.readAll(descriptor, capacity: 0, limit: limit)
+        }
+    }
+
+    @Test func readingStopsExactlyAtTheLimit() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        // Bigger than the read chunk, with a pattern that shows a lost or repeated chunk.
+        let body = Data((0..<200_000).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ 7) })
+        let file = try sandbox.write(body, named: "large.json")
+        let descriptor = open(file.path, O_RDONLY)
+        try #require(descriptor >= 0)
+        defer { close(descriptor) }
+
+        #expect(try ClaudeCodeCacheReader.readAll(descriptor, capacity: 0, limit: Int64(body.count)) == body)
+    }
+
+    @Test func aReadThatFailsIsUnreadableNotPartialData() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        // read(2) on a directory fails with EISDIR. (A closed descriptor would not do: tests run in parallel, and
+        // another one may be handed the same number.)
+        let descriptor = open(sandbox.directory.path, O_RDONLY)
+        try #require(descriptor >= 0)
+        defer { close(descriptor) }
+
+        #expect(throws: CacheReadError.unreadable) {
+            try ClaudeCodeCacheReader.readAll(descriptor, capacity: 16, limit: 1_000_000)
         }
     }
 

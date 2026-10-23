@@ -33,7 +33,8 @@ Core/
     Transcripts/     transcript line parser, incremental scanner, aggregator, model names
     Cli/             auto-refresh: finding and validating `claude`, the fixed command and environment, the bounded
                      process runner, result checking (the safety net), and the executor that ties them together
-    Presentation/    formatting, snapshot logic (staleness, reset handling), refresh planning, threshold tracking
+    Presentation/    formatting, snapshot logic (staleness, reset handling), refresh planning, whether anybody is
+                     looking (UserPresence), threshold tracking
     Persistence/     LastSnapshotStore: the saved last good snapshot (last-snapshot.json)
     Resources/       English and Turkish strings for relative times and durations
   Tests/QuotaRingCoreTests/   Swift Testing tests and sanitized fixtures
@@ -43,9 +44,10 @@ App/
   Popover/       popover view and its sections
   Settings/ Onboarding/ Services/    settings, first-run consent, notifications, launch at login, auto-refresh runner
   Resources/     Info.plist, entitlements, localized strings, asset catalog
+AppTests/        Swift Testing tests of the app's logic (hostless bundle; Support/ holds the sandbox and fakes)
 project.yml      XcodeGen spec (the .xcodeproj is generated and git-ignored)
 Configs/         xcconfig files; Local.xcconfig is git-ignored
-Makefile         setup, generate, build, run, demo, test, lint, format, clean
+Makefile         setup, generate, build, run, demo, test, test-app, test-all, lint, format, clean
 scripts/         icon generation, CI helpers (Xcode selection, pinned XcodeGen) and release scripts
 .github/         CI, CodeQL, release workflow, templates
 ```
@@ -126,7 +128,7 @@ it: Claude Code uses and renews its own login.
 ```
 UsageEngine (auto-refresh loop, MainActor)
   └─ RefreshPlanner.shouldRunCLIRefresh: on, data older than the refresh interval, ≥ 120 s since the last run,
-     back-off over, awake and online
+     back-off over, awake, online and somebody can look at the numbers (see Polling)
       └─ CLIRefresher (App/Services): settings, user, LANG, private working folder ~/Library/Application Support/QuotaRing/cli
           └─ CLIRefreshExecutor (actor, Core/Cli)
               1. ClaudeCLILocator: chosen path, then the Claude desktop app's bundled builds
@@ -216,6 +218,15 @@ over time:
 - `resets_at` accepts ISO 8601 with any fractional digits and offset, or epoch seconds, or `null`.
 - One malformed entry is dropped without discarding the rest. Unknown keys are ignored. If nothing usable remains, decoding
   throws and the app keeps its last good snapshot.
+- Sizes are bounded, because the popover builds every row: at most 32 usable limits and 16 breakdown rows are kept, in
+  response order, and breakdown rows are de-duplicated by `key` (the first wins). An `extra_usage.decimal_places`
+  outside 0 to 6 and a `currency` that is not three uppercase letters are dropped, so the defaults apply; the popover
+  clamps the places again before formatting money.
+- Before decoding, `URLSessionTransport` refuses a Live response body over 1 MiB: a larger `Content-Length` before the
+  body is read, a longer stream as soon as it passes the limit. The client reports it as a decoding failure.
+- `ClaudeCodeCacheReader` opens `.claude.json` once (following symlinks, `O_NONBLOCK`), checks the open descriptor with
+  `fstat` (regular file, at most 50 MB) and reads it with a bounded loop, so the file cannot be swapped between the
+  check and the read, and a FIFO cannot block it.
 
 ## Polling
 
@@ -225,12 +236,12 @@ over time:
 | Live interval | 300 s by default; options 180, 300, 600, 900 s; +/-10% jitter |
 | Back-off | Doubles per consecutive failure, capped at 1800 s; `Retry-After` (seconds or HTTP date) is honored but never shortens the base interval |
 | Status codes | 200 decode; 401/403 "needs re-login" state; 429 rate-limited back-off; 5xx and network errors back off and keep stale data |
-| Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing |
-| Auto-refresh (opt-in) | Runs Claude Code's `/usage` when the freshest snapshot is older than the refresh interval (+/-10% jitter), at most every 120 s; back-off as Live mode after failures; paused while asleep or offline |
+| Keychain access denied | Resolution stops at the refusal (no other Keychain item, no credentials file); automatic requests stop and a message is shown. QuotaRing does not ask again until the user presses Refresh, turns Live mode off and on, or relaunches QuotaRing. Meanwhile the Live loop sleeps for the longest wait (6 h, `RefreshPlanner.nextCheckDelay` with `isSuspended`) instead of checking every second, and is restarted when the suspension is lifted. A refusal counts also when it arrives after the request was cancelled (for example the screen locked while the prompt stayed open and the user clicked Deny on return); a credential granted after the cancellation sends nothing |
+| Auto-refresh (opt-in) | Runs Claude Code's `/usage` when the freshest snapshot is older than the refresh interval (+/-10% jitter), at most every 120 s; back-off as Live mode after failures; paused while asleep, offline or away (see System state) |
 | Manual refresh | Re-reads the cache immediately; with auto-refresh on, runs it once (at most once per 60 s); in Live mode also makes one request (never with an expired token, skipped when auto-refresh just succeeded), at most once per 60 s |
-| System state | Pauses on sleep and while offline; refreshes on wake and reconnect, respecting cooldown and back-off |
-| Countdown | Ticks locally (every 30 s) between polls; no network needed |
-| Transcripts | Scanned on popover open and every 60 s while it is open |
+| System state | Pauses everything on system sleep, and the Live and auto-refresh loops also while offline or *away*: all displays asleep (`NSWorkspace` `screensDidSleep`/`screensDidWake`), the user's session in the background (`sessionDidResignActive`/`sessionDidBecomeActive`) or the screen locked (the distributed `com.apple.screenIsLocked`/`screenIsUnlocked`, which are undocumented; nothing depends on them alone). The decision is `UserPresence` in Core. The 30 s cache check goes on, it costs a `stat`. On wake, reconnect and return the loops start again with an immediate check of what is due, respecting cooldown and back-off. Opening the popover or pressing Refresh counts as being back, so a missed wake or unlock cannot leave them paused |
+| Countdown | Ticks locally (every 30 s) between polls; no network needed. The menu bar button is touched only when what it shows changed (image, title or label), and not at all while all displays sleep; it is brought up to date once on wake |
+| Transcripts | Scanned on popover open and every 60 s while it is open; a scan under way stops when the popover closes and carries on from there next time |
 
 `PollingPolicy` is a pure function of the last outcome, the failure count, `Retry-After` and a random value, so it is
 unit-tested without timers.
@@ -268,12 +279,30 @@ does not ask again until the user presses Refresh, turns Live mode off and on, o
 
 `TranscriptScanner` is an actor that scans `projects/**/*.jsonl` incrementally:
 
-- Keeps `(path, size, mtime, byteOffset)` per file and parses only appended bytes; a shrunken file is re-read.
+- Lists the tree once per scan (`readdir`, one `fstatat` with `AT_SYMLINK_NOFOLLOW` per `.jsonl`) and opens a file
+  only when needed: a file whose device, inode, size and modification time are what the last pass left is not opened
+  at all, so a rescan of an unchanged tree opens nothing.
+- Never follows a link below the projects directory, also not one that appears after the listing. The projects
+  directory itself may be a link: it is resolved and opened once per scan, and that descriptor is the anchor of
+  everything else. Subdirectories are opened with `openat` relative to their parent's descriptor, and each file is
+  opened later by walking its path from the anchor one component at a time, with `openat` and `O_NOFOLLOW` at every
+  step (never by a full path, which would let a directory swapped for a link after the listing be followed). Entries
+  that are links, pipes, sockets or devices are not listed, and a component that has become a link fails to open and
+  is skipped. Hard links are ordinary files and are read.
+- Never opens a file last modified before `now − 8 days` and forgets its state: a log is append-only, so none of its
+  lines can be newer than its modification time. Most of a long history is skipped this way.
+- Keeps `(device, inode, size, mtime, byteOffset)` per file and parses only appended bytes; a shrunken, replaced or
+  restored file (smaller size, other inode, older modification time) is re-read from the start.
+- Reads a file's identity with `fstat` on the open descriptor, so it describes the bytes that are read; only regular
+  files are read.
+- Reads in 1 MiB chunks, each inside an `autoreleasepool`, so memory follows the chunk size, not the bytes read.
 - Ignores an incomplete trailing line until it is completed. Skips lines over 10 MB.
+- Stops at the next directory, file or chunk when its task is cancelled (the popover closing), keeps what it read, and
+  opens that file again next time even if it did not change.
 - Uses only assistant lines with `message.usage`, skips the `<synthetic>` model, and de-duplicates globally by message id
   (plus request id), keeping the per-field maximum because Claude Code writes repeated usage per content block.
 - Keeps only timestamp, model, token counts, project name and the dedupe key. Message text is never retained, and
-  entries older than 8 days are dropped from memory.
+  entries older than 8 days are dropped from memory (a line that old is dropped as soon as it is parsed).
 - Days are grouped in the user's local time zone, not UTC.
 
 `UsageAggregator` is pure: it turns entries into totals by model family, project and day. Token figures are labelled
@@ -283,18 +312,26 @@ approximate in the UI.
 
 - **`AppModel`** (`@MainActor`, `@Observable`) holds the current snapshot, Live status, activity breakdowns and refresh
   state. Views and the status item render from it.
-- **`UsageEngine`** runs the cache, Live and auto-refresh loops (all scheduling), sleep/wake and reachability handling,
-  and persistence of the last snapshot. It reports to `AppModel` through events.
+- **`UsageEngine`** runs the cache, Live and auto-refresh loops (all scheduling), sleep/wake, presence (displays,
+  session, lock screen) and reachability handling, and persistence of the last snapshot. It reports to `AppModel`
+  through events.
 - **`CLIRefresher`** (`App/Services`) gives Core's `CLIRefreshExecutor` what only the app knows (user, `LANG`, the
   settings, the private working folder) and logs outcome names only.
 - **`StatusItemController`** owns the `NSStatusItem`, draws the ring with `RingImageRenderer` (dimmed percentage and
-  a dashed arc on a dashed faint track when the data is stale, "–" with a dashed track alone after a stale reset), hosts the SwiftUI popover in an `NSPopover`, and provides the right-click
-  menu and VoiceOver label.
+  a dashed arc on a dashed faint track when the data is stale, "–" with a dashed track alone after a stale reset), hosts
+  the SwiftUI popover in an `NSPopover`, and provides the right-click menu and VoiceOver label. The popover's SwiftUI
+  content (an `NSHostingController`) exists only while the popover is open: it is created right before the popover is
+  shown and dropped when it has closed, because a live hierarchy keeps its `TimelineView` refreshing and costs
+  about 18 MiB while hidden. What must survive an opening (the Activity range) lives in `AppModel`. The button is
+  updated through `StatusButtonState`, which compares what it shows (ring fraction and style, text and dimming,
+  label) with the new presentation and touches only what differs.
 - **`NotificationService`** fires each threshold once per window. The window is identified by `resetsAt` rounded to the
   minute, because the reported value jitters by sub-seconds between fetches.
 - **`SettingsStore`** is UserDefaults-backed and holds non-sensitive values only. The consent settings (Live mode,
   auto-refresh, onboarding completed), the chosen `claude` path and the Claude config directory ignore command-line
-  launch arguments.
+  launch arguments. Each consent is saved with the version of its feature (`UsageAPI.consentVersion`,
+  `CLIRefreshCommand.consentVersion`) and counts only for that version, so a release that raises it asks again;
+  turning a feature off clears both.
 - **Demo mode** (`--demo`) swaps in fixture data and never touches the Keychain, the network or Claude files.
 
 ## Concurrency and logging
@@ -307,15 +344,33 @@ file contents.
 
 Core logic is tested with Swift Testing (`make test`): decoders against sanitized real-shaped fixtures, cache extraction
 (including truncated, oversized and decoy-secret cases), credential parsing and resolver order, the API client against a
-recording stub transport, polling policy bounds, the scanner's dedupe and incremental behavior, redaction, formatting and
-threshold logic, and auto-refresh: locating and validating the tool (with temporary files), the exact command and
+recording stub transport, polling policy bounds, the scanner's dedupe and incremental behavior (including that files
+outside the retention window and unchanged files are not opened, and cancellation), the presence logic, redaction,
+formatting and threshold logic, and auto-refresh: locating and validating the tool (with temporary files), the exact command and
 environment, result parsing and the safety net, the process runner and executor (with fake `#!/bin/sh` tools that record
 their arguments, environment and working folder, hang, exit with errors or print too much), and the scheduling rules.
 Tests never touch the real Keychain, real Claude files or the network, and never run the real `claude`.
 
-CI (`.github/workflows/ci.yml`) runs the tests, `make lint` and an unsigned build on the newest Xcode on the runner, and
-runs the tests and the unsigned build again on Xcode 16.4 exactly, the minimum version the README promises. XcodeGen is
-installed from a pinned release whose SHA-256 is checked (`scripts/ci/install-xcodegen.sh`).
+The app's own logic is tested with Swift Testing too (`make test-app`, in `AppTests/`): the settings store (including
+that consent, the Claude config directory and the tool path are read only from what the app saved, never from launch
+arguments), the welcome window's model (what each button and the close button record, the notification prompt and the
+Live gate), the text and ring of the menu bar item and which parts of the button a new presentation changes, what the
+popover's no-data section offers, `AppModel`'s derived state and notifications, `UsageEngine`'s cache, snapshot-saving,
+transcript and presence handling, the ring renderer, the demo data and the notification texts. The test bundle is **hostless**: the app is never started, because that would read the
+user's real Claude files and preferences. The app's sources are compiled into the bundle (all but `QuotaRingApp.swift`,
+which has `@main`), and every test works in its own temporary folder and its own preferences file. `UsageEngine` takes
+the credential read, the HTTP transport and the auto-refresh runner as parameters (the defaults are the real ones), so
+its Live and auto-refresh loops are tested against fakes that count their calls: pausing while away, a Keychain refusal
+that arrives after a cancellation, the restart after Refresh lifts a suspension. Nothing in a test reads the Keychain,
+reaches the network or starts Claude Code. Not covered, because they have no seam without the real thing: the real
+Keychain read, the real HTTP request and the real run of Claude Code (`CLIRefresher` itself), the system notifications
+that report sleep, displays, session and lock screen, and the part of `NotificationService` that talks to
+`UNUserNotificationCenter`.
+
+CI (`.github/workflows/ci.yml`) runs Core's tests and `make lint`, builds unsigned and runs the app's tests on the newest
+Xcode on the runner, and runs Core's tests, the unsigned build and the app's tests again on Xcode 16.4 exactly, the
+minimum version the README promises. XcodeGen is installed from a pinned release whose SHA-256 is checked
+(`scripts/ci/install-xcodegen.sh`).
 
 ## Where to look when auditing
 

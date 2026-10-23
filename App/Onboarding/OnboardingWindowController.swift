@@ -25,7 +25,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    /// Opens the window, or brings it back to the front when it is already open (it may be behind Settings).
     func show() {
+        if let window {
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
         let window = makeWindow()
         self.window = window
         // The hosting view sizes the window only in its first layout pass. Centering the still-empty window and letting

@@ -14,7 +14,8 @@ These are non-negotiable, because they are what users trust the app for:
 
 - The only network host is `api.anthropic.com`. No telemetry, analytics, crash reporting or update pings.
 - Never write, refresh, persist, log or print an OAuth token. Never write to `~/.claude.json`, anything under
-  `~/.claude/`, or Keychain items. Never launch the `claude` CLI.
+  `~/.claude/`, or Keychain items. Never launch `claude` except through `Core/Cli` (the fixed, consented
+  auto-refresh command).
 - No third-party runtime dependencies. Apple's SDKs only.
 - Percentages from Anthropic are **percent used** (0 to 100). Remaining is `100 - used`.
 - Keep it auditable: prefer small, plain code over clever abstractions.
@@ -45,8 +46,10 @@ The Xcode project is generated from `project.yml` and is git-ignored. Never comm
 | `make build` | Generates the project and builds the `QuotaRing` scheme (Debug) |
 | `make run` | Builds and launches the app |
 | `make demo` | Launches the app with fixture data: no Keychain, no network, no Claude files |
-| `make test` | Runs `swift test --package-path Core` (works without Xcode project generation) |
-| `make lint` | Runs `swift format lint` with the repository's `.swift-format` |
+| `make test` | Runs Core's tests: `swift test --package-path Core` (works without Xcode project generation) |
+| `make test-app` | Generates the project and runs the app's unit tests (`QuotaRingAppTests`, unsigned, no app launch) |
+| `make test-all` | Runs `make test` and `make test-app` |
+| `make lint` | Runs `swift format lint` with the repository's `.swift-format` on `Core`, `App` and `AppTests` |
 | `make format` | Formats the code in place with `swift format` |
 | `make clean` | Removes build products |
 
@@ -83,12 +86,21 @@ package (`QuotaRingCore`) and is tested with `swift test`. The AppKit and SwiftU
 
    Common types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`. Common scopes: `core`,
    `app`, `ci`. Breaking or privacy-relevant changes should say so in the commit body.
-4. Run `make format`, `make lint` and `make test` before pushing.
+4. Run `make format`, `make lint` and `make test-all` before pushing.
 5. Open a pull request against `main` and fill in the template.
 
 ## Tests
 
-Tests are required for new behavior and for bug fixes.
+Tests are required for new behavior and for bug fixes. There are two suites:
+
+- **Core** (`Core/Tests/QuotaRingCoreTests`): everything that does not need a UI. `make test`, which needs only the Swift
+  toolchain.
+- **App** (`AppTests`): the app's own logic: the settings store, the welcome window's model, what the menu bar shows,
+  `AppModel`, the data engine's cache and transcript handling, the ring renderer and the notification texts.
+  `make test-app` generates the Xcode project and runs the `QuotaRingAppTests` scheme with `xcodebuild`, unsigned.
+  `make test-all` runs both. CI runs the app tests in the build jobs, on the newest Xcode and on Xcode 16.4.
+
+Rules for both:
 
 - Use [Swift Testing](https://developer.apple.com/documentation/testing): `import Testing`, `@Test`, `#expect`.
 - Put pure logic in `Core` so it can be tested with `swift test --package-path Core` and no UI.
@@ -99,6 +111,24 @@ Tests are required for new behavior and for bug fixes.
   these files while we read them.
 - Do not write tests that touch the real Keychain, the real `~/.claude*` or the real network. Use stubs and temporary
   directories.
+
+Rules for the App tests in particular:
+
+- The test bundle is **hostless**: it has no `TEST_HOST`, so running it never starts QuotaRing (which would read the real
+  Claude files and may run programs). The app's sources, except `QuotaRingApp.swift` (it has `@main`) and the resources,
+  are compiled into the bundle instead. Do not turn it into a hosted test.
+- Every test makes its own `TestSandbox` (`AppTests/Support`): a folder in the temporary directory and a preferences
+  suite named by a path inside it, so nothing lands in `~/Library/Preferences`. Pass that suite to
+  `SettingsStore(defaults:persistentDomain:)`; never use `.standard` or the app's own domain. Remove the sandbox with
+  `defer { sandbox.remove() }`.
+- A type that can only be tested by reading real paths gets a small injection point (an initializer parameter whose
+  default is today's behavior), or is left untested. `UsageEngine.start()` is such a case: it looks for the real
+  `claude` tool, so tests call `refresh` and `setPopoverOpen` on an engine pointed at a temporary Claude config
+  directory instead.
+- Do not create views or windows (`NSView`, `NSHostingView`, `NSWindow`) in a test: the bundle has no running
+  application to host them, and creating one traps. Keep a view's decisions in a plain type or property and test that
+  (see `StatusPresentation` and `NoDataSection.offer`).
+- Suites that test `@MainActor` types are `@MainActor`.
 
 ## Style
 
@@ -150,7 +180,7 @@ if the two have different keys or format specifiers.
 The [pull request template](.github/pull_request_template.md) includes this list:
 
 - [ ] Focused change, Conventional Commit messages
-- [ ] `make test`, `make lint` and `make build` pass
+- [ ] `make test-all`, `make lint` and `make build` pass
 - [ ] New logic has tests; fixtures contain no real data
 - [ ] No tokens, credentials or real usage data anywhere (code, fixtures, logs, screenshots)
 - [ ] No new network hosts, telemetry or third-party runtime dependencies

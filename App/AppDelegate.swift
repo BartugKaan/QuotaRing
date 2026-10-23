@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Before `model.start()`, so the first snapshot can already notify.
         model.notifier = notificationService
+        model.showWelcomeWindow = { [weak self] in self?.showOnboardingIfNeeded() }
         statusItemController = StatusItemController(model: model)
         model.start()
         showOnboardingIfNeeded()
@@ -29,9 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The first-run window explains what is read and where anything is sent before Live mode can be switched on.
-    /// Not shown in demo mode, which touches no real data.
+    /// Not shown in demo mode, which touches no real data. When it is already open, it is brought to the front: Settings
+    /// and the popover offer that while their switches wait for it.
     private func showOnboardingIfNeeded() {
         guard !isDemo, !settings.hasCompletedOnboarding else { return }
+        if let onboardingController {
+            onboardingController.show()
+            return
+        }
         let notifications = notificationService
         let controller = OnboardingWindowController(
             settings: settings,

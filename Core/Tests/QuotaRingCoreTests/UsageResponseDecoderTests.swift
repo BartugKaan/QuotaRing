@@ -260,6 +260,93 @@ private func seconds(_ date: Date?) -> Double {
         #expect(sparse.extraUsage == ExtraUsage(isEnabled: false))
     }
 
+    @Test(arguments: ["999999999999999", "100000000", "7", "-1", "-999999999999999", "1.5"])
+    func decimalPlacesOutsideTheSupportedRangeAreDropped(places: String) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "used_credits": 1, "currency": "USD", "decimal_places": \(places)}}
+                """
+        )
+        let extra = try #require(report.extraUsage)
+        #expect(extra.decimalPlaces == nil)
+        // The rest of the entry is kept.
+        #expect(extra.isEnabled)
+        #expect(extra.usedCreditsMinor == 1)
+        #expect(extra.currency == "USD")
+    }
+
+    @Test(arguments: [0, 3, 6])
+    func decimalPlacesInsideTheSupportedRangeAreKept(places: Int) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "decimal_places": \(places)}}
+                """
+        )
+        #expect(report.extraUsage?.decimalPlaces == places)
+    }
+
+    @Test(arguments: [
+        #""usd""#, #""US""#, #""USDT""#, #""U$D""#, #""ÜSD""#, #"" USD""#, #""US\nD""#, "42", "null", #""""#,
+    ])
+    func currencyThatIsNotAnISOCodeIsDropped(currency: String) throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "extra_usage": {"is_enabled": true, "used_credits": 1, "currency": \(currency), "decimal_places": 2}}
+                """
+        )
+        let extra = try #require(report.extraUsage)
+        #expect(extra.currency == nil)
+        #expect(extra.decimalPlaces == 2)
+        #expect(extra.usedCreditsMinor == 1)
+    }
+
+    @Test func limitsAreCappedInResponseOrder() throws {
+        // Unusable entries do not count towards the cap.
+        let entries = (0..<1_000).map { #"{"kind": "k\#($0)", "percent": \#($0 % 100)}"# }
+        let report = try decode(json: #"{"limits": ["junk", null, \#(entries.joined(separator: ","))]}"#)
+        #expect(report.limits.count == UsageResponseDecoder.maxLimits)
+        #expect(report.limits.map(\.id) == (0..<UsageResponseDecoder.maxLimits).map { "k\($0)" })
+        #expect(UsageResponseDecoder.maxLimits == 32)
+    }
+
+    @Test func breakdownRowsAreDeduplicatedByKeyKeepingTheFirst() throws {
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "seven_day_breakdown": {"rows": [
+                    {"key": "chat", "display_name": "Chats", "percent": 10},
+                    {"key": "claude_code", "percent": 20},
+                    {"key": "chat", "display_name": "Impostor", "percent": 90},
+                    {"key": "claude_code", "percent": 70}
+                 ]}}
+                """
+        )
+        let rows = try #require(report.weeklyBreakdown).rows
+        #expect(rows.map(\.key) == ["chat", "claude_code"])
+        #expect(rows.map(\.displayName) == ["Chats", "claude_code"])
+        #expect(rows.map(\.percent) == [10, 20])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+    }
+
+    @Test func breakdownRowsAreCappedAfterDeduplication() throws {
+        // Duplicates of the first key do not use up the cap.
+        let duplicates = (0..<50).map { _ in #"{"key": "r0", "percent": 1}"# }
+        let distinct = (0..<1_000).map { #"{"key": "r\#($0)", "percent": 1}"# }
+        let report = try decode(
+            json: """
+                {"limits": [{"kind": "session", "percent": 1}],
+                 "seven_day_breakdown": {"rows": [\((duplicates + distinct).joined(separator: ","))]}}
+                """
+        )
+        let rows = try #require(report.weeklyBreakdown).rows
+        #expect(rows.count == UsageResponseDecoder.maxBreakdownRows)
+        #expect(rows.map(\.key) == (0..<UsageResponseDecoder.maxBreakdownRows).map { "r\($0)" })
+        #expect(UsageResponseDecoder.maxBreakdownRows == 16)
+    }
+
     @Test func breakdownWithoutUsableRowsIsNil() throws {
         let report = try decode(
             json: """

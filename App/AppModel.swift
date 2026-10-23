@@ -35,6 +35,9 @@ final class AppModel {
     private(set) var activity: [ActivityRange: UsageBreakdown] = [:]
     /// Token totals for the last 7 local days, oldest first.
     private(set) var daily: [DailyTokens] = []
+    /// The range the popover's Activity section shows. Kept here because the popover's views are discarded when it
+    /// closes and made anew when it opens, and the choice should survive that.
+    var activityRange: ActivityRange = .session
     /// Whether the app runs on built-in fixture data (`--demo`): no Keychain, no network, no file access.
     private(set) var isDemo: Bool
     /// Whether the manual refresh cooldown (Live mode and auto-refresh only) is running.
@@ -50,6 +53,9 @@ final class AppModel {
 
     /// Gets threshold events after each new snapshot.
     @ObservationIgnored var notifier: (any UsageNotifier)?
+    /// Opens the first-run window, or brings it to the front; does nothing once onboarding is finished. Set by the app
+    /// delegate.
+    @ObservationIgnored var showWelcomeWindow: (() -> Void)?
 
     /// Whether the Refresh button should be enabled.
     var canRefreshNow: Bool {
@@ -60,7 +66,11 @@ final class AppModel {
     @ObservationIgnored private var thresholdTracker: ThresholdTracker
     @ObservationIgnored private let defaults: UserDefaults
 
-    init(settings: SettingsStore, isDemo: Bool, defaults: UserDefaults = .standard) {
+    /// - Parameter snapshotStore: Where the engine saves the last good snapshot; tests pass a temporary one.
+    init(
+        settings: SettingsStore, isDemo: Bool, defaults: UserDefaults = .standard,
+        snapshotStore: LastSnapshotStore? = .standard()
+    ) {
         self.settings = settings
         self.isDemo = isDemo
         self.defaults = defaults
@@ -72,7 +82,7 @@ final class AppModel {
             activity = DemoData.activity(now: now)
             daily = DemoData.daily(now: now, calendar: .current)
         } else {
-            let engine = UsageEngine(settings: settings)
+            let engine = UsageEngine(settings: settings, snapshotStore: snapshotStore)
             engine.onEvent = { [weak self] event in self?.handle(event) }
             self.engine = engine
         }
@@ -139,7 +149,8 @@ final class AppModel {
 
     // MARK: - Engine events
 
-    private func handle(_ event: UsageEngine.Event) {
+    /// Applies one event of the engine. Not private so that tests can feed events without an engine running.
+    func handle(_ event: UsageEngine.Event) {
         switch event {
         case .snapshot(let newSnapshot, let isNew):
             snapshot = newSnapshot
@@ -153,8 +164,14 @@ final class AppModel {
         case .coolingDown(let coolingDown):
             isCoolingDown = coolingDown
         case .activity(let newActivity, let newDaily):
-            activity = newActivity
-            daily = newDaily
+            // The scan repeats every minute while the popover is open and mostly finds the same numbers. Assigning them
+            // again would still redraw the popover (an observed property notifies on every assignment).
+            if activity != newActivity {
+                activity = newActivity
+            }
+            if daily != newDaily {
+                daily = newDaily
+            }
         case .cacheProblem(let problem):
             cacheProblem = problem
         case .cliStatus(let status):

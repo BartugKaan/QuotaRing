@@ -176,6 +176,11 @@ private struct TransportFailure: Error {}
         #expect(await fetchError(makeClient(empty)) == .decoding)
     }
 
+    @Test func oversizedBodyIsDecoding() async {
+        let transport = RecordingTransport { _ in throw HTTPTransportError.responseTooLarge }
+        #expect(await fetchError(makeClient(transport)) == .decoding)
+    }
+
     @Test func errorsCarryNoPayloadThatCouldLeakTheToken() async {
         let transport = RecordingTransport { _ in throw URLError(.timedOut) }
         let error = await fetchError(makeClient(transport))
@@ -247,7 +252,140 @@ final class RedirectingURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// Answers with a response that is not an HTTP one (what a non-HTTP scheme or a broken proxy would produce).
+final class PlainResponseURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let response = URLResponse(url: url, mimeType: "text/plain", expectedContentLength: 2, textEncodingName: nil)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("ok".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+/// Answers with a 200 whose body size, chunking and declared `Content-Length` are read from the request's query
+/// (`body=<bytes>`, optional `declared=<bytes>`), so tests running in parallel never share state.
+final class SizedBodyURLProtocol: URLProtocol {
+    static let host = "sized-body.invalid"
+
+    static func url(body: Int, declared: Int? = nil) -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/"
+        components.queryItems = [URLQueryItem(name: "body", value: String(body))]
+        if let declared {
+            components.queryItems?.append(URLQueryItem(name: "declared", value: String(declared)))
+        }
+        return components.url!
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url, let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return }
+        func value(_ name: String) -> Int? { items.first { $0.name == name }?.value.flatMap { Int($0) } }
+        let size = value("body") ?? 0
+
+        var headers = ["Content-Type": "application/json"]
+        if let declared = value("declared") {
+            headers["Content-Length"] = String(declared)
+        }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+
+        // Delivered in 64 KiB chunks, as a stream would arrive.
+        let chunk = 64 * 1024
+        var sent = 0
+        while sent < size {
+            let count = min(chunk, size - sent)
+            client?.urlProtocol(self, didLoad: Data(repeating: UInt8(ascii: " "), count: count))
+            sent += count
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @Suite struct URLSessionTransportTests {
+    private func sizedTransport() -> URLSessionTransport {
+        let configuration = URLSessionTransport.makeConfiguration()
+        configuration.protocolClasses = [SizedBodyURLProtocol.self]
+        return URLSessionTransport(configuration: configuration)
+    }
+
+    @Test func bodyLimitIsOneMebibyte() {
+        #expect(URLSessionTransport.maxBodyBytes == 1_048_576)
+    }
+
+    @Test(arguments: [0, 2, 1_048_575, 1_048_576])
+    func bodiesUpToTheLimitAreReturnedWhole(size: Int) async throws {
+        let (data, response) = try await sizedTransport().send(URLRequest(url: SizedBodyURLProtocol.url(body: size)))
+        #expect(response.statusCode == 200)
+        #expect(data.count == size)
+    }
+
+    @Test func aDeclaredBodyAtTheLimitIsAccepted() async throws {
+        let size = URLSessionTransport.maxBodyBytes
+        let request = URLRequest(url: SizedBodyURLProtocol.url(body: size, declared: size))
+        let (data, _) = try await sizedTransport().send(request)
+        #expect(data.count == size)
+    }
+
+    /// A `Content-Length` over the limit is refused before the body is read, even when the body itself would be small.
+    @Test func aDeclaredLengthOverTheLimitIsRefusedEarly() async {
+        let request = URLRequest(
+            url: SizedBodyURLProtocol.url(body: 10, declared: URLSessionTransport.maxBodyBytes + 1))
+        await #expect(throws: HTTPTransportError.responseTooLarge) {
+            _ = try await sizedTransport().send(request)
+        }
+    }
+
+    /// Without a usable `Content-Length`, reading stops at the first byte past the limit.
+    @Test(arguments: [1_048_577, 4 * 1_048_576])
+    func aStreamedBodyOverTheLimitIsRefused(size: Int) async {
+        let request = URLRequest(url: SizedBodyURLProtocol.url(body: size))
+        await #expect(throws: HTTPTransportError.responseTooLarge) {
+            _ = try await sizedTransport().send(request)
+        }
+    }
+
+    /// A `Content-Length` that understates the body does not get past the limit either.
+    @Test func anUnderstatedLengthIsStillCapped() async {
+        let request = URLRequest(url: SizedBodyURLProtocol.url(body: 2 * 1_048_576, declared: 100))
+        await #expect(throws: HTTPTransportError.responseTooLarge) {
+            _ = try await sizedTransport().send(request)
+        }
+    }
+
+    @Test func aResponseThatIsNotHTTPIsABadServerResponse() async {
+        let configuration = URLSessionTransport.makeConfiguration()
+        configuration.protocolClasses = [PlainResponseURLProtocol.self]
+        let transport = URLSessionTransport(configuration: configuration)
+
+        await #expect(throws: URLError.self) {
+            _ = try await transport.send(URLRequest(url: UsageAPI.endpoint))
+        }
+        do {
+            _ = try await transport.send(URLRequest(url: UsageAPI.endpoint))
+            Issue.record("a non-HTTP response was accepted")
+        } catch let error as URLError {
+            #expect(error.code == .badServerResponse)
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
     @Test func configurationKeepsNoStateAndHasATimeout() {
         let configuration = URLSessionTransport.makeConfiguration()
 

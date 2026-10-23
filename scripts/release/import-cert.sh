@@ -57,6 +57,13 @@ esac
 : "${DEVELOPER_ID_P12_BASE64:?DEVELOPER_ID_P12_BASE64 is not set}"
 : "${DEVELOPER_ID_P12_PASSWORD:?DEVELOPER_ID_P12_PASSWORD is not set}"
 
+# The workflow's first step only learns whether APPLE_TEAM_ID is set, not its
+# value, so its format is checked here, before anything is created. Later steps
+# pass it to xcodebuild and sed.
+if [[ -n "${APPLE_TEAM_ID:-}" && ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+    fail "APPLE_TEAM_ID must be the 10-character Apple team identifier"
+fi
+
 # Everything created below (keychain, decoded .p12) must be private to this user.
 umask 077
 
@@ -90,12 +97,23 @@ if [[ ! -s "$p12_file" ]]; then
     fail "DEVELOPER_ID_P12_BASE64 decoded to an empty file"
 fi
 
+# The keychain stays unlocked in the search list until the cleanup step, and the
+# build runs code in that window (the generated project's build phases, any
+# future package plugin). So the key is protected against being copied out:
+#   -x  imports the private key non-extractable: no tool, `security export`
+#       included, can export the identity from the keychain, even unlocked.
+#   -T  puts only codesign on the key's access list. `/usr/bin/security` is
+#       deliberately not on it; it only lists identities here, which needs no
+#       access to the key.
+# Signing still works: codesign uses the key inside the keychain and never needs
+# to export it. If codesign cannot use the key on a first release, see "When
+# something fails" in docs/RELEASING.md.
 security import "$p12_file" \
     -f pkcs12 \
     -k "$keychain_path" \
     -P "$DEVELOPER_ID_P12_PASSWORD" \
-    -T /usr/bin/codesign \
-    -T /usr/bin/security >/dev/null
+    -x \
+    -T /usr/bin/codesign >/dev/null
 
 # Let codesign and other Apple tools use the private key without a UI prompt.
 security set-key-partition-list \

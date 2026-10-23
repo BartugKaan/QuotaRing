@@ -273,4 +273,55 @@ import Testing
                 freshest: snapshot(age: -1_000_000), now: now, refreshInterval: 300, nextAllowedLiveAt: nil)
                 == 21_600)
     }
+
+    @Test func nextCheckWhileSuspendedIsTheLongestWait() {
+        // The state a Keychain refusal leaves a few minutes later: an old snapshot and a back-off that has ended. Not
+        // suspended, that is "check again at once" (the loop's one-second floor); suspended, nothing can become due.
+        let stale = snapshot(age: 900)
+        let backOffOver = now.addingTimeInterval(-60)
+        #expect(
+            RefreshPlanner.nextCheckDelay(
+                freshest: stale, now: now, refreshInterval: 300, nextAllowedLiveAt: backOffOver) == 1)
+        #expect(
+            RefreshPlanner.nextCheckDelay(
+                freshest: stale, now: now, refreshInterval: 300, nextAllowedLiveAt: backOffOver, isSuspended: true)
+                == RefreshPlanner.delayRange.upperBound)
+    }
+
+    @Test func nextCheckWhileSuspendedIgnoresEverythingElse() {
+        for freshest in [nil, snapshot(age: 0), snapshot(age: 900), snapshot(age: -1_000_000)] {
+            for nextAllowed in [nil, now.addingTimeInterval(-60), now.addingTimeInterval(120)] {
+                #expect(
+                    RefreshPlanner.nextCheckDelay(
+                        freshest: freshest, now: now, refreshInterval: 300, nextAllowedLiveAt: nextAllowed,
+                        isSuspended: true) == 21_600)
+            }
+        }
+    }
+
+    @Test func nextCheckIsUnchangedWhenNotSuspended() {
+        #expect(
+            RefreshPlanner.nextCheckDelay(
+                freshest: snapshot(age: 100), now: now, refreshInterval: 300, nextAllowedLiveAt: nil, isSuspended: false
+            )
+                == 200)
+        #expect(
+            RefreshPlanner.nextCheckDelay(
+                freshest: snapshot(age: 100), now: now, refreshInterval: 300,
+                nextAllowedLiveAt: now.addingTimeInterval(1_200), isSuspended: false) == 1_200)
+    }
+
+    @Test func aSuspendedLoopNeverBecomesDueByItself() {
+        // The loop wakes after the long wait and asks the planner again: still not due, still the long wait.
+        let stale = snapshot(age: 900)
+        let later = now.addingTimeInterval(RefreshPlanner.delayRange.upperBound)
+        #expect(
+            !RefreshPlanner.shouldFetchLive(
+                liveEnabled: true, freshest: stale, now: later, refreshInterval: 300, nextAllowedLiveAt: nil,
+                isSuspended: true))
+        #expect(
+            RefreshPlanner.nextCheckDelay(
+                freshest: stale, now: later, refreshInterval: 300, nextAllowedLiveAt: nil, isSuspended: true)
+                == RefreshPlanner.delayRange.upperBound)
+    }
 }

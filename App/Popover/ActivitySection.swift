@@ -2,6 +2,14 @@ import Charts
 import QuotaRingCore
 import SwiftUI
 
+extension AppModel {
+    /// What the Activity section's range picker reads and writes: the model's ``activityRange``, which outlives the
+    /// popover's views.
+    var activityRangeBinding: Binding<ActivityRange> {
+        Binding(get: { self.activityRange }, set: { self.activityRange = $0 })
+    }
+}
+
 /// Tokens used on this Mac, counted from Claude Code's local transcripts: a segmented range (session, today,
 /// 7 days), the total, the top models and projects, and for 7 days a bar chart per day.
 ///
@@ -13,8 +21,9 @@ struct ActivitySection: View {
     /// The last 7 local days, oldest first.
     let daily: [DailyTokens]
     let now: Date
-
-    @State private var range: ActivityRange = .session
+    /// The chosen range. It lives in ``AppModel`` rather than here: the popover's views are made anew every time it
+    /// opens, and the choice should stay.
+    @Binding var range: ActivityRange
 
     /// The most rows a list shows.
     private static let listLimit = 5
@@ -252,20 +261,21 @@ private struct DailyChart: View {
 #if DEBUG
     #Preview("Activity, 7 days") {
         ActivitySection(
-            activity: DemoData.activity(now: .now), daily: DemoData.daily(now: .now, calendar: .current), now: .now
+            activity: DemoData.activity(now: .now), daily: DemoData.daily(now: .now, calendar: .current), now: .now,
+            range: .constant(.week)
         )
         .frame(width: PopoverMetrics.width)
     }
 
     #Preview("Activity, loading") {
-        ActivitySection(activity: [:], daily: [], now: .now)
+        ActivitySection(activity: [:], daily: [], now: .now, range: .constant(.session))
             .frame(width: PopoverMetrics.width)
     }
 
     #Preview("Activity, none") {
         let empty = UsageBreakdown(total: .zero, byModel: [], byProject: [])
         return ActivitySection(
-            activity: [.session: empty, .today: empty, .week: empty], daily: [], now: .now
+            activity: [.session: empty, .today: empty, .week: empty], daily: [], now: .now, range: .constant(.session)
         )
         .frame(width: PopoverMetrics.width)
     }

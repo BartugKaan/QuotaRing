@@ -180,7 +180,20 @@ struct DataSettingsView: View {
                 }
             }
         } footer: {
-            Text(cliRefreshFooter)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(cliRefreshFooter)
+                welcomeWindowButton
+            }
+        }
+    }
+
+    /// While onboarding is pending, both switches stay off and their footers say why; the welcome window is often hidden
+    /// behind this one, so this brings it back.
+    @ViewBuilder
+    private var welcomeWindowButton: some View {
+        if !isDemo && !settings.hasCompletedOnboarding {
+            Button("Show Welcome Window") { model.showWelcomeWindow?() }
+                .help("Bring the welcome window to the front; the switches turn on once you have finished it there")
         }
     }
 
@@ -348,7 +361,10 @@ struct DataSettingsView: View {
                     Text("The text below explains what Live mode reads and where it sends it."))
             LiveModeDisclosure(compact: true)
         } footer: {
-            Text(liveModeFooter)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(liveModeFooter)
+                welcomeWindowButton
+            }
         }
     }
 

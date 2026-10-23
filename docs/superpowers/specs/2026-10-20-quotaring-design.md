@@ -429,13 +429,19 @@ hooks or MCP servers. `--bare` is unusable (it disables OAuth/Keychain).
   records it; closing the window with its close button records auto-refresh
   (and Live mode) off. In Settings, turning it on goes through the consent sheet.
 - Runs only when the cached snapshot is older than the refresh interval, never
-  more often than every 120 s, paused while asleep or offline, with the same
+  more often than every 120 s, paused while asleep, offline or away (displays
+  asleep, screen locked, session inactive), with the same
   back-off as Live mode on failures; the Refresh button also triggers it
   (60 s cooldown). After a run, the cache loop re-reads immediately.
 - Executes exactly the command above with a fixed argument array (no shell),
   `stdin` from `/dev/null`, a minimal environment (`HOME`, `USER`, `LOGNAME`,
-  `LANG`, `PATH` = the binary's folder + `/usr/local/bin:/opt/homebrew/bin:
-  /usr/bin:/bin`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1`,
+  `LANG`, `PATH` = the binary's folder + `/usr/bin:/bin:/usr/sbin:/sbin:
+  /usr/local/bin:/opt/homebrew/bin` (system folders first, so a
+  package-manager folder, which may belong to another account, cannot shadow
+  a system tool such as `security`; security fix, 2026-10-22; the interpreter
+  of a script install, e.g. `node` for `#!/usr/bin/env node`, is looked up
+  on this `PATH` and is not ownership-checked), `DISABLE_AUTOUPDATER=1`,
+  `DISABLE_TELEMETRY=1`,
   `DISABLE_ERROR_REPORTING=1` (R50; verified with bundled 2.1.308: cache still
   refreshed, 0 turns, $0), and `CLAUDE_CONFIG_DIR` when a custom config dir is
   set), working directory

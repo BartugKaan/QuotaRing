@@ -91,12 +91,13 @@ private struct FakeClaude {
 
     /// An executor that only ever finds files of this scratch directory.
     func executor(
-        candidates: [URL]? = nil, timeout: TimeInterval = 30, clock: TestClock = TestClock()
+        candidates: [URL]? = nil, timeout: TimeInterval = 30, versionTimeout: TimeInterval = 30,
+        clock: TestClock = TestClock()
     ) -> CLIRefreshExecutor {
         let fixed = candidates ?? [tool]
         return CLIRefreshExecutor(
             candidates: { _, custom in (custom.map { [$0] } ?? []) + fixed },
-            timeout: timeout, versionTimeout: 30, killGrace: 0.3, now: { clock.now })
+            timeout: timeout, versionTimeout: versionTimeout, killGrace: 0.3, now: { clock.now })
     }
 }
 
@@ -199,7 +200,7 @@ private let checks = ["--version", "--help"]
                 "USER": "test",
                 "LOGNAME": "test",
                 "LANG": "en_US.UTF-8",
-                "PATH": fake.folder.path + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+                "PATH": fake.folder.path + ":/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin",
                 "DISABLE_AUTOUPDATER": "1",
                 "DISABLE_TELEMETRY": "1",
                 "DISABLE_ERROR_REPORTING": "1",
@@ -361,6 +362,76 @@ private let checks = ["--version", "--help"]
         clock.advance(by: 2 * 60)
         #expect(await executor.run(context).outcome == .failed(.exitStatus))
         #expect(fake.calls == ["--version", "--version"])
+    }
+
+    @Test func aVersionCheckThatRunsOnIsReportedAsTimedOut() async throws {
+        let fake = try FakeClaude(onVersion: "sleep 30", result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor(versionTimeout: 0.5)
+        let context = try fake.context()
+
+        let started = Date()
+        #expect(await executor.run(context).outcome == .failed(.timedOut))
+        // Stopped at its limit, not after the 30 seconds it asked for.
+        #expect(Date().timeIntervalSince(started) < 15)
+        // No answer was learned: Settings shows it as not checked, not as "not Claude Code".
+        #expect(await executor.locate(context).versionCheck == nil)
+    }
+
+    @Test func aVersionCheckThatPrintsTooMuchIsReportedAsTooLargeAndRests() async throws {
+        // More than the 4 KiB a version line may take: not something to wait for or to parse.
+        let fake = try FakeClaude(
+            onVersion: "yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -c 65536",
+            result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        #expect(await executor.run(context).outcome == .failed(.outputTooLarge))
+        #expect(await executor.run(context).outcome == .failed(.outputTooLarge))
+        #expect(fake.calls == ["--version"])
+    }
+
+    @Test func aFileThatCannotBeStartedIsReportedAsALaunchFailureAndRests() async throws {
+        let scratch = try CLIScratchDirectory("QuotaRingCLIExecutorTests")
+        defer { scratch.remove() }
+        // Executable by its mode, but neither a program nor a script with an interpreter line.
+        let tool = try scratch.file("claude", contents: "this is not a program\n", mode: 0o755)
+        let working = scratch.url.appendingPathComponent("cli", isDirectory: true)
+        try FileManager.default.createDirectory(at: working, withIntermediateDirectories: true)
+        let context = CLIRefreshContext(
+            home: scratch.url, user: "test", lang: "en_US.UTF-8", customCLIPath: nil, customConfigDirectory: nil,
+            workingDirectory: working)
+        let executor = CLIRefreshExecutor(
+            candidates: { _, _ in [tool] }, timeout: 30, versionTimeout: 30, killGrace: 0.3, now: { Date() })
+
+        #expect(await executor.run(context).outcome == .failed(.launchFailed))
+        #expect(await executor.locate(context).versionCheck == nil)
+    }
+
+    @Test func cancellingDuringAVersionCheckStopsItAndIsNotRemembered() async throws {
+        let fake = try FakeClaude(
+            onVersion: "[ -e \"$(dirname \"$0\")/go\" ] || sleep 30", result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let run = Task { await executor.run(context) }
+        // Give the check a moment to start (a fresh script can take a while to launch); cancelling earlier is still a
+        // cancellation, only a less interesting one.
+        for _ in 0..<80 where fake.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let started = Date()
+        run.cancel()
+
+        #expect(await run.value.outcome == .failed(.cancelled))
+        #expect(Date().timeIntervalSince(started) < 15)
+        #expect(await executor.locate(context).versionCheck == nil)
+
+        // A cancelled check says nothing about the file: it is asked again at once, not rested for half an hour.
+        try Data().write(to: fake.folder.appendingPathComponent("go"))
+        #expect(await executor.run(context).outcome == .success)
     }
 
     @Test func aFailingHelpCheckRestsToo() async throws {
