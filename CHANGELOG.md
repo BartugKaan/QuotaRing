@@ -7,7 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-First public release, planned as 0.1.0.
+## [0.1.0] - 2026-10-23
+
+First public release.
 
 ### Added
 
@@ -89,6 +91,12 @@ First public release, planned as 0.1.0.
   with `SHA256SUMS` and a GitHub build-provenance attestation. The signing key is imported non-extractable, and the
   release fails if the app carries any entitlement.
   XcodeGen is installed from a pinned release with a verified SHA-256 checksum instead of Homebrew.
+- Light on resources for an app that runs all day: the transcript scan never opens files older than the 8-day window
+  and reopens only files that changed, with memory released as it goes; the popover's content exists only while it
+  is open; the menu bar item is redrawn only when what it shows changes; and Live mode and auto-refresh pause while
+  you are away.
+- While the first-run window is unfinished, Settings → Data and the popover offer "Show Welcome Window" instead of
+  switches that cannot be turned on yet.
 
 ### Known limitations
 
@@ -106,4 +114,5 @@ First public release, planned as 0.1.0.
 - Auto-refresh executes one local program, Claude Code's `claude`, only with consent and only after validating it; the
   consent and the chosen path cannot be set through launch arguments. The details are in [SECURITY.md](SECURITY.md).
 
-[Unreleased]: https://github.com/BartugKaan/QuotaRing/commits/main
+[Unreleased]: https://github.com/BartugKaan/QuotaRing/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/BartugKaan/QuotaRing/releases/tag/v0.1.0

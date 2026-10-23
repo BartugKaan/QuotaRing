@@ -137,7 +137,7 @@ jobs:
             exit 1
           fi
           if [[ "$marketing_version" != "$VERSION" ]]; then
-            echo "::error::Tag ${TAG} does not match MARKETING_VERSION ${marketing_version} in project.yml."
+            echo "::error::Tag ${TAG} does not match MARKETING_VERSION ${marketing_version} in Configs/Base.xcconfig."
             exit 1
           fi
           echo "Releasing QuotaRing ${VERSION}."
