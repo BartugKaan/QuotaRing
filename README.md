@@ -1,5 +1,8 @@
 # QuotaRing
 
+[![CI](https://github.com/BartugKaan/QuotaRing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/BartugKaan/QuotaRing/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/BartugKaan/QuotaRing/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/BartugKaan/QuotaRing/actions/workflows/codeql.yml)
+
 A tiny, auditable menu bar meter for your Claude subscription limits.
 
 QuotaRing puts a ring in your macOS menu bar that shows how much of your rolling 5-hour Claude limit is left. Click it
