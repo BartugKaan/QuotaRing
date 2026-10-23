@@ -264,6 +264,7 @@ The release job fails early and with a readable message in most cases.
 | `Notarization did not succeed (status: Invalid ...)` | The step prints Apple's log. Typical causes: Hardened Runtime off, an unsigned nested binary, or a missing secure timestamp. |
 | `HTTP status code: 401` from `notarytool` | `ASC_KEY_ID`, `ASC_ISSUER_ID` or `ASC_KEY_P8_BASE64` is wrong, or the key was revoked or lacks the Developer role. |
 | Attestation step fails | The repository is private (see "Repository prerequisites"), or the job lacks `id-token: write` and `attestations: write`. |
+| `The validate action failed! Error 68` ("network connection was lost") in the verify step | `stapler validate` could not reach Apple's ticket service. `package.sh` already retries it four times; if it still fails, open the run, choose **Re-run failed jobs** and approve the `release` environment again (same commit, so the check before approving still applies). |
 | `gh release create` says the release already exists | Delete the draft (or the release) for that tag and re-run the failed job. |
 
 To retry without code changes, use **Re-run failed jobs** on the run (you will be
