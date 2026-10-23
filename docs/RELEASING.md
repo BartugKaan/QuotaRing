@@ -114,8 +114,19 @@ characters, letters and digits). This is `APPLE_TEAM_ID`.
    self-review" off, otherwise you could not approve your own release.
 3. Under **Deployment branches and tags** choose **Selected branches and tags**
    and add a tag rule `v*`.
-4. Under **Environment secrets** add all six secrets (environment secrets, not
-   repository secrets, so only an approved release run can read them):
+4. Add all six secrets as **environment secrets** of `release` (not repository
+   secrets, so only an approved release run can read them). The easiest and
+   safest way is the helper script, run from the repository root:
+
+   ```sh
+   scripts/release/set-release-secrets.sh path/to/DeveloperID.p12 path/to/AuthKey_<KEYID>.p8
+   ```
+
+   It asks for the Issuer ID, the Team ID and the `.p12` password (hidden),
+   first imports the `.p12` into a throwaway keychain exactly as the workflow
+   will, and only then pipes each value into `gh secret set`; nothing is
+   printed or written to disk. `--dry-run` checks the inputs only. To enter
+   them by hand instead, use **Environment secrets** on the environment page:
 
    | Secret | Value |
    | --- | --- |
