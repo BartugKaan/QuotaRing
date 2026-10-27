@@ -9,16 +9,21 @@ protocol CLIRefreshing: Sendable {
     func locate(_ settings: CLIRefresher.Settings) async -> CLIBinaryState
     /// One refresh. Cancelling the calling task stops it.
     func run(_ settings: CLIRefresher.Settings) async -> CLIRunReport
+    /// Whether the tool of the last run (`binary`) is signed in, asked after a run that left the cache as it was; `nil`
+    /// without an answer. Cancelling the calling task stops it.
+    func isLoggedIn(_ settings: CLIRefresher.Settings, binary: CLIBinaryState) async -> Bool?
 }
 
 extension CLIRefresher: CLIRefreshing {}
 
 /// Runs Claude Code's own `/usage` so that it refreshes its usage cache, which QuotaRing then reads as usual
-/// ("auto-refresh", spec §13). QuotaRing never sees a credential: Claude Code uses and renews its own login.
+/// ("auto-refresh", spec §13), and, when the cache did not get newer, `claude auth status --json` to tell whether Claude
+/// Code is signed in. QuotaRing never sees a credential: Claude Code uses and renews its own login.
 ///
 /// What is run is fixed in Core: the file is found and validated by ``ClaudeCLILocator``, checked with `--version` once
 /// per file, and started by ``BoundedProcess`` with ``CLIRefreshCommand``'s argument array (no shell), a minimal
-/// environment, `/dev/null` as input, a 30 s time limit and a 256 KB output limit. This type adds what only the app
+/// environment, `/dev/null` as input, a 30 s time limit and a 256 KB output limit (the login check: 10 s and 16 KB,
+/// and only for a tool whose `--help` lists the `auth` command). This type adds what only the app
 /// knows: the user, the language, the working directory and the settings. It never logs what the tool printed, only
 /// the outcome's name.
 ///
@@ -50,6 +55,20 @@ final class CLIRefresher: Sendable {
         let report = await executor.run(Self.context(for: settings, workingDirectory: workingDirectory))
         cliLog.info("Claude Code refresh: \(report.outcome.logName, privacy: .public)")
         return report
+    }
+
+    /// Whether the tool of the last run is signed in; see ``CLIRefreshExecutor/isLoggedIn(_:binary:)``. Only the
+    /// answer's name is logged, never what the tool printed (it names the account).
+    func isLoggedIn(_ settings: Settings, binary: CLIBinaryState) async -> Bool? {
+        guard let workingDirectory = try? Self.prepareWorkingDirectory() else {
+            cliLog.error("Could not prepare the working folder for Claude Code")
+            return nil
+        }
+        let loggedIn = await executor.isLoggedIn(
+            Self.context(for: settings, workingDirectory: workingDirectory), binary: binary)
+        let answer = loggedIn.map { $0 ? "signedIn" : "signedOut" } ?? "noAnswer"
+        cliLog.info("Claude Code login check: \(answer, privacy: .public)")
+        return loggedIn
     }
 
     // MARK: - Private

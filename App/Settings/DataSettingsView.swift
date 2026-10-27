@@ -182,8 +182,19 @@ struct DataSettingsView: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(cliRefreshFooter)
+                keepAutoRefreshOffButton
                 welcomeWindowButton
             }
+        }
+    }
+
+    /// After an update changed what auto-refresh runs, the switch is off and the footer asks again; this answers no, so
+    /// that the app stops asking.
+    @ViewBuilder
+    private var keepAutoRefreshOffButton: some View {
+        if !isDemo && settings.cliRefreshNeedsNewConsent {
+            Button("Keep It Off") { settings.cliRefreshEnabled = false }
+                .help("Stop asking: auto-refresh stays off until you turn it on")
         }
     }
 
@@ -312,6 +323,8 @@ struct DataSettingsView: View {
             "Finish the welcome window first."
         } else if settings.cliRefreshEnabled {
             "Auto-refresh is on. Turning it off stops it right away."
+        } else if settings.cliRefreshNeedsNewConsent {
+            "Auto-refresh was turned off because an update changed what it runs. Turn it on to review the change and agree again."
         } else {
             "Auto-refresh is off. QuotaRing does not run Claude Code."
         }

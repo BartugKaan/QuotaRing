@@ -101,6 +101,12 @@ final class SettingsStore {
         }
     }
 
+    /// Whether auto-refresh is off only because the user agreed to it for another ``CLIRefreshCommand/consentVersion``:
+    /// an update changed what it runs. The app says so until the user turns it on (agreeing to the new version) or off.
+    var cliRefreshNeedsNewConsent: Bool {
+        cliRefreshConsent && cliRefreshConsentVersion != CLIRefreshCommand.consentVersion
+    }
+
     /// Backing store of ``cliRefreshEnabled``: the saved answer, whatever version it was given for.
     private var cliRefreshConsent: Bool {
         didSet { defaults.set(cliRefreshConsent, forKey: Key.cliRefreshEnabled) }

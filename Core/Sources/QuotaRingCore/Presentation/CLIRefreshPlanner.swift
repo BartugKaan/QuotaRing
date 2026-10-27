@@ -242,6 +242,18 @@ extension RefreshPlanner {
         }
     }
 
+    /// Whether to ask Claude Code if it is signed in before applying `outcome`: only after a run whose cache did not
+    /// get newer, because a signed-out Claude Code (verified with 2.1.308) answers `/usage` like a success.
+    public static func cliRunNeedsLoginCheck(_ outcome: CLIRefreshOutcome) -> Bool {
+        outcome == .failed(.cacheNotUpdated)
+    }
+
+    /// `outcome` after the login check: a cache that did not get newer because Claude Code is signed out is
+    /// ``CLIRefreshOutcome/notLoggedIn``, which tells the user what to do. Anything else, or no answer, stays as it is.
+    public static func cliOutcome(_ outcome: CLIRefreshOutcome, loggedIn: Bool?) -> CLIRefreshOutcome {
+        cliRunNeedsLoginCheck(outcome) && loggedIn == false ? .notLoggedIn : outcome
+    }
+
     /// How many runs in a row may exit normally with output that cannot be checked before auto-refresh turns itself
     /// off (``CLISafetyStop/unverifiableOutput``).
     public static let unverifiedRunLimit = 3

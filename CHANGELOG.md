@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Auto-refresh said "Claude Code ran, but its usage numbers did not change" when the `claude` command-line tool was
+  signed out. Claude Code 2.1.308 answers `/usage` signed out without an error, so when a run leaves the numbers
+  unchanged, auto-refresh now asks the same tool `claude auth status --json` and, if it is signed out, says to sign in.
+  Only the yes/no `loggedIn` of that answer is read.
+
+### Changed
+
+- Because auto-refresh now runs that login check, its consent version is 2: if you had turned auto-refresh on, it is
+  off after updating until you turn it on again in Settings → Data (or choose Keep It Off). The popover and Settings say
+  so.
+
 ## [0.1.0] - 2026-10-23
 
 First public release.

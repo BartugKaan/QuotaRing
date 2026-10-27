@@ -12,12 +12,19 @@ import Testing
                 "-p", "/usage", "--safe-mode", "--no-session-persistence", "--output-format", "json",
             ])
         #expect(CLIRefreshCommand.versionArguments == ["--version"])
+        #expect(CLIRefreshCommand.loginStatusArguments == ["auth", "status", "--json"])
+    }
+
+    /// Version 2 added the login check (`claude auth status --json`); a consent given for version 1 must be asked again.
+    @Test func consentVersionCoversTheLoginCheck() {
+        #expect(CLIRefreshCommand.consentVersion == 2)
     }
 
     @Test func limitsMatchTheSpecification() {
         #expect(CLIRefreshCommand.timeout == 30)
         #expect(CLIRefreshCommand.versionTimeout == 10)
         #expect(CLIRefreshCommand.maxOutputBytes == 256 * 1024)
+        #expect(CLIRefreshCommand.maxLoginStatusOutputBytes == 16 * 1024)
     }
 
     /// Package-manager folders may belong to another account on a shared Mac; they must not shadow system tools such as

@@ -750,8 +750,9 @@ final class UsageEngine {
         }
     }
 
-    /// One run of Claude Code's `/usage`, then an immediate cache read. Returns the outcome, or `nil` when nothing ran
-    /// or the run was abandoned (cancelled, turned off, asleep, or the settings it ran with changed).
+    /// One run of Claude Code's `/usage`, then an immediate cache read and, when the cache did not get newer, the login
+    /// check. Returns the outcome, or `nil` when nothing ran or the run was abandoned (cancelled, turned off, asleep, or
+    /// the settings it ran with changed).
     @discardableResult
     private func performCLIRefresh() async -> CLIRefreshOutcome? {
         guard settings.isCLIRefreshActive, !isCLIRunInFlight, !isAsleep, isOnline else { return nil }
@@ -777,14 +778,21 @@ final class UsageEngine {
             // Do not wait for the cache loop's next look: the file was just rewritten.
             cacheRead = await readCacheAfterCLIRun()
         }
-        let resolution = RefreshPlanner.resolveCLIRun(
-            outcome: report.outcome, abandoned: isAbandoned(), cacheRead: cacheRead, runStartedAt: started)
-        guard case .apply(let outcome) = resolution else {
-            // Abandoned: the result says nothing about Claude Code.
+        /// Abandoned: the result says nothing about Claude Code.
+        func abandon() -> CLIRefreshOutcome? {
             if cliStatus == .running {
                 setCLIStatus(settings.isCLIRefreshActive ? statusBefore : idleCLIStatus)
             }
             return nil
+        }
+        let resolution = RefreshPlanner.resolveCLIRun(
+            outcome: report.outcome, abandoned: isAbandoned(), cacheRead: cacheRead, runStartedAt: started)
+        guard case .apply(var outcome) = resolution else { return abandon() }
+        if RefreshPlanner.cliRunNeedsLoginCheck(outcome) {
+            // Signed out, Claude Code answers `/usage` like a success and leaves the cache as it was: ask it.
+            let loggedIn = await cliRefresher.isLoggedIn(request, binary: report.binary)
+            guard !isAbandoned() else { return abandon() }
+            outcome = RefreshPlanner.cliOutcome(outcome, loggedIn: loggedIn)
         }
         onEvent(.cliBinary(report.binary))
         applyCLI(outcome, ranAt: started, binary: report.binary)

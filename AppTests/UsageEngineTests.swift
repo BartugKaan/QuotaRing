@@ -9,8 +9,8 @@ import Testing
 /// of the test, with a snapshot store in another folder of the test, and with Live mode and auto-refresh off (they need
 /// a completed welcome window, which a test never records). So `refresh` and `setPopoverOpen` only read files below
 /// the test's folder and write there. `start()` is never called: it looks for the real `claude` tool, starts the
-/// network monitor and observes the system. The Live request (Keychain, network) and the auto-refresh run (a real
-/// program) have no seam, so they are not covered here.
+/// network monitor and observes the system. Live mode and auto-refresh, when a test turns them on, reach only the
+/// fakes of ``EngineRig``.
 @MainActor
 private final class EngineRig {
     let sandbox: TestSandbox
@@ -802,6 +802,95 @@ private final class EngineRig {
         #expect(rig.activities.last?[.week]?.total.input == 30_000)
         rig.engine.setPopoverOpen(false)
         rig.engine.shutDown()
+        await rig.finish()
+    }
+}
+
+/// What the engine makes of an auto-refresh run, with the run and the login check answered by ``FakeCLIRunner``.
+@MainActor
+@Suite struct UsageEngineAutoRefreshTests {
+    private let now = Date()
+
+    /// A rig with auto-refresh on whose cache entry is `age` seconds old, and whose runs report `outcome`.
+    private func rig(cacheAge age: TimeInterval, outcome: CLIRefreshOutcome, loginAnswer: Bool?) throws -> EngineRig {
+        let rig = try EngineRig(autoRefresh: true)
+        try rig.writeCache(
+            fetchedAt: now.addingTimeInterval(-age), sessionUsed: 5, resetsAt: now.addingTimeInterval(900))
+        rig.cli.outcome = outcome
+        rig.cli.loginAnswer = loginAnswer
+        return rig
+    }
+
+    private func lastStatus(of rig: EngineRig) -> CLIRefreshStatus? {
+        rig.events.compactMap { event in
+            if case .cliStatus(let status) = event { return status }
+            return nil
+        }.last
+    }
+
+    @Test func aRunThatLeavesTheCacheAsItWasAsksWhetherClaudeCodeIsSignedIn() async throws {
+        let rig = try rig(cacheAge: 3_600, outcome: .success, loginAnswer: false)
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.cli.runs == 1)
+        #expect(rig.cli.loginChecks == 1)
+        #expect(lastStatus(of: rig) == .notLoggedIn)
+        await rig.finish()
+    }
+
+    @Test(arguments: [true, nil] as [Bool?])
+    func aSignedInOrSilentToolKeepsTheCacheFailure(answer: Bool?) async throws {
+        let rig = try rig(cacheAge: 3_600, outcome: .success, loginAnswer: answer)
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.cli.loginChecks == 1)
+        #expect(lastStatus(of: rig) == .failed(.cacheNotUpdated))
+        await rig.finish()
+    }
+
+    /// Turned off while Claude Code is being asked: the answer says nothing any more, and no "not signed in" is shown.
+    @Test func aRunTurnedOffDuringTheLoginCheckIsDropped() async throws {
+        let rig = try rig(cacheAge: 3_600, outcome: .success, loginAnswer: false)
+        let settings = rig.settings
+        rig.cli.onLoginCheck = { await MainActor.run { settings.cliRefreshEnabled = false } }
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.cli.loginChecks == 1)
+        let toldNotSignedIn = rig.events.contains { event in
+            if case .cliStatus(.notLoggedIn) = event { return true }
+            return false
+        }
+        #expect(!toldNotSignedIn)
+        #expect(lastStatus(of: rig) == .off)
+        await rig.finish()
+    }
+
+    @Test func aRunThatRefreshedTheCacheAsksNothingMore() async throws {
+        let rig = try rig(cacheAge: 0, outcome: .success, loginAnswer: false)
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.cli.runs == 1)
+        #expect(rig.cli.loginChecks == 0)
+        guard case .ok = lastStatus(of: rig) else {
+            Issue.record("expected ok, got \(String(describing: lastStatus(of: rig)))")
+            await rig.finish()
+            return
+        }
+        await rig.finish()
+    }
+
+    @Test func aFailedRunAsksNothingMore() async throws {
+        let rig = try rig(cacheAge: 3_600, outcome: .failed(.exitStatus), loginAnswer: false)
+
+        await rig.engine.refresh(userInitiated: true)
+
+        #expect(rig.cli.runs == 1)
+        #expect(rig.cli.loginChecks == 0)
+        #expect(lastStatus(of: rig) == .failed(.exitStatus))
         await rig.finish()
     }
 }

@@ -31,9 +31,11 @@ struct PopoverNotice: Identifiable {
     ///   - liveStatus: Pass ``LiveStatus/off`` when Live mode is not in use, so that nothing about it is shown.
     ///   - cliStatus: Auto-refresh's status; pass ``CLIRefreshStatus/off`` in demo mode.
     ///   - isCLIRefreshActive: Whether auto-refresh is on. When it is off, the old-data notice offers to turn it on.
+    ///   - cliNeedsNewConsent: Whether auto-refresh is off because an update changed what it runs (see
+    ///     ``SettingsStore/cliRefreshNeedsNewConsent``); pass `false` in demo mode.
     static func notices(
-        liveStatus: LiveStatus, cliStatus: CLIRefreshStatus, isCLIRefreshActive: Bool, cacheProblem: CacheReadError?,
-        isStale: Bool, now: Date
+        liveStatus: LiveStatus, cliStatus: CLIRefreshStatus, isCLIRefreshActive: Bool,
+        cliNeedsNewConsent: Bool, cacheProblem: CacheReadError?, isStale: Bool, now: Date
     ) -> [PopoverNotice] {
         var notices: [PopoverNotice] = []
         switch liveStatus {
@@ -66,6 +68,9 @@ struct PopoverNotice: Identifiable {
                     id: "error", style: .warning,
                     message: "Live mode could not reach Anthropic — showing the last known usage"))
         }
+        if cliNeedsNewConsent {
+            notices.append(newConsentNotice)
+        }
         if let cliNotice = cliNotice(for: cliStatus, isActive: isCLIRefreshActive, now: now) {
             notices.append(cliNotice)
         }
@@ -78,7 +83,8 @@ struct PopoverNotice: Identifiable {
                     PopoverNotice(
                         id: "stale", style: .info,
                         message: "Data is out of date. Auto-refresh updates it the next time it can run Claude Code."))
-            } else if case .disabledForSafety = cliStatus {
+            } else if cliNeedsNewConsent || cliStatus.isSafetyStop {
+                // The notice above already says how to turn it on again.
                 notices.append(
                     PopoverNotice(
                         id: "stale", style: .info,
@@ -96,6 +102,16 @@ struct PopoverNotice: Identifiable {
             }
         }
         return notices
+    }
+
+    /// Auto-refresh is off because an update changed what it runs. The button opens Settings → Data, where the new
+    /// version is explained before it can be turned on again.
+    static var newConsentNotice: PopoverNotice {
+        PopoverNotice(
+            id: "autoRefreshChanged", style: .warning,
+            message:
+                "Auto-refresh is off because an update changed what it runs. Review the change and turn it on again.",
+            action: .turnOnAutoRefresh)
     }
 
     /// What auto-refresh needs the user to know: why it turned itself off, or why it is failing while on. `nil` when it
@@ -346,14 +362,17 @@ private struct FooterIconButtonStyle: ButtonStyle {
             notices:
                 PopoverNotice.notices(
                     liveStatus: .keychainDenied, cliStatus: .notLoggedIn, isCLIRefreshActive: true,
-                    cacheProblem: .malformed, isStale: false, now: .now)
+                    cliNeedsNewConsent: false, cacheProblem: .malformed, isStale: false, now: .now)
                 + PopoverNotice.notices(
                     liveStatus: .rateLimited(until: .now.addingTimeInterval(240)),
                     cliStatus: .disabledForSafety(.modelCall),
-                    isCLIRefreshActive: false, cacheProblem: nil, isStale: false, now: .now)
+                    isCLIRefreshActive: false, cliNeedsNewConsent: false, cacheProblem: nil, isStale: false, now: .now)
                 + PopoverNotice.notices(
-                    liveStatus: .off, cliStatus: .off, isCLIRefreshActive: false, cacheProblem: nil, isStale: true,
-                    now: .now)
+                    liveStatus: .off, cliStatus: .off, isCLIRefreshActive: false, cliNeedsNewConsent: false,
+                    cacheProblem: nil, isStale: true, now: .now)
+                + PopoverNotice.notices(
+                    liveStatus: .off, cliStatus: .off, isCLIRefreshActive: false, cliNeedsNewConsent: true,
+                    cacheProblem: nil, isStale: true, now: .now)
         )
         .frame(width: PopoverMetrics.width)
     }

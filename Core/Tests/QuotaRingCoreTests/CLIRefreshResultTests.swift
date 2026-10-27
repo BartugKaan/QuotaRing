@@ -120,6 +120,13 @@ private func editedSuccess(_ edit: (inout [String: Any]) -> Void) throws -> Data
         #expect(CLIRefreshResult.parse(stdout: data, exitCode: 1) == .notLoggedIn)
     }
 
+    /// Claude Code 2.1.308 answers `/usage` without a login too: it exits 0 with only the session cost, so the run alone
+    /// looks like a success. The cache check and the login check (``CLIRefreshResult/loginState(stdout:exitCode:)``)
+    /// tell the two apart.
+    @Test func signedOutUsageOfCurrentClaudeCodeLooksLikeASuccess() throws {
+        #expect(CLIRefreshResult.parse(stdout: try fixtureData("cli-usage-signed-out"), exitCode: 0) == .success)
+    }
+
     @Test func loginWordsInASuccessDoNotCount() throws {
         let data = try editedSuccess { $0["result"] = "Current session: 4% used. Run /login to switch accounts." }
         #expect(CLIRefreshResult.parse(stdout: data, exitCode: 0) == .success)
@@ -183,5 +190,32 @@ private func editedSuccess(_ edit: (inout [String: Any]) -> Void) throws -> Data
         dump(outcome, to: &dumped)
         #expect(!String(reflecting: outcome).contains(secretish))
         #expect(!dumped.contains(secretish))
+    }
+
+    // MARK: - Login check
+
+    @Test func signedInAndSignedOutAreRead() throws {
+        // Verified with Claude Code 2.1.308: signed in exits 0, signed out exits 1, both with the JSON object.
+        #expect(CLIRefreshResult.loginState(stdout: try fixtureData("cli-auth-status-signed-in"), exitCode: 0) == true)
+        #expect(
+            CLIRefreshResult.loginState(stdout: try fixtureData("cli-auth-status-signed-out"), exitCode: 1) == false)
+    }
+
+    @Test func anotherExitStatusIsNoAnswer() throws {
+        #expect(CLIRefreshResult.loginState(stdout: try fixtureData("cli-auth-status-signed-out"), exitCode: 2) == nil)
+        #expect(CLIRefreshResult.loginState(stdout: try fixtureData("cli-auth-status-signed-in"), exitCode: 127) == nil)
+    }
+
+    @Test func anythingButAYesOrNoIsNoAnswer() throws {
+        let cases: [Any] = [
+            ["loggedIn": "true"], ["loggedIn": 1], ["loggedIn": NSNull()], ["authMethod": "none"], [["loggedIn": true]],
+        ]
+        for value in cases {
+            let data = try JSONSerialization.data(withJSONObject: value)
+            #expect(CLIRefreshResult.loginState(stdout: data, exitCode: 0) == nil)
+        }
+        // An older Claude Code without `auth status` prints its usage text instead.
+        #expect(CLIRefreshResult.loginState(stdout: Data("error: unknown command 'auth'".utf8), exitCode: 1) == nil)
+        #expect(CLIRefreshResult.loginState(stdout: Data(), exitCode: 0) == nil)
     }
 }
