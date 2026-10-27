@@ -227,7 +227,7 @@ checkbox (pre-checked, recommended if you use the desktop app) that counts only 
 buttons; closing the window turns nothing on. Settings → Data asks for confirmation with a sheet
 that shows the exact command before it turns on. Turning it off takes effect at once. As with Live mode, the consent is
 saved with a version of the command and its environment: if a later QuotaRing changes them, auto-refresh stays off
-until you agree again.
+until you agree again, and the popover and Settings → Data say so until you turn it on or choose Keep It Off.
 
 What runs, exactly:
 
@@ -236,14 +236,19 @@ claude -p "/usage" --safe-mode --no-session-persistence --output-format json
 ```
 
 Before the first run, each `claude` QuotaRing tries is also asked `claude --version` and `claude --help` once (so with
-several candidates, more than one program may run once), to make sure it is Claude Code and knows these options. Every
-run and check turns Claude Code's auto-updater off (`DISABLE_AUTOUPDATER=1`) and asks Claude Code not to send
-telemetry or error reports (`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
+several candidates, more than one program may run once), to make sure it is Claude Code and knows these options. When a
+run leaves the numbers unchanged, the same `claude` is asked `claude auth status --json` (only if its `--help` lists
+the `auth` command; within 10 seconds and 16 KB), and QuotaRing reads only its yes/no `loggedIn` (the answer also
+names your account, which is not read, kept or logged). Every run and check turns
+Claude Code's auto-updater off (`DISABLE_AUTOUPDATER=1`) and asks Claude Code not to send telemetry or error reports
+(`DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`).
 
 - `-p "/usage"` runs the `/usage` slash command without a terminal. Verified with Claude Code 2.1.287: it makes **no
   model request** (`num_turns: 0`, `total_cost_usd: 0`, zero tokens), so it spends none of your usage, and it rewrites
   `cachedUsageUtilization` in `~/.claude.json`. `--safe-mode` starts no plugins, hooks or MCP servers;
-  `--no-session-persistence` saves no session transcript.
+  `--no-session-persistence` saves no session transcript. Signed out, Claude Code 2.1.308 still answers it, with only
+  the session cost and without refreshing the cache; that is why the login check above exists, so that QuotaRing can
+  tell you to sign in instead of saying the numbers did not change.
 - **QuotaRing never touches your login for this.** Claude Code uses and renews its own credentials, as it does when you
   run it in a terminal.
 - **When:** only when the numbers shown are older than your refresh interval, never more often than every 2 minutes,
@@ -293,8 +298,9 @@ sends nothing.
 
 - Write, modify or delete anything in `~/.claude.json`, `~/.claude/` or the Keychain. (With auto-refresh on, Claude
   Code itself rewrites its cache, as it does whenever it runs `/usage`.)
-- Launch the `claude` command-line tool, except the one fixed auto-refresh command above and its `--version` and
-  `--help` checks, and only after you allowed it. It never starts an interactive session and never sends a prompt.
+- Launch the `claude` command-line tool, except the one fixed auto-refresh command above, its `--version` and `--help`
+  checks and its `auth status --json` login check, and only after you allowed it. It never starts an interactive
+  session and never sends a prompt.
 - Contact any host other than `api.anthropic.com`.
 - Include telemetry, analytics, crash reporting or update checks. Check the Releases page for new versions yourself.
 - Use third-party libraries at runtime. The only dependencies are Apple's SDKs.

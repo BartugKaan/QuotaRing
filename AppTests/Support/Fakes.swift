@@ -132,14 +132,39 @@ final class FakeTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-/// Stands in for the program that runs Claude Code's `/usage`: counts the runs and fails each of them at once, without
-/// starting anything.
+/// Stands in for the program that runs Claude Code's `/usage`: counts the runs and login checks and answers each at
+/// once, without starting anything. A run fails unless a test sets ``outcome``; the login check has no answer unless a
+/// test sets ``loginAnswer``.
 final class FakeCLIRunner: CLIRefreshing, @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
+    private var loginCount = 0
+    private var cannedOutcome: CLIRefreshOutcome = .failed(.launchFailed)
+    private var cannedLoginAnswer: Bool?
+    private var loginCheckHook: (@Sendable () async -> Void)?
 
     /// How many runs have been asked for.
     var runs: Int { lock.withLock { count } }
+    /// How many login checks have been asked for.
+    var loginChecks: Int { lock.withLock { loginCount } }
+
+    /// What every run reports.
+    var outcome: CLIRefreshOutcome {
+        get { lock.withLock { cannedOutcome } }
+        set { lock.withLock { cannedOutcome = newValue } }
+    }
+
+    /// What every login check answers.
+    var loginAnswer: Bool? {
+        get { lock.withLock { cannedLoginAnswer } }
+        set { lock.withLock { cannedLoginAnswer = newValue } }
+    }
+
+    /// Runs while a login check is under way, before it answers, so a test can change something in the meantime.
+    var onLoginCheck: (@Sendable () async -> Void)? {
+        get { lock.withLock { loginCheckHook } }
+        set { lock.withLock { loginCheckHook = newValue } }
+    }
 
     private var binary: CLIBinaryState {
         CLIBinaryState(location: CLILocation(executable: nil, customPathProblem: .missing), versionCheck: nil)
@@ -151,6 +176,15 @@ final class FakeCLIRunner: CLIRefreshing, @unchecked Sendable {
 
     func run(_ settings: CLIRefresher.Settings) async -> CLIRunReport {
         lock.withLock { count += 1 }
-        return CLIRunReport(outcome: .failed(.launchFailed), binary: binary)
+        return CLIRunReport(outcome: outcome, binary: binary)
+    }
+
+    func isLoggedIn(_ settings: CLIRefresher.Settings, binary: CLIBinaryState) async -> Bool? {
+        let hook = lock.withLock {
+            loginCount += 1
+            return loginCheckHook
+        }
+        await hook?()
+        return loginAnswer
     }
 }

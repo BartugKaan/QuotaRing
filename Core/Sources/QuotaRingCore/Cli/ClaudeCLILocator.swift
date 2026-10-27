@@ -268,6 +268,26 @@ public enum ClaudeCLILocator {
         return knowsEveryFlag ? .claudeCode(version: version) : .unsupported(version: version)
     }
 
+    /// Whether `claude --help` lists the `auth` command in its "Commands:" section, which the login check
+    /// (``CLIRefreshCommand/loginStatusArguments``) needs. A Claude Code without it would read `auth` as the prompt of
+    /// an interactive session, so such a version is never asked.
+    public static func listsAuthCommand(helpOutput: String) -> Bool {
+        var inCommands = false
+        for line in helpOutput.split(whereSeparator: \.isNewline) {
+            if line.first != " " {
+                inCommands = line.hasPrefix("Commands:")
+                continue
+            }
+            // An entry is indented by two spaces; deeper lines continue a description.
+            guard inCommands, line.hasPrefix("  "), line.dropFirst(2).first != " " else { continue }
+            let name = line.dropFirst(2).prefix { $0 != " " }
+            if name.split(separator: "|").contains("auth") {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Whether `claude --version` printed Claude Code's signature, for example `2.1.287 (Claude Code)`.
     public static func isClaudeCode(versionOutput: String) -> Bool {
         versionOutput.contains("(Claude Code)")

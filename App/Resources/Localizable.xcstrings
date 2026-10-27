@@ -421,13 +421,13 @@
         }
       }
     },
-    "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `%@`." : {
-      "comment" : "Auto-refresh consent sheet; the argument is the environment variables set, such as DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1",
+    "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. If a run leaves the numbers unchanged, the same `claude` is asked `%@`, and QuotaRing reads only whether it is signed in. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `%@`." : {
+      "comment" : "Auto-refresh consent sheet; the first argument is the login check (auth status --json), the second the environment variables set, such as DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bundan önce, Claude Code olduğundan ve bu seçenekleri bildiğinden emin olmak için bulunan her `claude` programına `--version` ve `--help` sorulabilir (yani birden fazlası bir kez çalışabilir). Her çalıştırma ve kontrolde Claude Code’un otomatik güncelleyicisi kapatılır ve telemetri ya da hata raporu göndermemesi istenir: `%@`."
+            "value" : "Bundan önce, Claude Code olduğundan ve bu seçenekleri bildiğinden emin olmak için bulunan her `claude` programına `--version` ve `--help` sorulabilir (yani birden fazlası bir kez çalışabilir). Bir çalıştırma değerleri değiştirmezse aynı `claude` programına `%@` sorulur ve QuotaRing yalnızca Claude Code’da oturum açılıp açılmadığını okur. Her çalıştırma ve kontrolde Claude Code’un otomatik güncelleyicisi kapatılır ve telemetri ya da hata raporu göndermemesi istenir: `%@`."
           }
         }
       }
@@ -2462,6 +2462,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "QuotaRing’in sayıları nasıl güncel tutacağını karşılama penceresinde seçin."
+          }
+        }
+      }
+    },
+    "Auto-refresh is off because an update changed what it runs. Review the change and turn it on again." : {
+      "comment" : "Popover notice; the button opens Settings → Data",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir güncelleme otomatik yenilemenin çalıştırdıklarını değiştirdiği için otomatik yenileme kapatıldı. Değişikliği inceleyip yeniden açın."
+          }
+        }
+      }
+    },
+    "Auto-refresh was turned off because an update changed what it runs. Turn it on to review the change and agree again." : {
+      "comment" : "Data settings, footer of the auto-refresh switch",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir güncelleme otomatik yenilemenin çalıştırdıklarını değiştirdiği için otomatik yenileme kapatıldı. Değişikliği inceleyip yeniden onaylamak için açın."
+          }
+        }
+      }
+    },
+    "Keep It Off" : {
+      "comment" : "Data settings: button that declines auto-refresh after an update changed it",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapalı Kalsın"
+          }
+        }
+      }
+    },
+    "Stop asking: auto-refresh stays off until you turn it on" : {
+      "comment" : "Tooltip of the Keep It Off button",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sormayı bırak: siz açana kadar otomatik yenileme kapalı kalır"
           }
         }
       }

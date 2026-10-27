@@ -148,6 +148,11 @@ UsageEngine (auto-refresh loop, MainActor)
               4. CLIRefreshResult.parse → success | modelCallDetected | notLoggedIn | failed(reason)
   └─ RefreshPlanner.resolveCLIRun: on success read the cache now; an entry that did not get newer is cacheNotUpdated,
      a cache that cannot be read is cacheUnreadable; an abandoned run is dropped unless it detected a model call
+  └─ cacheNotUpdated only (RefreshPlanner.cliRunNeedsLoginCheck): CLIRefreshExecutor.isLoggedIn asks the same, still
+     unchanged tool `auth status --json`, only if its `--help` listed the `auth` command (without it, `auth` would be
+     an interactive prompt); environment and folder of the run, 10 s limit, 16 KB output cap; exit 0 or 1 with a JSON
+     object. CLIRefreshResult.loginState reads `loggedIn` and nothing else; RefreshPlanner.cliOutcome turns a
+     signed-out answer into notLoggedIn (Claude Code 2.1.308 answers `/usage` signed out with exit 0 and no refresh)
   └─ RefreshPlanner.cliRetry (back-off as Live mode) and cliStatus → AppModel.cliStatus → Settings and popover
   └─ RefreshPlanner.cliSafety: modelCallDetected, or 3 exit-0 runs in a row with unverifiable output →
      SettingsStore.stopCLIRefreshForSafety(reason) (feature off, reason remembered until turned on again)
@@ -158,9 +163,12 @@ UsageEngine (auto-refresh loop, MainActor)
   onboarding is complete. Settings never turns it on without the consent sheet; the popover only opens Settings.
 - **Before consent** only file metadata is inspected (to show the path in Settings); the `--version` and `--help` checks
   are part of the first run.
+- **Consent version.** `CLIRefreshCommand.consentVersion` is saved with the consent; version 2 added the login check.
+  A consent for another version reads as off, and `SettingsStore.cliRefreshNeedsNewConsent` makes the popover and
+  Settings → Data say why until the user turns auto-refresh on (agreeing again) or chooses Keep It Off.
 - **Environment.** Exactly `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and
-  `DISABLE_ERROR_REPORTING=1` (plus `CLAUDE_CONFIG_DIR` for a custom config directory), for the checks and the run
-  alike: nothing QuotaRing starts may update Claude Code, and Claude Code is asked not to send telemetry or error
+  `DISABLE_ERROR_REPORTING=1` (plus `CLAUDE_CONFIG_DIR` for a custom config directory), for the checks, the run and the
+  login check alike: nothing QuotaRing starts may update Claude Code, and Claude Code is asked not to send telemetry or error
   reports (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`; honoring that is up to Claude Code). `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is deliberately absent: it makes `/usage` answer from
   the stale cache without a network request.
 - **Process handling.** `BoundedProcess` keeps every `Process`, `Pipe` and `FileHandle` inside one run. The launch and

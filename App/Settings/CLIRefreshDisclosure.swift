@@ -31,7 +31,7 @@ struct CLIRefreshDisclosure: View {
             CLICommandLine(toolPath: toolPath)
                 .padding(.leading, 32)
             Text(
-                "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `\(CLICommandLine.switchedOffFeatures)`."
+                "Before that, each `claude` found may be asked `--version` and `--help` (so more than one may run once) to make sure it is Claude Code and knows these options. If a run leaves the numbers unchanged, the same `claude` is asked `\(CLICommandLine.loginCheck)`, and QuotaRing reads only whether it is signed in. Every run and check turns off Claude Code's auto-updater and asks it not to send telemetry or error reports: `\(CLICommandLine.switchedOffFeatures)`."
             )
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -98,6 +98,11 @@ struct CLICommandLine: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    /// `auth status --json`, from ``CLIRefreshCommand/loginStatusArguments``.
+    static var loginCheck: String {
+        CLIRefreshCommand.loginStatusArguments.joined(separator: " ")
     }
 
     /// `DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1`, from ``CLIRefreshCommand``.

@@ -62,13 +62,19 @@ struct PopoverView: View {
         model.settings.isCLIRefreshActive && !model.isDemo
     }
 
+    /// Whether auto-refresh is off because an update changed what it runs.
+    private var cliNeedsNewConsent: Bool {
+        model.settings.cliRefreshNeedsNewConsent && !model.isDemo
+    }
+
     @ViewBuilder
     private func sections(now: Date) -> some View {
         if let snapshot = model.snapshot {
             NoticeStack(
                 notices: PopoverNotice.notices(
                     liveStatus: liveStatus, cliStatus: cliStatus, isCLIRefreshActive: isCLIRefreshActive,
-                    cacheProblem: model.cacheProblem, isStale: model.isStale(at: now), now: now),
+                    cliNeedsNewConsent: cliNeedsNewConsent, cacheProblem: model.cacheProblem,
+                    isStale: model.isStale(at: now), now: now),
                 onAction: { _ in showDataSettings() })
             SessionSection(
                 session: snapshot.report.session,
@@ -90,8 +96,11 @@ struct PopoverView: View {
             let showsCLINotice = isLiveModeActive || cliStatus.isSafetyStop
             let cliNotice =
                 showsCLINotice ? PopoverNotice.cliNotice(for: cliStatus, isActive: isCLIRefreshActive, now: now) : nil
+            let newConsentNotice = cliNeedsNewConsent ? PopoverNotice.newConsentNotice : nil
             NoticeStack(
-                notices: [cliNotice, PopoverNotice.cacheNotice(for: model.cacheProblem)].compactMap { $0 },
+                notices: [newConsentNotice, cliNotice, PopoverNotice.cacheNotice(for: model.cacheProblem)].compactMap {
+                    $0
+                },
                 onAction: { _ in showDataSettings() })
             // Without any snapshot the section itself explains what Live mode or auto-refresh is waiting for or needs.
             NoDataSection(
@@ -100,6 +109,7 @@ struct PopoverView: View {
                 isCLIRefreshActive: isCLIRefreshActive,
                 cliStatus: cliStatus,
                 needsOnboarding: !model.isDemo && !model.settings.hasCompletedOnboarding,
+                cliNeedsNewConsent: cliNeedsNewConsent,
                 now: now,
                 openDataSettings: showDataSettings,
                 showWelcomeWindow: { model.showWelcomeWindow?() }
@@ -305,6 +315,8 @@ struct NoDataSection: View {
     let cliStatus: CLIRefreshStatus
     /// The welcome window has not been finished yet, so Live mode and auto-refresh cannot be turned on in Settings.
     var needsOnboarding = false
+    /// Auto-refresh is off because an update changed what it runs; the notice above explains it and links to Settings.
+    var cliNeedsNewConsent = false
     let now: Date
     /// Opens Settings on the Data tab; nothing is switched on from here.
     let openDataSettings: () -> Void
@@ -336,8 +348,8 @@ struct NoDataSection: View {
                     .help("Bring the welcome window to the front")
             case .turnOn(let includingAutoRefresh):
                 VStack(spacing: 8) {
-                    // After a safety switch-off the notice above explains it and links to Settings; turning it back on
-                    // is not suggested here.
+                    // After a safety switch-off or an update that changed what it runs, the notice above explains it
+                    // and links to Settings; turning it back on is not suggested here as well.
                     if includingAutoRefresh {
                         Button("Turn on auto-refresh…", action: openDataSettings)
                             .controlSize(.large)
@@ -364,7 +376,7 @@ struct NoDataSection: View {
         /// The welcome window is not finished: bring it to the front (and nothing else, see ``needsOnboarding``).
         case welcomeWindow
         /// Neither way of getting numbers is on: lead to Settings. `includingAutoRefresh` is `false` after a safety
-        /// switch-off, which the notice above explains.
+        /// switch-off or an update that changed what auto-refresh runs, which the notice above explains.
         case turnOn(includingAutoRefresh: Bool)
         /// Live mode or auto-refresh is on and working; the first reading is on its way.
         case waiting
@@ -378,7 +390,7 @@ struct NoDataSection: View {
             return .welcomeWindow
         }
         if !isLiveModeActive && !isCLIRefreshActive {
-            return .turnOn(includingAutoRefresh: !cliStatus.isSafetyStop)
+            return .turnOn(includingAutoRefresh: !cliStatus.isSafetyStop && !cliNeedsNewConsent)
         }
         return needsAttention ? .nothing : .waiting
     }
@@ -456,7 +468,7 @@ struct NoDataSection: View {
             Text(
                 "QuotaRing shows the numbers the `claude` command-line tool saves on this Mac. Start a session or run `/usage` there, and they appear here. The Claude desktop app does not save them."
             )
-            if !cliStatus.isSafetyStop {
+            if !cliStatus.isSafetyStop && !cliNeedsNewConsent {
                 Text("Auto-refresh can run Claude Code's `/usage` for you in the background.")
             }
         }

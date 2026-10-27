@@ -8,6 +8,10 @@ import Foundation
 /// `cachedUsageUtilization` in `~/.claude.json`, which QuotaRing then reads as usual. Claude Code uses and renews its
 /// own login for it; QuotaRing never sees a credential.
 ///
+/// Signed out, Claude Code 2.1.308 still exits 0 with only the session cost and leaves the cache as it was, so a run
+/// alone cannot tell a missing login from a cache that did not refresh. When the cache did not get newer, the same
+/// tool is asked `claude auth status --json` (``loginStatusArguments``), and only its yes/no `loggedIn` is read.
+///
 /// Everything is fixed: the arguments are a constant array passed without a shell, and the environment is built from
 /// scratch instead of inheriting QuotaRing's. It turns off Claude Code's auto-updater (`DISABLE_AUTOUPDATER=1`): a
 /// background run must never update Claude Code, which once left an npm install broken mid-update. It also asks Claude
@@ -22,7 +26,9 @@ public enum CLIRefreshCommand {
     /// Bump it whenever what auto-refresh runs changes in a way the user agreed to: the command (``arguments``, or the
     /// arguments of the checks), the environment (``environment(home:user:lang:binaryDirectory:customConfigDirectory:)``,
     /// including ``standardPath`` and ``switchedOffFeatures``), which programs may be run, or the data it reads.
-    public static let consentVersion = 1
+    ///
+    /// Version 2 added the login check (``loginStatusArguments``).
+    public static let consentVersion = 2
 
     /// The arguments, exactly. `-p "/usage"` runs the slash command in print mode; `--safe-mode` starts no plugins,
     /// hooks or MCP servers; `--no-session-persistence` saves no transcript; `--output-format json` prints one result
@@ -37,6 +43,13 @@ public enum CLIRefreshCommand {
     /// The arguments of the check that this Claude Code knows ``requiredFlags``
     /// (see ``ClaudeCLILocator/capability(versionOutput:helpOutput:)``).
     public static let helpArguments = ["--help"]
+
+    /// The arguments of the login check, asked only after a run that left the cache as it was (see
+    /// ``CLIRefreshExecutor/isLoggedIn(_:binary:)``). Verified with Claude Code 2.1.308: it prints one JSON object and
+    /// exits 0 when signed in, 1 when signed out. The object also names the account, so nothing but `loggedIn` is read
+    /// (see ``CLIRefreshResult/loginState(stdout:exitCode:)``). Only a tool whose `--help` lists the `auth` command is
+    /// asked (see ``ClaudeCLILocator/listsAuthCommand(helpOutput:)``).
+    public static let loginStatusArguments = ["auth", "status", "--json"]
 
     /// The options of ``arguments`` that older Claude Code versions lack. Without them a run could start plugins, hooks
     /// or MCP servers, or save a session, so a version whose `--help` does not list both is never run with `/usage`.
@@ -61,7 +74,7 @@ public enum CLIRefreshCommand {
 
     /// How long one refresh may run before it is stopped (verified runs take about 2 s).
     public static let timeout: TimeInterval = 30
-    /// How long the `--version` check may run.
+    /// How long each check (`--version`, `--help`, the login check) may run.
     public static let versionTimeout: TimeInterval = 10
     /// After asking a process to stop, how long to wait before killing it.
     public static let killGrace: TimeInterval = 2
@@ -71,8 +84,10 @@ public enum CLIRefreshCommand {
     public static let maxVersionOutputBytes = 4_096
     /// Output limit of the `--help` check.
     public static let maxHelpOutputBytes = 262_144
+    /// Output limit of the login check; its answer is about 400 bytes.
+    public static let maxLoginStatusOutputBytes = 16_384
 
-    /// The complete environment of the tool, for `/usage` and for the checks alike: `HOME`, `USER`, `LOGNAME`, `LANG`,
+    /// The complete environment of the tool, for `/usage`, the checks and the login check alike: `HOME`, `USER`, `LOGNAME`, `LANG`,
     /// `PATH`, `DISABLE_AUTOUPDATER=1`, `DISABLE_TELEMETRY=1` and `DISABLE_ERROR_REPORTING=1`, plus `CLAUDE_CONFIG_DIR`
     /// when a custom Claude config directory is set.
     /// Nothing is inherited from QuotaRing's own environment.

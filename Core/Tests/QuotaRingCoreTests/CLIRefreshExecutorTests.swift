@@ -10,8 +10,10 @@ private func fixtureText(_ name: String, extension: String = "json") throws -> S
 
 private func currentHelp() throws -> String { try fixtureText("cli-help-current", extension: "txt") }
 private func oldHelp() throws -> String { try fixtureText("cli-help-1.0.113", extension: "txt") }
+private func helpWithoutAuth() throws -> String { try fixtureText("cli-help-without-auth", extension: "txt") }
 
-/// A fake `claude`: a shell script that answers `--version` and `--help` and prints a canned result for anything else.
+/// A fake `claude`: a shell script that answers `--version`, `--help` and `auth status` and prints a canned result for
+/// anything else.
 /// It records each call's arguments, environment and working directory next to itself, because its environment is
 /// minimal and cannot carry paths in.
 private struct FakeClaude {
@@ -34,6 +36,10 @@ private struct FakeClaude {
         result: String,
         exitStatus: Int = 0,
         sleepBeforeResult: Int = 0,
+        onUsage: String = "",
+        authStatus: String? = nil,
+        authExit: Int = 0,
+        sleepBeforeAuth: Int = 0,
         at relativePath: String = "native/claude"
     ) throws {
         scratch = try CLIScratchDirectory("QuotaRingCLIExecutorTests")
@@ -41,6 +47,10 @@ private struct FakeClaude {
         try Data(result.utf8).write(to: resultFile)
         let helpFile = scratch.url.appendingPathComponent("help.txt")
         try Data((try help ?? currentHelp()).utf8).write(to: helpFile)
+        // Without an answer it behaves like a Claude Code that has no `auth` command.
+        let authFile = scratch.url.appendingPathComponent("auth.json")
+        try Data((authStatus ?? "error: unknown command 'auth'").utf8).write(to: authFile)
+        let authStatusExit = authStatus == nil ? 1 : authExit
         let here = "$(dirname \"$0\")"
         tool = try scratch.file(
             relativePath,
@@ -59,8 +69,16 @@ private struct FakeClaude {
                   cat "\(helpFile.path)"
                   exit \(helpExit)
                 fi
+                if [ "$1" = "auth" ]; then
+                  /usr/bin/env > "\(here)/auth-env.txt"
+                  pwd -P > "\(here)/auth-pwd.txt"
+                  sleep \(sleepBeforeAuth)
+                  cat "\(authFile.path)"
+                  exit \(authStatusExit)
+                fi
                 /usr/bin/env > "\(here)/env.txt"
                 pwd -P > "\(here)/pwd.txt"
+                \(onUsage)
                 sleep \(sleepBeforeResult)
                 cat "\(resultFile.path)"
                 exit \(exitStatus)
@@ -120,6 +138,7 @@ private final class TestClock: @unchecked Sendable {
 }
 
 private let usageCall = "-p /usage --safe-mode --no-session-persistence --output-format json"
+private let loginCall = "auth status --json"
 private let checks = ["--version", "--help"]
 
 @Suite struct CLIRefreshExecutorTests {
@@ -524,5 +543,108 @@ private let checks = ["--version", "--help"]
         // changes it once more, so it is refused again.)
         #expect(await executor.run(context).outcome == .failed(.toolChanged))
         #expect(fake.calls == checks + checks)
+    }
+
+    // MARK: - Login check
+
+    @Test func asksTheToolOfTheRunWhetherItIsSignedIn() async throws {
+        let fake = try FakeClaude(
+            result: try fixtureText("cli-usage-signed-out"), authStatus: try fixtureText("cli-auth-status-signed-out"),
+            authExit: 1)
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        #expect(report.outcome == .success)
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == false)
+        #expect(fake.calls == checks + [usageCall, loginCall])
+        // The same minimal environment and folder as the run.
+        #expect(try fake.recordedEnvironment("auth-env.txt") == fake.recordedEnvironment())
+        let folder = fake.folder
+        #expect(
+            try String(contentsOf: folder.appendingPathComponent("auth-pwd.txt"), encoding: .utf8)
+                == String(contentsOf: folder.appendingPathComponent("pwd.txt"), encoding: .utf8))
+    }
+
+    @Test func aSignedInToolSaysSo() async throws {
+        let fake = try FakeClaude(
+            result: try fixtureText("cli-usage-success"), authStatus: try fixtureText("cli-auth-status-signed-in"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == true)
+    }
+
+    @Test func aToolWhoseHelpListsNoAuthCommandIsNeverAsked() async throws {
+        // Without the command, `claude auth status --json` would start an interactive session with "auth" as prompt.
+        let fake = try FakeClaude(
+            help: try helpWithoutAuth(), result: try fixtureText("cli-usage-signed-out"),
+            authStatus: try fixtureText("cli-auth-status-signed-out"), authExit: 1)
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        #expect(report.outcome == .success)
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == nil)
+        #expect(fake.calls == checks + [usageCall])
+    }
+
+    @Test func aLoginCheckWithoutAnAnswerGivesNone() async throws {
+        let fake = try FakeClaude(result: try fixtureText("cli-usage-success"))
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == nil)
+        #expect(fake.calls == checks + [usageCall, loginCall])
+    }
+
+    @Test func onlyAToolThisExecutorCheckedIsAsked() async throws {
+        let fake = try FakeClaude(
+            result: try fixtureText("cli-usage-success"), authStatus: try fixtureText("cli-auth-status-signed-out"),
+            authExit: 1)
+        defer { fake.scratch.remove() }
+        let context = try fake.context()
+        let checked = await fake.executor().run(context)
+        #expect(checked.binary.versionCheck == .claudeCode(version: "2.1.308"))
+        let callsBefore = fake.calls
+
+        // Found but never checked by this executor, or claimed capable by someone else: nothing runs.
+        let fresh = fake.executor()
+        #expect(await fresh.isLoggedIn(context, binary: await fresh.locate(context)) == nil)
+        #expect(await fresh.isLoggedIn(context, binary: checked.binary) == nil)
+        #expect(fake.calls == callsBefore)
+    }
+
+    @Test func aToolThatChangedSinceTheRunIsNotAsked() async throws {
+        let fake = try FakeClaude(
+            result: try fixtureText("cli-usage-signed-out"), onUsage: "echo '# changed' >> \"$0\"",
+            authStatus: try fixtureText("cli-auth-status-signed-out"), authExit: 1)
+        defer { fake.scratch.remove() }
+        let executor = fake.executor()
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == nil)
+        #expect(fake.calls == checks + [usageCall])
+    }
+
+    @Test func aHangingLoginCheckIsStoppedWithoutAnAnswer() async throws {
+        let fake = try FakeClaude(
+            result: try fixtureText("cli-usage-signed-out"), authStatus: try fixtureText("cli-auth-status-signed-out"),
+            authExit: 1, sleepBeforeAuth: 10)
+        defer { fake.scratch.remove() }
+        let executor = fake.executor(versionTimeout: 0.5)
+        let context = try fake.context()
+
+        let report = await executor.run(context)
+        let started = Date()
+        #expect(await executor.isLoggedIn(context, binary: report.binary) == nil)
+        #expect(Date().timeIntervalSince(started) < 5)
     }
 }

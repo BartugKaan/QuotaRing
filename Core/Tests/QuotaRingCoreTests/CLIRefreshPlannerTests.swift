@@ -237,6 +237,25 @@ import Testing
         #expect(resolve(.success, cacheRead: .read(fetchedAt: nil)) == .apply(.failed(.cacheNotUpdated)))
     }
 
+    @Test func onlyACacheThatDidNotGetNewerAsksForTheLogin() {
+        #expect(RefreshPlanner.cliRunNeedsLoginCheck(.failed(.cacheNotUpdated)))
+        let others: [CLIRefreshOutcome] = [
+            .success, .notLoggedIn, .modelCallDetected, .failed(.cacheUnreadable), .failed(.exitStatus),
+            .failed(.reportedError),
+        ]
+        for outcome in others {
+            #expect(!RefreshPlanner.cliRunNeedsLoginCheck(outcome))
+        }
+    }
+
+    @Test func aSignedOutToolExplainsACacheThatDidNotGetNewer() {
+        #expect(RefreshPlanner.cliOutcome(.failed(.cacheNotUpdated), loggedIn: false) == .notLoggedIn)
+        #expect(RefreshPlanner.cliOutcome(.failed(.cacheNotUpdated), loggedIn: true) == .failed(.cacheNotUpdated))
+        #expect(RefreshPlanner.cliOutcome(.failed(.cacheNotUpdated), loggedIn: nil) == .failed(.cacheNotUpdated))
+        #expect(RefreshPlanner.cliOutcome(.success, loggedIn: false) == .success)
+        #expect(RefreshPlanner.cliOutcome(.modelCallDetected, loggedIn: false) == .modelCallDetected)
+    }
+
     @Test func aSuccessWhoseCacheCannotBeReadIsAFailure() {
         for error: CacheReadError in [.malformed, .unreadable, .fileTooLarge, .accountMismatch] {
             #expect(resolve(.success, cacheRead: .failed(error)) == .apply(.failed(.cacheUnreadable)))

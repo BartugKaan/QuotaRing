@@ -355,6 +355,19 @@ struct CLIScratchDirectory {
                 == .unsupported(version: "2.0.0"))
     }
 
+    @Test func theLoginCheckNeedsTheAuthCommandInTheHelp() throws {
+        #expect(ClaudeCLILocator.listsAuthCommand(helpOutput: try fixtureText("cli-help-current")))
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: try fixtureText("cli-help-without-auth")))
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: try fixtureText("cli-help-1.0.113")))
+        let commands = "Usage: claude\n\nCommands:\n"
+        #expect(ClaudeCLILocator.listsAuthCommand(helpOutput: commands + "  auth|login   Manage authentication\n"))
+        // An option, another command, a wrapped description or an entry outside "Commands:" does not count.
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: commands + "  author   Someone\n"))
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: commands + "  update   Update\n          auth later\n"))
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: "Options:\n  auth   Not a command\n"))
+        #expect(!ClaudeCLILocator.listsAuthCommand(helpOutput: "Options:\n  --auth <token>   A token\n"))
+    }
+
     @Test func somethingElseIsNotClaudeCode() throws {
         #expect(
             ClaudeCLILocator.capability(versionOutput: "1.0.0\n", helpOutput: try fixtureText("cli-help-current"))

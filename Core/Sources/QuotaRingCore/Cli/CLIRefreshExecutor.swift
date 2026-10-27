@@ -76,8 +76,9 @@ public struct CLIRefreshContext: Equatable, Sendable {
 /// Something that is not Claude Code, or a Claude Code too old for the command's options, is skipped and the next
 /// candidate is tried.
 ///
-/// Right before every execution (each check and `/usage`) the file is inspected again and must still be the one
-/// validated (same resolved file, same identity); otherwise it is not executed (``CLIRefreshFailure/toolChanged``).
+/// Right before every execution (each check, `/usage` and the login check) the file is inspected again and must still
+/// be the one validated (same resolved file, same identity); otherwise it is not executed
+/// (``CLIRefreshFailure/toolChanged``).
 public actor CLIRefreshExecutor {
     /// Where to look for the tool; the standard places in the app, temporary files in tests.
     public typealias Candidates = @Sendable (_ home: URL, _ customPath: URL?) -> [URL]
@@ -87,6 +88,8 @@ public actor CLIRefreshExecutor {
     private let versionTimeout: TimeInterval
     private let killGrace: TimeInterval
     private var versionChecks: [CLIFileIdentity: CLIVersionCheck] = [:]
+    /// Files whose `--help` lists the `auth` command (see ``ClaudeCLILocator/listsAuthCommand(helpOutput:)``).
+    private var loginCheckTools: Set<CLIFileIdentity> = []
     /// Files whose last check gave no answer: why, and when.
     private var failedChecks: [CLIFileIdentity: (failure: CLIRefreshFailure, at: Date)] = [:]
     private let now: @Sendable () -> Date
@@ -94,7 +97,7 @@ public actor CLIRefreshExecutor {
     /// How long a file whose check gave no answer rests before it is checked again.
     public static let failedCheckRetryInterval: TimeInterval = 30 * 60
 
-    /// - Parameter versionTimeout: The time limit of each check (`--version`, `--help`).
+    /// - Parameter versionTimeout: The time limit of each check (`--version`, `--help`, the login check).
     public init(
         candidates: @escaping Candidates = { ClaudeCLILocator.candidates(home: $0, customPath: $1) },
         timeout: TimeInterval = CLIRefreshCommand.timeout,
@@ -211,6 +214,35 @@ public actor CLIRefreshExecutor {
             ?? CLIRunReport(outcome: .failed(.notFound), binary: notClaudeCode ?? Self.state(nil, nil, search))
     }
 
+    /// Whether the Claude Code that `binary` names (the tool of the last run) is signed in, asked with
+    /// ``CLIRefreshCommand/loginStatusArguments`` in the run's environment and folder, within the time limit of a
+    /// check. Only a tool this executor found to be a capable Claude Code whose `--help` lists the `auth` command is
+    /// asked (another would read `auth` as the prompt of an interactive session), and only while it is still that very
+    /// file.
+    ///
+    /// `nil` when there is no answer: the tool was not checked here or changed since, or the login check failed, ran
+    /// too long, printed too much or answered without a yes or no (for example a Claude Code without `auth status`).
+    public func isLoggedIn(_ context: CLIRefreshContext, binary: CLIBinaryState) async -> Bool? {
+        guard let executable = binary.location.executable,
+            case .claudeCode = versionChecks[executable.identity],
+            loginCheckTools.contains(executable.identity),
+            Self.isUnchanged(executable)
+        else {
+            return nil
+        }
+        let output = await BoundedProcess.run(
+            executable: executable.executable,
+            arguments: CLIRefreshCommand.loginStatusArguments,
+            environment: environment(for: executable, context: context),
+            currentDirectory: context.workingDirectory,
+            timeout: versionTimeout,
+            killGrace: killGrace,
+            maxOutputBytes: CLIRefreshCommand.maxLoginStatusOutputBytes
+        )
+        guard case .exited(let status) = output.termination else { return nil }
+        return CLIRefreshResult.loginState(stdout: output.stdout, exitCode: status)
+    }
+
     /// The outcome of a `/usage` run.
     static func outcome(of output: ProcessOutput) -> CLIRefreshOutcome {
         switch output.termination {
@@ -306,6 +338,9 @@ public actor CLIRefreshExecutor {
             maxOutputBytes: CLIRefreshCommand.maxHelpOutputBytes, environment: environment, context: context)
         {
         case .success(let helpText):
+            if ClaudeCLILocator.listsAuthCommand(helpOutput: helpText) {
+                loginCheckTools.insert(executable.identity)
+            }
             return .success(ClaudeCLILocator.capability(versionOutput: versionText, helpOutput: helpText))
         case .failure(let failure):
             return .failure(failure)

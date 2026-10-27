@@ -8,11 +8,12 @@ import Testing
 @Suite struct NoDataSectionTests {
     private func section(
         live: Bool = false, liveStatus: LiveStatus = .off, cli: Bool = false, cliStatus: CLIRefreshStatus = .off,
-        needsOnboarding: Bool = false, showWelcomeWindow: @escaping () -> Void = {}
+        needsOnboarding: Bool = false, cliNeedsNewConsent: Bool = false, showWelcomeWindow: @escaping () -> Void = {}
     ) -> NoDataSection {
         NoDataSection(
             isLiveModeActive: live, liveStatus: liveStatus, isCLIRefreshActive: cli, cliStatus: cliStatus,
-            needsOnboarding: needsOnboarding, now: Date(), openDataSettings: {}, showWelcomeWindow: showWelcomeWindow)
+            needsOnboarding: needsOnboarding, cliNeedsNewConsent: cliNeedsNewConsent, now: Date(),
+            openDataSettings: {}, showWelcomeWindow: showWelcomeWindow)
     }
 
     // MARK: - Before the welcome window is finished
@@ -65,6 +66,11 @@ import Testing
     @Test(arguments: CLISafetyStop.allCases)
     func afterASafetySwitchOffAutoRefreshIsNotSuggestedAgain(reason: CLISafetyStop) {
         #expect(section(cliStatus: .disabledForSafety(reason)).offer == .turnOn(includingAutoRefresh: false))
+    }
+
+    /// The notice above already leads to Settings, where the changed auto-refresh is explained.
+    @Test func afterAnUpdateChangedAutoRefreshItIsNotSuggestedTwice() {
+        #expect(section(cliNeedsNewConsent: true).offer == .turnOn(includingAutoRefresh: false))
     }
 
     // MARK: - Something is on

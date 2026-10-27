@@ -91,6 +91,19 @@ public enum CLIRefreshResult {
         return .success
     }
 
+    /// Whether Claude Code is signed in, from the output of ``CLIRefreshCommand/loginStatusArguments``: its `loggedIn`
+    /// yes or no, when it exited with status 0 or 1 (signed in or signed out). Nothing else of the object is read, as it
+    /// also names the account. `nil` when there is no such answer, for example from a Claude Code without the command.
+    public static func loginState(stdout: Data, exitCode: Int32) -> Bool? {
+        guard exitCode == 0 || exitCode == 1,
+            let object = (try? JSONSerialization.jsonObject(with: stdout)) as? [String: Any],
+            let loggedIn = object["loggedIn"] as? NSNumber, CFGetTypeID(loggedIn) == CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        return loggedIn.boolValue
+    }
+
     // MARK: - Private
 
     /// The result object: the top-level object, or with `--verbose`-style output (an array of messages) the last one
